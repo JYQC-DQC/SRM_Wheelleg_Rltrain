@@ -1,0 +1,14 @@
+.idea/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+runs/
+export/
+*.pt
+*.onnx
+*.mp4

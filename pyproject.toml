@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srm-wheelleg"
+version = "0.1.0"
+description = "SRM wheel-leg PPO configuration and deployment interface"
+requires-python = ">=3.11"
+dependencies = ["numpy", "PyYAML"]
+
+[project.optional-dependencies]
+model = ["torch"]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["wheelleg*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

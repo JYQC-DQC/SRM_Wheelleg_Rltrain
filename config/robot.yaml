@@ -1,0 +1,30 @@
+# 已确认参数来自用户；null 项必须由 CAD、标定或完整辨识填写。
+name: srm_wheelleg_nogimbal
+variant: chassis_only
+control_hz: 500
+policy_hz: 100
+wheel_reduction_ratio: 15.76
+spring_nominal_force_n: 450.0
+spring_stroke_m: 0.075
+joint_order: [left_front, left_rear, left_wheel, right_front, right_rear, right_wheel]
+leg_indices: [0, 1, 3, 4]
+wheel_indices: [2, 5]
+q_default_rad: [null, null, null, null, null, null]
+q_zero_offset_rad: [null, null, null, null, null, null]
+motor_direction: [null, null, null, null, null, null]
+# 按腿分 CAN，索引为逻辑通道，具体句柄和 ID 在固件仓库标定。
+can_bus: [1, 1, 1, 2, 2, 2]
+pending_measurements:
+  cad_closed_chain_geometry: null
+  chassis_mass_com_inertia: null
+  wheel_radius_m: null
+  leg_joint_limits_rad: null
+  motor_ids_and_protocol_readback: null
+  imu_mounting_rotation: null
+  hip_torque_calibration_and_envelope: null
+  wheel_torque_calibration_and_envelope: null
+  motor_sweep_and_held_out_validation: null
+  spring_left_f0_k_hysteresis_damping: null
+  spring_right_f0_k_hysteresis_damping: null
+  measured_sensor_and_action_delay: null
+  power_controller_limits: null
