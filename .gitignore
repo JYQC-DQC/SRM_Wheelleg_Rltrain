@@ -12,3 +12,8 @@ export/
 *.pt
 *.onnx
 *.mp4
+
+# Tests stay local (including existing tests)
+[Tt]est/
+[Tt]ests/
+.pytest_cache/
