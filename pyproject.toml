@@ -12,13 +12,16 @@ dependencies = ["numpy", "PyYAML"]
 [project.optional-dependencies]
 model = ["torch"]
 dev = ["pytest", "ruff"]
+train = ["rsl-rl-lib==3.1.2"]
+export = ["onnx", "onnxruntime"]
 
 [tool.setuptools.packages.find]
-include = ["wheelleg*"]
+include = ["wheelleg*", "isaac*", "tools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["isaac: requires Isaac Sim 5.1 / Isaac Lab 2.3.2 and a calibrated USD"]
 
 [tool.ruff]
 target-version = "py311"

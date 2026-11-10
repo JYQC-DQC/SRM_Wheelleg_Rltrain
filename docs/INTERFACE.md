@@ -9,8 +9,13 @@
 - q 单位 rad、qd 单位 rad/s；轮位置观测固定为 0；腿位置减 q_default。
 - 前一动作是上次策略原始输出（裁剪前），首次进入策略置 0；它不是最终电机力矩。
 - P1 mode 为 [normal, stair, 0, recover, 0, 0, 0]。
+- P2 无云台阶段：mode=[0,1,平移速度,sin(参考系平移方向),cos(参考系平移方向),sin(参考yaw−底盘yaw),cos(参考yaw−底盘yaw)]；command xy=0，wz 是旋转指令。参考 yaw 固定在世界系，后续实体云台需单独同步。
+- P3 mode=[0,0,0,0,jump,目标跳高×5,phase]；接触事件控制实际阶段，相位仅作为观测。
 - 动作：4 个真实主动关节的位置残差 + 2 个轮速度目标，按上述交错顺序；不是串联等效关节力矩。
 - 动作缩放、PD、限幅、零点须与固件一致；默认关节角、方向及限位目前未知。
+- v2.1：action_clip=null 表示原始输出不裁剪；q_ref 只在实测髋限位内收 0.05 rad 后裁剪，轮速按独立上限裁剪。C 头使用 WL_ACTION_CLIP_ENABLED=0，不能将 null 当作缺参或零上限。
+- 训练 sensor 延迟在 2 ms 物理步采样，命令、模式和上一原始动作不随传感延迟一起倒退。
+- Actor 35 维保持 obs_v2；新增 critic 信息不进入固件输入。
 
 `gen_c_config.py --interface-only` 仅导出 ABI、时序及已确认的减速比，明确标记 `WL_DEPLOYMENT_CONFIG_READY=0`。
 去掉该选项会在缺少参数时拒绝导出；它不生成或伪造神经网络代码。

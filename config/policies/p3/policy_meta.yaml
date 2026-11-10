@@ -1,0 +1,281 @@
+# Guide v2.1: action_clip: null means NO raw clipping; other nulls are unmeasured.
+name: p3_jump
+obs_version: 2
+hidden_dims:
+- 256
+- 128
+- 64
+activation: elu
+observation_scales:
+  command:
+  - 1.0
+  - 1.0
+  - 1.0
+  height: 5.0
+  angular_velocity: 0.5
+  gravity: 1.0
+  joint_position: 1.0
+  joint_velocity: 0.1
+action_scales:
+- 0.5
+- 0.5
+- 10.0
+- 0.5
+- 0.5
+- 10.0
+action_clip: null
+kp:
+- null
+- null
+- null
+- null
+- null
+- null
+kd:
+- null
+- null
+- null
+- null
+- null
+- null
+torque_limit_nm:
+- null
+- null
+- null
+- null
+- null
+- null
+policy_family: p3
+training:
+  seed: 42
+  num_envs: 4096
+  rollout_steps: 48
+  max_iterations: 20000
+  save_interval: 500
+  episode_length_s: 20.0
+  init_noise_std: 1.0
+  reward_clip: 2.5
+  ppo:
+    value_loss_coef: 2.0
+    use_clipped_value_loss: true
+    clip_param: 0.2
+    entropy_coef: 0.005
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    learning_rate: 0.0001
+    schedule: adaptive
+    gamma: 0.995
+    lam: 0.95
+    desired_kl: 0.01
+    max_grad_norm: 1.0
+  commands:
+    segment_duration_s:
+    - 3.0
+    - 15.0
+    height_duration_s:
+    - 2.0
+    - 6.0
+    vx_range_m_s: null
+    wz_range_rad_s: null
+    height_range_m: null
+    linear_slew_m_s2: 2.0
+    angular_slew_rad_s2: 10.0
+    height_slew_m_s: null
+    segment_probabilities:
+    - 0.1
+    - 0.25
+    - 0.15
+    - 0.25
+    - 0.1
+    - 0.15
+    dash_range_m_s: null
+  reward_parameters:
+    linear_sigma: 0.5
+    angular_sigma: 0.25
+    height_sigma: 0.001
+    roll_sigma: 0.01
+    pitch_sigma: 0.02
+    fork_deadzone_m: 0.05
+    stand_deadzone: 0.1
+    contact_force_n: 3.0
+    spin_velocity_sigma: 0.25
+    spin_heading_sigma: 0.025
+    air_wheel_torque_sigma: 1.5
+    fork_square_scale: 5.0
+    leg_length_symmetry_scale: 10.0
+  rewards:
+    track_lin_vel: 1.0
+    lin_vel_error: -1.0
+    track_ang_vel: 1.0
+    ang_vel_error: -1.0
+    track_height: 1.0
+    height_error: -1.0
+    flat_roll: 1.0
+    flat_pitch: 1.0
+    roll_penalty: -2.0
+    pitch_penalty: -2.0
+    vertical_velocity: -0.5
+    angular_xy: -0.05
+    no_fork: -1.0
+    no_fork_square: -1.0
+    undesired_contact: -2.0
+    stand_still: -1.0
+    joint_torque: -0.0001
+    wheel_power: -0.0001
+    action_rate: -0.01
+    termination: -4.0
+    jump_apex: 5.0
+    jump_landing: 3.0
+    jump_flight: 0.15
+    jump_crouch: 0.5
+    jump_takeoff: 2.5
+    jump_push_symmetry: 0.05
+    jump_tuck: 1.7
+    jump_prepare: 0.5
+    jump_impact: -0.001
+    jump_asymmetric_landing: -1.0
+    uncommanded_flight: -1.0
+    leg_symmetry: 0.0
+  evaluation:
+    observation_delay_steps: null
+    action_delay_steps: null
+    duration_s: 10.0
+    settling_s: 1.0
+    episodes_per_case: 16
+    seed: 123
+    height_m: null
+    vx_values_m_s: null
+    wz_values_rad_s: null
+    combined_commands: null
+    jump_velocity_m_s: null
+  disturbance:
+    baseline_evaluation_passed: false
+    ramp_iterations: 3000
+    final_push_velocity_m_s: 1.25
+    collision_interval_s:
+    - 8.0
+    - 15.0
+    collision_duration_s: 0.1
+    collision_force_range_n:
+    - 100.0
+    - 300.0
+    lateral_probability: 0.8
+    phase2_start_iteration: null
+  air_rewards:
+    joint_limit: -10.0
+    wheel_center: 10.0
+    wheel_center_sigma: null
+    wheel_torque: 20.0
+    wheel_torque_sigma: 1.5
+    wheel_speed_alignment: -10.0
+  command_curriculum:
+    min_completed_episodes: 100
+    initial_fraction: 1.0
+    increment: 0.05
+    success_fraction: 0.8
+    velocity_error_threshold_m_s: null
+    yaw_error_threshold_rad_s: null
+  transition_reset:
+    probability: 0.0
+    states_npz: null
+mode_semantics:
+- zero
+- zero
+- zero
+- zero
+- jump_active
+- target_height_scaled
+- phase
+stages:
+  jump:
+    event_duration_s: 1.2
+    first_trigger_range_s:
+    - 2.0
+    - 5.0
+    between_events_s:
+    - 3.0
+    - 5.0
+    jump_count_probabilities:
+    - 0.2
+    - 0.7
+    - 0.1
+    height_range_m: null
+    feasible_height_m: null
+    crouch_duration_s: 0.25
+    crouch_leg_length_m: null
+    tuck_leg_length_m: null
+    landing_leg_length_m: null
+    landing_prepare_time_s: 0.1
+    landing_stable_s: 1.0
+    max_touchdown_difference_s: 0.05
+    apex_sigma: null
+    landing_tilt_rad: null
+    landing_speed_error_m_s: null
+    non_event_tracking_scale: 0.5
+    guidance_final_scale: 0.3
+    guidance_decay_iterations: 2000
+    guidance_success_threshold: 0.7
+    disturbance_phase: 2
+    curriculum_min_events: 100
+    height_tolerance_m: 0.05
+  tunnel:
+    event_duration_s: 1.2
+    first_trigger_range_s:
+    - 2.0
+    - 5.0
+    between_events_s:
+    - 3.0
+    - 5.0
+    jump_count_probabilities:
+    - 0.2
+    - 0.7
+    - 0.1
+    height_range_m: null
+    feasible_height_m: null
+    crouch_duration_s: 0.25
+    crouch_leg_length_m: null
+    tuck_leg_length_m: null
+    landing_leg_length_m: null
+    landing_prepare_time_s: 0.1
+    landing_stable_s: 1.0
+    max_touchdown_difference_s: 0.05
+    apex_sigma: null
+    landing_tilt_rad: null
+    landing_speed_error_m_s: null
+    non_event_tracking_scale: 0.5
+    guidance_final_scale: 0.3
+    guidance_decay_iterations: 2000
+    guidance_success_threshold: 0.7
+    tunnel:
+      vx_range_m_s: null
+      beam_height_m: 0.27
+      beam_length_m: 0.35
+      beam_thickness_m: 0.02
+      lane_width_m: 0.8
+      rail_height_m: 0.2
+      lane_length_m: 2.9
+      rail_thickness_m: null
+      approach_distance_m: null
+      trigger_distance_m: null
+      height_curriculum_m:
+      - 0.1
+      - 0.15
+      - 0.2
+      - 0.27
+      - 0.3
+      clearance_margin_m: 0.03
+      landing_margin_m: 0.05
+      initial_yaw_range_rad:
+      - -0.0872664626
+      - 0.0872664626
+      crossing_weight: 5.0
+      obstacle_contact_weight: -5.0
+      top_contact_weight: -10.0
+      approach_jitter_m: null
+      height_jitter_m:
+      - -0.01
+      - 0.01
+    disturbance_phase: 2
+    curriculum_min_events: 100
+    height_tolerance_m: 0.05
+guide_version: '2.1'

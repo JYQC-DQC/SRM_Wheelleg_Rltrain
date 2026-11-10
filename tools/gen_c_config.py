@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
 
+import yaml
+
 from wheelleg.config import load_policy, load_robot, missing_parameters
 from wheelleg.observation import OBS_DIM, OBS_FIELDS
 
@@ -47,7 +49,25 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         for name, values in arrays.items():
             text = ", ".join(f"{float(value)!r}f" for value in values)
             lines.append(f"static const float {name}[{len(values)}] = {{{text}}};")
-        lines.append(f"#define WL_ACTION_CLIP {float(policy.action_clip)!r}f")
+        data = yaml.safe_load(robot_path.read_text(encoding="utf-8"))
+        if "training" in data:
+            training = data["training"]
+            bounds = (training["joint_lower_rad"], training["joint_upper_rad"])
+            ready = all(value is not None for bound in bounds for value in bound)
+            ready = ready and training["wheel_speed_limit_rad_s"] is not None
+            lines.append(f"#define WL_TARGET_LIMITS_READY {int(ready)}")
+            if ready:
+                for name, values in zip(("kWheelLegTargetMin", "kWheelLegTargetMax"), bounds, strict=True):
+                    values = list(values)
+                    sign = 1 if name == "kWheelLegTargetMin" else -1
+                    for i in robot.leg_indices:
+                        values[i] += sign * training["joint_target_margin_rad"]
+                    text = ", ".join(f"{float(value)!r}f" for value in values)
+                    lines.append(f"static const float {name}[6] = {{{text}}};")
+                lines.append(f"#define WL_WHEEL_SPEED_LIMIT {float(training['wheel_speed_limit_rad_s'])!r}f")
+        lines.append(f"#define WL_ACTION_CLIP_ENABLED {int(policy.action_clip is not None)}")
+        if policy.action_clip is not None:
+            lines.append(f"#define WL_ACTION_CLIP {float(policy.action_clip)!r}f")
         for name, scale in (
             ("HEIGHT", policy.height_scale),
             ("ANGULAR_VELOCITY", policy.angular_velocity_scale),

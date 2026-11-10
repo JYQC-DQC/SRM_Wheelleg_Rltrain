@@ -1,6 +1,8 @@
 # SRM 轮腿 PPO
 
-首批实现：配置加载、35 维观测参考实现、C 接口头生成、35→256→128→64→6 的 PyTorch Actor、CPU 测试。尚未接入 Isaac Lab，不能开始正式训练。
+已实现配置/观测/Actor，以及 P1 行走、P2 小陀螺、P3 跳跃的七阶段训练代码、Isaac/PPO 入口、评测与 ONNX 导出。
+已同步 2026-11-10 的推进指南 v2.1。真实参数和 USD 仍缺失，尚未进行 Isaac/GPU 运行，不能开始正式训练。
+运行说明、阶段关系、缺参和验证边界见 [多策略训练说明](docs/TRAINING.md)。
 
 当前先训练真实无云台底盘，后续装云台再更新质量/质心/惯量并评测、续训。保留闭链和气弹簧。
 物理和 PD 500 Hz，推理 100 Hz。M3508 减速比 15.76:1；弹簧标称 450 N、行程 75 mm。
@@ -19,6 +21,7 @@ python -m tools.gen_c_config --robot config/robot.yaml --policy config/policies/
 ```
 
 配置检查列出的 MISSING 是尚待 CAD/实测的数据，不是建议填默认值。`--require-ready` 在未齐全时返回非零。
+指南 v2.1 的 `action_clip: null` 是“不裁剪原始输出”，不再列为缺参；腿/轮转换目标仍分别限位。
 目标云环境为用户提供的 Isaac Sim 5.1 / Isaac Lab 2.3.2 / Ubuntu 24.04 / CUDA 12.8 镜像；不在本机基础环境强装 Isaac。
 
 ## 两个仓库
@@ -41,5 +44,5 @@ python -m tools.gen_c_config --robot config/robot.yaml --policy config/policies/
 - 本机 mjlab 的 CUDA 13 / Torch 环境仅用于 CPU 数值检查，不代表目标 Isaac Lab 2.3.2 镜像已验证。
 - 后续到云端严格记录镜像自带 Python/Torch/Isaac 版本，不在已有镜像上无条件升级 torch。
 
-下一批：固件默认失能与同步控制、遥测记录；机械侧导出实际闭链 CAD 及质量惯量。
+后续：填写真实闭链资产、质量惯量、零点和辨识数据，再按训练说明完成目标镜像的冒烟和模型验收。
 缺少几何/标定/辨识数据时不能声明正式训练就绪。

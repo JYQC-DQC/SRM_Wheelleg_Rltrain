@@ -165,6 +165,5 @@ def missing_parameters(robot: RobotConfig, policy: PolicyConfig) -> list[str]:
         missing.extend(f"robot.{key}[{i}]" for i, x in enumerate(getattr(robot, key)) if x is None)
     for key in ("kp", "kd", "torque_limit_nm"):
         missing.extend(f"policy.{key}[{i}]" for i, x in enumerate(getattr(policy, key)) if x is None)
-    if policy.action_clip is None:
-        missing.append("policy.action_clip")
+    # Guide v2.1: null intentionally disables clipping of the raw policy output.
     return missing
