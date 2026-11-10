@@ -257,7 +257,10 @@ class WheelLegEnv(DirectRLEnv):
                 x = self.robot.data.root_pos_w[:, 0] - self.terrain.env_origins[:, 0]
                 allowed = (self.beam_start_x - x <= p["trigger_distance_m"]) & (x < self.beam_start_x)
             tunnel_height = self.beam_top_z + t.stage["tunnel"]["clearance_margin_m"] if t.task == "p3-tunnel" else None
-            self.jump.trigger(age, self.robot.data.root_pos_w[:, 2], allowed, target_height=tunnel_height)
+            self.jump.trigger(
+                age, self.robot.data.root_pos_w[:, 2], allowed, target_height=tunnel_height,
+                require_trigger_time=t.task != "p3-tunnel",
+            )
             started = (self.jump.active & ~was_active).nonzero().flatten()
             if t.task == "p3-tunnel":
                 self.jump.height[started] = self.beam_top_z[started] + t.stage["tunnel"]["clearance_margin_m"]
@@ -758,6 +761,8 @@ class WheelLegEnv(DirectRLEnv):
             root[recover, :3] += self.terrain.env_origins[env_ids[recover]]
             q[recover], qd[recover] = self.handover["joint_position"][rows], self.handover["joint_velocity"][rows]
             self.recovery_episode[env_ids] = recover
+        if self.jump is not None:
+            self.jump.reset(env_ids)
         if t.task == "p3-tunnel":
             self._reset_tunnel(env_ids)
             yaw = uniform(t.stage["tunnel"]["initial_yaw_range_rad"], (n,), self.device)
@@ -773,8 +778,6 @@ class WheelLegEnv(DirectRLEnv):
         if self.commands_fixed:
             self.commands.value[env_ids] = self.fixed_command[0]
             self.commands.height[env_ids] = self.fixed_command[1]
-        if self.jump is not None:
-            self.jump.reset(env_ids)
         for value in (
             self.airborne,
             self.air_enter,
@@ -815,6 +818,10 @@ class WheelLegEnv(DirectRLEnv):
         pose[:, :3] = self.terrain.env_origins[ids]
         pose[:, 0] += self.beam_start_x[ids] + p["beam_length_m"] / 2
         pose[:, 2] += self.beam_top_z[ids] - p["beam_thickness_m"] / 2
+        # Decide once at episode reset, not after the last requested jump is consumed.
+        no_jump = self.jump.remaining[ids] == 0
+        pose[no_jump] = pose.new_tensor(p["no_jump_beam_pose"])
+        pose[no_jump, :3] += self.terrain.env_origins[ids[no_jump]]
         self.beam.write_root_pose_to_sim(pose, ids)
 
     def _randomize_controls(self, ids: torch.Tensor) -> None:

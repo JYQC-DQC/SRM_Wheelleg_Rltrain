@@ -162,6 +162,8 @@ def _validate_training(cfg: TrainingConfig) -> None:
         raise ValueError(f"{cfg.policy_path}: missing training.command_curriculum.min_completed_episodes")
     if type(curriculum["min_completed_episodes"]) is not int or curriculum["min_completed_episodes"] <= 0:
         raise ValueError("command_curriculum.min_completed_episodes must be a positive integer")
+    if curriculum["min_completed_episodes"] < cfg.settings["num_envs"]:
+        raise ValueError("command_curriculum.min_completed_episodes must be >= training.num_envs")
     for key in ("observation_delay_steps", "action_delay_steps"):
         if key not in cfg.settings["evaluation"]:
             raise ValueError(f"{cfg.policy_path}: missing training.evaluation.{key}")
@@ -171,6 +173,8 @@ def _validate_training(cfg: TrainingConfig) -> None:
     duration = cfg.shared["randomization"]["external_wrench_duration_s"]
     if type(duration) not in (float, int) or not isfinite(duration) or duration <= 0:
         raise ValueError("external_wrench_duration_s must be finite and positive")
+    if duration < cfg.shared["randomization"]["push_interval_s"][1]:
+        raise ValueError("external_wrench_duration_s must be >= the upper bound of push_interval_s")
     collision_duration = cfg.settings["disturbance"]["collision_duration_s"]
     if type(collision_duration) not in (float, int) or not isfinite(collision_duration) or collision_duration <= 0:
         raise ValueError("collision_duration_s must be finite and positive")

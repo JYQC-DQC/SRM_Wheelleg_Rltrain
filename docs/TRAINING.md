@@ -92,6 +92,8 @@ python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot ru
 分别过滤横梁、左护栏和右护栏，使用 `force_matrix_w` 判定真实接触；删除包围球区域猜测。
 横梁施加给机器人向上的接触法向力用于顶面惩罚，需在真实资产上验证方向和过滤结果。
 跳高输入来自本回合横梁上表面高度加 `clearance_margin_m`，不独立随机；只采样 `tunnel.vx_range_m_s` 的正向速度，vy/wz=0。
+隧道仅按位置窗口触发，不再要求 age >= next_trigger；普通跳跃仍保留时间触发条件。
+每回合先采样跳跃次数，再放置横梁；次数为 0 时使用 `tunnel.no_jump_beam_pose`（环境局部 xyz + wxyz）把横梁移至地面下，保留正常直行指令。跳跃次数消耗完不在回合中途移动横梁。
 测得的 `feasible_height_m` 必须覆盖最大课程横梁高度、制造扰动和余量；隧道评测同样只用直行越障。
 刚体原点通过不等价于精确碰撞网格全部通过，完整几何净空仍需模型验收，不能以 CPU 检查替代。
 
@@ -100,14 +102,16 @@ python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot ru
 - 质量比例分子、分母都转到仿真设备。场景配置不含地形；`_setup_scene` 显式创建地形，克隆一次，仅 CPU 调用碰撞过滤。
 - 地面 static/dynamic friction 都为 1.0，friction/restitution combine mode 都为 multiply，参数来自 `robot.training.ground_material`。
 - 持续奖励乘 dt 并按 `reward_clip` 限幅；一次性 `termination`、`jump_apex`、`jump_landing`、`jump_impact`、`jump_asymmetric_landing`、`tunnel_crossing` 不乘 dt，也不受持续项限幅，权重为每次事件总量。termination=-4.0，其余权重不变；空中原有终止倍率保留。
-- 指令课程按完成回合窗口统计，`command_curriculum.min_completed_episodes` 必填，当前窗口起点为 100 回合；一个窗口至多升级一次，然后清空计数。均值分母用实际采样步数，不用随机初始化后的回合时钟。窗口状态写入 checkpoint。
-- 外力用 `permanent_wrench_composer`，每个物理步维护持续时间和清零；普通力矩脉冲用 `robot.training.randomization.external_wrench_duration_s`，侧向撞击用 `training.disturbance.collision_duration_s`。普通脉冲暂显式保留原先的 0.01 s，撞击保留 0.1 s；最后不足一物理步按占空比保冲量。
+- 指令课程按完成回合窗口统计，`command_curriculum.min_completed_episodes` 必填，当前为 4096，校验不得小于 `training.num_envs`；一个窗口至多升级一次，然后清空计数。均值分母用实际采样步数，不用随机初始化后的回合时钟。窗口状态写入 checkpoint。
+- 外力用 `permanent_wrench_composer`，每个物理步维护持续时间；`robot.training.randomization.external_wrench_duration_s=10.0`，校验不得小于 `push_interval_s` 上限。来源 SCUT `wheelbipe25_v3/env_cfg.py:161-170` 的 interval 事件：两次采样之间外力持续作用，新采样覆盖旧外力。侧向撞击仍用 `training.disturbance.collision_duration_s=0.1`；最后不足一物理步按占空比保冲量。
 - 外力来源：SCUT `source/agent_tasks/agent_tasks/manager/mdp/isaaclab/events.py:438-488`；新接口已核对本地 `runs/api_reference/events.py:1038-1043` 和 `wrench_composer.py:221`。
 - output_scale 在 DC 包络裁剪之后生效；执行器透传上限覆盖最大输出比例，避免二次裁掉随机化。电压仅缩放空载转速；髋力矩上限只按回合进度下降 0–10%。
 - 训练使用 `init_at_random_ep_len=True`；`params/run.json` 包含 `workspace_dirty`。
 
 必要 CPU 回归：`python -m pytest tests/test_review_fixes.py -q -s`。包括一次完整跳跃的事件奖励总量大于引导奖励总量、步长独立性、窗口课程、包络后缩放、必填配置和隧道指令。
 本次未启动 Isaac、GPU PPO、视频评测或实车；场景、PhysX 过滤接触、永久外力、GPU 设备修复仅经过源码核对与静态检查。
+
+后续按用户要求直接调整：课程窗口 4096、持续外力 10 s、P3 `jump_impact=-0.0001`、隧道位置触发和零跳跃回合隐藏横梁。这批调整未运行测试或静态检查。
 
 ## 当前边界
 
