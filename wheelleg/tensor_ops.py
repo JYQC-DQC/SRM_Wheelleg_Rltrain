@@ -97,3 +97,20 @@ def rotate_xy(vector: torch.Tensor, angle: torch.Tensor) -> torch.Tensor:
 def smooth_height(start: torch.Tensor, target: torch.Tensor, elapsed: torch.Tensor, duration: float) -> torch.Tensor:
     t = (elapsed / duration).clamp(0, 1)
     return start + (target - start) * t.square() * (3 - 2 * t)
+
+
+def reference_pd_torque(
+    q: torch.Tensor,
+    qd: torch.Tensor,
+    q_ref: torch.Tensor,
+    qd_ref: torch.Tensor,
+    kp: torch.Tensor,
+    kd: torch.Tensor,
+    limit: torch.Tensor,
+    output_scale: torch.Tensor,
+    wheels: list[int],
+) -> torch.Tensor:
+    """SCUT ideal-PD reference envelope, not an identified DC motor model."""
+    error = q_ref - q
+    error[:, wheels] = 0
+    return (kp * error + kd * (qd_ref - qd)).clamp(-limit, limit) * output_scale

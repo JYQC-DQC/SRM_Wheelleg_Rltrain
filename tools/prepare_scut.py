@@ -1,0 +1,92 @@
+"""Prepare a simulation-only SCUT profile for the latest P1 framework; never imports policy weights."""
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+import yaml
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--reference-package",
+        type=Path,
+        required=True,
+        help="SCUT source/agent_world directory containing agent_world/",
+    )
+    parser.add_argument("--output", type=Path, default=Path("runs/scut_latest"))
+    from isaaclab.app import AppLauncher
+
+    AppLauncher.add_app_launcher_args(parser)
+    args = parser.parse_args()
+    package = args.reference_package.resolve()
+    usd = package / "agent_world/assets/usd_files/wheelbipeV14_2_1/wheelbipeV14_2.usd"
+    asset_py = package / "agent_world/assets/wheelbipe_V14_2.py"
+    for file in (usd, asset_py):
+        if not file.is_file():
+            raise FileNotFoundError(file)
+    app = AppLauncher(args).app
+    try:
+        from pxr import Usd, UsdGeom, UsdPhysics
+
+        root = Path(__file__).resolve().parents[1]
+        robot = yaml.safe_load((root / "config/reference/scut_robot.template.yaml").read_text(encoding="utf-8"))
+        stage = Usd.Stage.Open(str(usd))
+        if UsdGeom.GetStageMetersPerUnit(stage) != 1.0:
+            raise ValueError("Expected SCUT meter-based USD")
+        joints = {p.GetName(): p for p in stage.Traverse() if p.IsA(UsdPhysics.Joint)}
+        bodies = [p.GetName() for p in stage.Traverse() if p.HasAPI(UsdPhysics.RigidBodyAPI)]
+        if len(bodies) != len(set(bodies)):
+            raise ValueError("USD body names must be unique")
+        asset = robot["asset"]
+        for name in asset["active_joint_names"] + asset["spring_joint_names"]:
+            if name not in joints:
+                raise ValueError(f"USD missing joint {name}")
+        pivots = []
+        for side in ("left", "right"):
+            anchors = []
+            for part in ("front", "rear"):
+                joint = UsdPhysics.Joint(joints[f"{side}_{part}1_joint"])
+                if [p.name for p in joint.GetBody0Rel().GetTargets()] != ["base_link"]:
+                    raise ValueError("Hip anchor parent is not base_link")
+                anchors.append(list(joint.GetLocalPos0Attr().Get()))
+            pivots.append([(a + b) / 2 for a, b in zip(*anchors, strict=True)])
+        spans = []
+        for name in asset["spring_joint_names"]:
+            joint = UsdPhysics.PrismaticJoint(joints[name])
+            spans.append(float(joint.GetUpperLimitAttr().Get() - joint.GetLowerLimitAttr().Get()))
+        if min(spans) <= 0 or abs(spans[0] - spans[1]) > 1e-6:
+            raise ValueError("Unexpected spring stroke")
+        robot["spring_stroke_m"] = spans[0]
+        robot["training"]["hip_pivot_positions_b_m"] = pivots
+        asset.update(usd_path=str(usd), reference_package=str(package), collision_body_names=bodies)
+        report = {
+            "target": "SCUT reference simulation only; NOT SRM calibration",
+            "files_sha256": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (usd, asset_py)},
+            "body_names": bodies,
+            "spring_stroke_m": spans,
+            "hip_pivots_b_m": pivots,
+            "initialization": "random network; no old checkpoint or teacher",
+        }
+        args.output.mkdir(parents=True, exist_ok=False)
+        (args.output / "robot.yaml").write_text(yaml.safe_dump(robot, sort_keys=False), encoding="utf-8")
+        (args.output / "policy_meta.yaml").write_bytes((root / "config/reference/scut_p1.yaml").read_bytes())
+        (args.output / "reference_manifest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        from wheelleg.training import load_training
+
+        cfg = load_training("p1-flat", args.output / "robot.yaml", args.output / "policy_meta.yaml")
+        cfg.require_ready()
+        print("SCUT_PROFILE_READY", str(args.output.resolve()), flush=True)
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        raise
+    finally:
+        app.close()
+
+
+if __name__ == "__main__":
+    main()

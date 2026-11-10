@@ -24,6 +24,7 @@ from wheelleg.tensor_ops import (
     motor_torque,
     observation_noise,
     observation_tensor,
+    reference_pd_torque,
     rotate_xy,
     smooth_height,
     spring_force,
@@ -53,15 +54,16 @@ class WheelLegEnv(DirectRLEnv):
         self.target_lower, self.target_upper = self.lower.clone(), self.upper.clone()
         self.target_lower[self.legs] += t.shared["joint_target_margin_rad"]
         self.target_upper[self.legs] -= t.shared["joint_target_margin_rad"]
-        self.robot.write_joint_position_limit_to_sim(
-            torch.stack((self.lower[self.legs], self.upper[self.legs]), -1).expand(n, -1, -1),
-            joint_ids=[self.joints[i] for i in self.legs],
-        )
+        if t.asset.get("reference_preset") != "scut_v14_2":
+            self.robot.write_joint_position_limit_to_sim(
+                torch.stack((self.lower[self.legs], self.upper[self.legs]), -1).expand(n, -1, -1),
+                joint_ids=[self.joints[i] for i in self.legs],
+            )
         self.nominal_friction = torch.tensor(t.shared["joint_coulomb_friction"], device=d)
         self.nominal_dynamic_friction = torch.tensor(t.shared["joint_dynamic_friction"], device=d)
         self.nominal_viscous_friction = torch.tensor(t.shared["joint_viscous_friction"], device=d)
-        self.kp = torch.tensor(t.policy.kp, device=d).expand(n, -1).clone()
-        self.kd = torch.tensor(t.policy.kd, device=d).expand(n, -1).clone()
+        self.kp = torch.tensor(t.policy.kp, dtype=torch.float32, device=d).expand(n, -1).clone()
+        self.kd = torch.tensor(t.policy.kd, dtype=torch.float32, device=d).expand(n, -1).clone()
         self.output_scale = torch.ones(n, 6, device=d)
         self.power_scale = torch.ones(n, 1, device=d)
         self.voltage = torch.ones(n, 1, device=d)
@@ -175,7 +177,7 @@ class WheelLegEnv(DirectRLEnv):
         if self.cfg.height_scanner is not None:
             self.scanner = RayCaster(self.cfg.height_scanner)
             self.scene.sensors["height"] = self.scanner
-        # 改自 SCUT wheelbipe25_v3/env.py:2731-2741: explicit terrain, then one clone.
+        # 鏀硅嚜 SCUT wheelbipe25_v3/env.py:2731-2741: explicit terrain, then one clone.
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
@@ -311,7 +313,7 @@ class WheelLegEnv(DirectRLEnv):
                 self.collision_timer[collision_ids] = uniform(schedule["collision_interval_s"], (count,), self.device)
 
     def _apply_wrench(self) -> None:
-        # 改自 SCUT manager/mdp/isaaclab/events.py:438-488: local-frame force/torque sampling.
+        # 鏀硅嚜 SCUT manager/mdp/isaaclab/events.py:438-488: local-frame force/torque sampling.
         # Isaac 2.3.2 events.py:1038-1043 and wrench_composer.py:221 verify the new API.
         # Scale the last partial physics step to preserve the configured impulse.
         push_fraction = (self.push_remaining / self.physics_dt).clamp(0, 1)[:, None, None]
@@ -351,20 +353,25 @@ class WheelLegEnv(DirectRLEnv):
         limit = q.new_tensor(t.policy.torque_limit_nm).expand_as(q).clone()
         limit[:, self.wheel_channels] *= self.power_scale
         limit[:, self.legs] *= hip_limit_scale
-        speed = q.new_tensor(t.shared["no_load_speed_rad_s"]) * self.voltage
-        commanded_torque = motor_torque(
-            q,
-            qd,
-            q_ref,
-            qd_ref,
-            self.kp,
-            self.kd,
-            limit,
-            q.new_tensor(t.shared["saturation_torque_nm"]),
-            speed,
-            self.output_scale,
-            self.wheel_channels,
-        )
+        if t.asset.get("reference_preset") == "scut_v14_2":
+            commanded_torque = reference_pd_torque(
+                q, qd, q_ref, qd_ref, self.kp, self.kd, limit, self.output_scale, self.wheel_channels
+            )
+        else:
+            speed = q.new_tensor(t.shared["no_load_speed_rad_s"]) * self.voltage
+            commanded_torque = motor_torque(
+                q,
+                qd,
+                q_ref,
+                qd_ref,
+                self.kp,
+                self.kd,
+                limit,
+                q.new_tensor(t.shared["saturation_torque_nm"]),
+                speed,
+                self.output_scale,
+                self.wheel_channels,
+            )
         self.torque = commanded_torque
         if t.task == "p1-recovery":
             disabled = self.recovery_episode & (self.episode_length_buf * self.step_dt < t.stage["zero_torque_s"])
@@ -813,8 +820,8 @@ class WheelLegEnv(DirectRLEnv):
     def _randomize_controls(self, ids: torch.Tensor) -> None:
         t, n, d = self.training, len(ids), self.device
         r = t.shared["randomization"]
-        self.kp[ids] = torch.tensor(t.policy.kp, device=d)
-        self.kd[ids] = torch.tensor(t.policy.kd, device=d)
+        self.kp[ids] = torch.tensor(t.policy.kp, dtype=torch.float32, device=d)
+        self.kd[ids] = torch.tensor(t.policy.kd, dtype=torch.float32, device=d)
         self.output_scale[ids] = 1
         self.power_scale[ids] = 1
         self.voltage[ids] = 1
@@ -839,6 +846,10 @@ class WheelLegEnv(DirectRLEnv):
         viscous_friction[:, self.legs] += uniform(r["hip_viscous_friction_add"], (n, 4), d)
         static_friction[:, self.wheel_channels] += uniform(r["wheel_static_friction_add"], (n, 2), d)
         dynamic_friction = torch.minimum(dynamic_friction, static_friction)
+        # PhysX checks static >= dynamic on EACH setter, including the previous reset values.
+        self.robot.write_joint_dynamic_friction_coefficient_to_sim(
+            torch.zeros_like(dynamic_friction), joint_ids=self.joints, env_ids=ids
+        )
         self.robot.write_joint_friction_coefficient_to_sim(static_friction, joint_ids=self.joints, env_ids=ids)
         self.robot.write_joint_dynamic_friction_coefficient_to_sim(dynamic_friction, joint_ids=self.joints, env_ids=ids)
         self.robot.write_joint_viscous_friction_coefficient_to_sim(viscous_friction, joint_ids=self.joints, env_ids=ids)
@@ -860,4 +871,6 @@ class WheelLegEnv(DirectRLEnv):
             (self.obs_delay, r["observation_delay_steps"]),
             (self.act_delay, r["action_delay_steps"]),
         ):
-            buffer.set_time_lag(torch.randint(bounds[0], bounds[1] + 1, (n,), device=d), ids)
+            buffer.set_time_lag(
+                torch.randint(bounds[0], bounds[1] + 1, (n,), device=d, dtype=buffer.time_lags.dtype), ids
+            )

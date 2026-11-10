@@ -41,7 +41,11 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
         stiffness=0.0,
         damping=0.0,
         effort_limit={
-            n: max(t.policy.torque_limit_nm[i], physics["saturation_torque_nm"][i])
+            n: (
+                t.policy.torque_limit_nm[i]
+                if asset.get("reference_preset") == "scut_v14_2"
+                else max(t.policy.torque_limit_nm[i], physics["saturation_torque_nm"][i])
+            )
             * physics["randomization"]["hip_torque_scale" if i in t.robot.leg_indices else "wheel_torque_scale"][1]
             for i, n in enumerate(names)
         },
@@ -84,6 +88,26 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
         ),
         actuators=actuators,
     )
+    if asset.get("reference_preset") == "scut_v14_2":
+        # Preserve source passive/guide and gimbal actuators; replace only the six motors and springs.
+        import sys
+
+        sys.path.insert(0, asset["reference_package"])
+        from agent_world.assets.wheelbipe_V14_2 import Wheelbipe_V14_2_CFG
+
+        reference = Wheelbipe_V14_2_CFG.copy()
+        reference.prim_path = robot.prim_path
+        reference.spawn.usd_path = asset["usd_path"]
+        reference.init_state = robot.init_state
+        active.velocity_limit = {
+            **reference.actuators["legs_act"].velocity_limit,
+            ".*_wheel_joint": reference.actuators["wheel"].velocity_limit,
+        }
+        actuators["spring"].armature = reference.actuators["spring"].armature
+        for name in ("legs_act", "wheel", "spring"):
+            del reference.actuators[name]
+        reference.actuators.update(actuators)
+        robot = reference
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="plane",

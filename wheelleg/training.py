@@ -84,7 +84,17 @@ class TrainingConfig:
         return (
             missing_parameters(self.robot, self.policy)
             + null_fields(asset, "robot.asset")
-            + null_fields(self.shared, "robot.training")
+            + null_fields(
+                {
+                    k: v
+                    for k, v in self.shared.items()
+                    if not (
+                        self.asset.get("reference_preset") == "scut_v14_2"
+                        and k in ("no_load_speed_rad_s", "saturation_torque_nm")
+                    )
+                },
+                "robot.training",
+            )
             + null_fields(settings, "policy.training")
             + null_fields(stage, f"policy.stages.{TASKS[self.task].stage}")
         )
@@ -96,6 +106,10 @@ class TrainingConfig:
         usd = Path(self.asset["usd_path"])
         if not usd.is_file():
             raise ValueError(f"robot.asset.usd_path: file does not exist: {usd}")
+        if self.asset.get("reference_preset") == "scut_v14_2":
+            module = Path(self.asset["reference_package"]) / "agent_world/assets/wheelbipe_V14_2.py"
+            if not module.is_file():
+                raise ValueError(f"Missing SCUT reference asset module: {module}")
         if self.task == "p1-recovery" and not Path(self.stage["handover_states_npz"]).is_file():
             raise ValueError("handover_states_npz must name a real recovery handover state library")
         transition = self.settings["transition_reset"]
@@ -133,6 +147,9 @@ def load_training(task: str, robot_path: str | Path, policy_path: str | Path) ->
         raise ValueError(f"Training configuration missing field {error.args[0]}") from error
     if (robot.control_hz, robot.policy_hz) != (500, 100):
         raise ValueError("Training contract requires 500 Hz physics/PD and 100 Hz policy")
+    if cfg.asset.get("reference_preset") is not None:
+        if cfg.asset["reference_preset"] != "scut_v14_2" or robot.variant != "reference_simulation_only":
+            raise ValueError("Reference preset requires an explicitly simulation-only robot profile")
     if cfg.settings["ppo"]["gamma"] != 0.995 or cfg.settings["rollout_steps"] != 48:
         raise ValueError("PPO timing contract requires gamma=0.995 and rollout_steps=48")
     _validate_training(cfg)

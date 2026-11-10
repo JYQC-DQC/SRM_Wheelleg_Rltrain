@@ -96,8 +96,18 @@ def main() -> None:
             elif args.initialize_from:
                 initialize_actor(runner, args.initialize_from)
             runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+            raise
         finally:
             env.close()
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        raise
     finally:
         app.close()
 
