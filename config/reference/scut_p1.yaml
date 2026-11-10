@@ -183,7 +183,7 @@ training:
     wheel_torque_sigma: 1.5
     wheel_speed_alignment: -10.0
   command_curriculum:
-    min_completed_episodes: 100
+    min_completed_episodes: 4096
     initial_fraction: 0.25
     increment: 0.05
     success_fraction: 0.8
