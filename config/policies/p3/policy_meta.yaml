@@ -132,7 +132,7 @@ training:
     jump_push_symmetry: 0.05
     jump_tuck: 1.7
     jump_prepare: 0.5
-    jump_impact: -0.001
+    jump_impact: -0.0001
     jump_asymmetric_landing: -1.0
     uncommanded_flight: -1.0
     leg_symmetry: 0.0
@@ -169,7 +169,7 @@ training:
     wheel_torque_sigma: 1.5
     wheel_speed_alignment: -10.0
   command_curriculum:
-    min_completed_episodes: 100
+    min_completed_episodes: 4096
     initial_fraction: 1.0
     increment: 0.05
     success_fraction: 0.8
@@ -251,6 +251,8 @@ stages:
       beam_height_m: 0.27
       beam_length_m: 0.35
       beam_thickness_m: 0.02
+      # Environment-local pose [x, y, z, qw, qx, qy, qz] for zero-jump episodes.
+      no_jump_beam_pose: [0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0]
       lane_width_m: 0.8
       rail_height_m: 0.2
       lane_length_m: 2.9

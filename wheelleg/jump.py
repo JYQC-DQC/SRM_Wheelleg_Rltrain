@@ -53,9 +53,12 @@ class JumpEvent:
         self.next_trigger[ids] = uniform(self.settings["first_trigger_range_s"], (len(ids),), self.device)
 
     def trigger(
-        self, age: torch.Tensor, z: torch.Tensor, allowed: torch.Tensor, target_height: torch.Tensor | None = None
+        self, age: torch.Tensor, z: torch.Tensor, allowed: torch.Tensor, target_height: torch.Tensor | None = None,
+        *, require_trigger_time: bool = True,
     ) -> None:
-        start = ~self.active & (self.remaining > 0) & (age >= self.next_trigger) & allowed
+        start = ~self.active & (self.remaining > 0) & allowed
+        if require_trigger_time:
+            start &= age >= self.next_trigger
         ids = start.nonzero().flatten()
         if not len(ids):
             return

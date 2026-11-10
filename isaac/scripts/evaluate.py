@@ -63,6 +63,9 @@ def main() -> None:
                     raw.jump.remaining[:] = case.jump_count
                     raw.fixed_jump_height = case.jump_height
                     raw.jump.next_trigger[:] = cfg.stage["first_trigger_range_s"][0]
+                    if cfg.task == "p3-tunnel":
+                        # Fixed evaluation count overrides the reset sample; restore/hide the beam accordingly.
+                        raw._reset_tunnel(torch.arange(count, device=args.device))
                 obs = raw._get_observations()
                 alive = torch.ones(count, dtype=torch.bool, device=args.device)
                 failed = torch.zeros_like(alive)

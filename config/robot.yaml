@@ -110,8 +110,9 @@ training:
     push_velocity_m_s: 0.25
     external_force_n: 10.0
     external_torque_nm: 1.0
-    # Preserve the previous one-policy-step pulse; duration is now explicit.
-    external_wrench_duration_s: 0.01
+    # SCUT wheelbipe25_v3/env_cfg.py:161-170: interval event; external wrench
+    # persists between samples (interval 5-10 s), rather than a one-step pulse.
+    external_wrench_duration_s: 10.0
   termination:
     tilt_rad: 0.6981317007977318
     airborne_tilt_rad: null
