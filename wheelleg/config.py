@@ -5,6 +5,16 @@ from pathlib import Path
 import yaml
 
 
+# Shared actor/critic raw-quantity limits; SCUT wheelbipe_V14/cfg_utils.py:75-124.
+OBSERVATION_CLIP_FIELDS = (
+    "command", "height", "angular_velocity", "gravity", "joint_position",
+    "joint_velocity", "previous_action", "mode", "base_linear_velocity", "base_height",
+    "torque", "wheel_linear_velocity", "kp", "kd", "delay_steps", "mass_ratio",
+    "wheel_contact", "material", "spring_force", "voltage_scale", "power_scale",
+    "command_error", "height_scan",
+)
+
+
 @dataclass(frozen=True)
 class RobotConfig:
     name: str
@@ -22,6 +32,7 @@ class RobotConfig:
     motor_direction: tuple[int | None, ...]
     can_bus: tuple[int, ...]
     pending_measurements: tuple[str, ...]
+    observation_clip: tuple[tuple[str, tuple[float, float]], ...]
 
     @property
     def decimation(self) -> int:
@@ -94,6 +105,15 @@ def load_robot(path: str | Path) -> RobotConfig:
         if any(type(x) is not int or x not in (1, 2, 3) for x in buses):
             raise ValueError(f"{path}: can_bus must contain integer bus indices 1..3")
         pending = tuple(key for key, value in data["pending_measurements"].items() if value is None)
+        clips = []
+        for key in OBSERVATION_CLIP_FIELDS:
+            field = f"training.observation_clip.{key}"
+            if key not in data["training"]["observation_clip"]:
+                raise ValueError(f"{path}: missing required field {field}")
+            bounds = _vector(data["training"]["observation_clip"][key], 2, f"{path}:{field}")
+            if bounds[0] >= bounds[1]:
+                raise ValueError(f"{path}:{field}: expected lower < upper")
+            clips.append((key, bounds))
         return RobotConfig(
             name=data["name"],
             variant=data["variant"],
@@ -107,6 +127,7 @@ def load_robot(path: str | Path) -> RobotConfig:
             wheel_indices=tuple(wheels),
             can_bus=buses,
             pending_measurements=pending,
+            observation_clip=tuple(clips),
             **vectors,
         )
     except KeyError as error:
