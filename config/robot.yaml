@@ -44,6 +44,40 @@ asset:
   collision_body_names: null
 
 training:
+  # SCUT wheelbipe_V14/cfg_utils.py:75-124; clip raw quantities BEFORE scaling.
+  observation_clip:
+    command: [-100.0, 100.0]
+    height: [0.0, 1.0]
+    angular_velocity: [-100.0, 100.0]
+    gravity: [-100.0, 100.0]
+    joint_position: [-100.0, 100.0]
+    joint_velocity: [-200.0, 200.0]
+    previous_action: [-100.0, 100.0]
+    mode: [-100.0, 100.0]
+    base_linear_velocity: [-100.0, 100.0]
+    base_height: [-10.0, 10.0]
+    torque: [-100.0, 100.0]
+    wheel_linear_velocity: [-100.0, 100.0]
+    kp: [-100.0, 100.0]
+    kd: [-100.0, 100.0]
+    delay_steps: [-100.0, 100.0]
+    mass_ratio: [-10.0, 10.0]
+    wheel_contact: [0.0, 1.0]
+    material: [-100.0, 100.0]
+    spring_force: [-1000.0, 1000.0]
+    voltage_scale: [-100.0, 100.0]
+    power_scale: [-100.0, 100.0]
+    command_error: [-100.0, 100.0]
+    height_scan: [-10.0, 10.0]
+  # SCUT wheelbipe25_v3/env.py:4918-4947; physical-state termination, not observation clipping.
+  numerical_safety:
+    joint_velocity_abs_max: 500.0
+    base_linear_velocity_abs_max: 100.0
+    base_angular_velocity_abs_max: 200.0
+  # SCUT wheelbipe_V14/cfg_utils.py:133.
+  critic_torque_scale: 0.05
+  spawn_clearance_m: 0.01
+  spawn_clearance_max_m: 0.03
   # Numerical settings and guide starting ranges, not identified robot parameters.
   env_spacing_m: 8.0
   gravity_m_s2: 9.81

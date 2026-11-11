@@ -18,9 +18,11 @@ from wheelleg.curriculum import CommandCurriculum, JumpCurriculum
 from wheelleg.jump import JumpEvent, tunnel_landing
 from wheelleg.randomization import disturbance_progress, perturb_sensors
 from wheelleg.rewards import EVENT_TERMS, compute_rewards
+from wheelleg.safety import airborne_enabled, numerical_failure
 from wheelleg.tasks import TASKS
 from wheelleg.tensor_ops import (
     action_targets,
+    clipped_component,
     motor_torque,
     observation_noise,
     observation_tensor,
@@ -73,6 +75,11 @@ class WheelLegEnv(DirectRLEnv):
         self.raw_action = torch.zeros_like(self.torque)
         self.previous_action = torch.zeros_like(self.torque)
         self.bad_action = torch.zeros(n, dtype=torch.bool, device=d)
+        self.numerical_bad = torch.zeros(n, dtype=torch.bool, device=d)
+        self.iteration_raw_action_max = torch.zeros((), device=d)
+        self.iteration_numerical_terminations = torch.zeros((), dtype=torch.long, device=d)
+        self.spawn_checked = False
+        self.spawn_check_mask = torch.ones(n, dtype=torch.bool, device=d)
         self.action_ticks = torch.zeros(n, dtype=torch.long, device=d)
         self.commands = Commands(t, n, d)
         self.command_curriculum = CommandCurriculum(t.settings["command_curriculum"]) if self.family == "p1" else None
@@ -240,6 +247,8 @@ class WheelLegEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         t = self.training
+        maximum = torch.nan_to_num(actions.abs(), nan=float("inf"), posinf=float("inf")).amax()
+        self.iteration_raw_action_max = torch.maximum(self.iteration_raw_action_max, maximum)
         self.previous_action.copy_(self.raw_action)
         self.bad_action = ~torch.isfinite(actions).all(-1)
         self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
@@ -461,23 +470,31 @@ class WheelLegEnv(DirectRLEnv):
         )
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        self.numerical_bad = numerical_failure(
+            self.robot.data.joint_vel, self.robot.data.root_lin_vel_b,
+            self.robot.data.root_ang_vel_b, self.training.shared["numerical_safety"])
+        self.iteration_numerical_terminations += self.numerical_bad.sum()
         self._record_contacts()
         s = self._measure()
         t, dt = self.training, self.step_dt
-        air = t.shared["airborne"]
-        candidate = ~s["wheel_contact"].any(-1) & (s["clearance"].amin(-1) > air["wheel_clearance_m"])
-        candidate &= s["base_height"] > air["base_height_m"]
-        self.air_enter = torch.where(candidate, self.air_enter + dt, 0)
-        self.air_exit = torch.where(s["wheel_contact"].any(-1), self.air_exit + dt, 0)
-        self.airborne |= self.air_enter >= air["enter_duration_s"]
-        self.air_elapsed = torch.where(self.airborne, self.air_elapsed + dt, 0)
-        self.airborne &= (self.air_exit < air["exit_duration_s"]) & (self.air_elapsed < air["max_duration_s"])
-        tilt_limit = torch.where(
-            self.airborne, t.shared["termination"]["airborne_tilt_rad"], t.shared["termination"]["tilt_rad"]
-        )
+        if airborne_enabled(t.task):
+            air = t.shared["airborne"]
+            candidate = ~s["wheel_contact"].any(-1) & (s["clearance"].amin(-1) > air["wheel_clearance_m"])
+            candidate &= s["base_height"] > air["base_height_m"]
+            self.air_enter = torch.where(candidate, self.air_enter + dt, 0)
+            self.air_exit = torch.where(s["wheel_contact"].any(-1), self.air_exit + dt, 0)
+            self.airborne |= self.air_enter >= air["enter_duration_s"]
+            self.air_elapsed = torch.where(self.airborne, self.air_elapsed + dt, 0)
+            self.airborne &= (self.air_exit < air["exit_duration_s"]) & (self.air_elapsed < air["max_duration_s"])
+            tilt_limit = torch.where(
+                self.airborne, t.shared["termination"]["airborne_tilt_rad"], t.shared["termination"]["tilt_rad"]
+            )
+        else:
+            self.airborne.zero_()
+            tilt_limit = t.shared["termination"]["tilt_rad"]
         tilt_fail = (s["roll"].abs() > tilt_limit) | (s["pitch"].abs() > tilt_limit)
         body_hit = (self.contact_peaks[:, self.contact_base] > t.shared["termination"]["contact_force_n"]).any(-1)
-        terminated = ((tilt_fail | body_hit) & ~self.recovery_episode) | self.bad_action
+        terminated = ((tilt_fail | body_hit) & ~self.recovery_episode) | self.bad_action | self.numerical_bad
         timeout = self.episode_length_buf >= self.max_episode_length - 1
         if t.task == "p1-recovery":
             timeout |= self.recovery_episode & (self.episode_length_buf * dt >= t.stage["recovery_timeout_s"])
@@ -596,6 +613,8 @@ class WheelLegEnv(DirectRLEnv):
             terms[name] = (
                 value if name in EVENT_TERMS else value.clamp(-t.settings["reward_clip"], t.settings["reward_clip"])
             )
+            # SCUT wheelbipe25_v3/env.py:4007-4018: mask with where, never NaN * 0.
+            terms[name] = torch.where(self.numerical_bad, 0.0, terms[name])
             if name not in self.reward_sums:
                 self.reward_sums[name] = torch.zeros(n, device=self.device)
             self.reward_sums[name] += terms[name]
@@ -660,39 +679,57 @@ class WheelLegEnv(DirectRLEnv):
             )
 
         clean = observation_tensor(t.robot, t.policy, make_fields(sensor))
-        actor = observation_tensor(t.robot, t.policy, make_fields(self.delayed_sensor))
-        if not self.cfg.evaluation:
-            actor = actor + (2 * torch.rand_like(actor) - 1) * self.noise
+        noise = None if self.cfg.evaluation else (2*torch.rand_like(clean)-1)*self.noise
+        actor = observation_tensor(t.robot, t.policy, make_fields(self.delayed_sensor), noise=noise)
+        clips = dict(t.robot.observation_clip)
+        def component(name, value, scale=1.0):
+            return clipped_component(value, clips[name], scale)
         privileged = torch.cat(
             (
-                self.kp,
-                self.kd,
-                self.torque,
-                self.obs_delay.time_lags[:, None],
-                self.act_delay.time_lags[:, None],
-                s["wheel_velocity_b"].flatten(1),
-                s["wheel_contact"].float(),
-                self.mass_ratio,
-                self.wheel_material,
-                self.spring_bias,
-                self.voltage,
-                self.power_scale,
+                component("kp", self.kp),
+                component("kd", self.kd),
+                component("torque", self.torque, t.shared["critic_torque_scale"]),
+                component("delay_steps", self.obs_delay.time_lags[:, None]),
+                component("delay_steps", self.act_delay.time_lags[:, None]),
+                component("wheel_linear_velocity", s["wheel_velocity_b"].flatten(1)),
+                component("wheel_contact", s["wheel_contact"].float()),
+                component("mass_ratio", self.mass_ratio),
+                component("material", self.wheel_material),
+                component("spring_force", self.spring_bias),
+                component("voltage_scale", self.voltage),
+                component("power_scale", self.power_scale),
             ),
             -1,
         )
         critic = torch.cat(
             (
                 clean,
-                s["velocity"],
-                s["base_height"][:, None],
+                component("base_linear_velocity", s["velocity"]),
+                component("base_height", s["base_height"][:, None]),
                 privileged,
-                torch.stack((s["linear_error"], s["angular_error"], s["height_error"]), -1),
+                component("command_error", torch.stack((s["linear_error"], s["angular_error"], s["height_error"]), -1)),
             ),
             -1,
         )
         if self.scanner is not None:
-            critic = torch.cat((critic, self.robot.data.root_pos_w[:, 2:3] - self.scanner.data.ray_hits_w[:, :, 2]), -1)
+            scan = self.robot.data.root_pos_w[:, 2:3]-self.scanner.data.ray_hits_w[:, :, 2]
+            critic = torch.cat((critic, component("height_scan", scan)), -1)
         return {"policy": actor, "critic": critic}
+
+    def reset(self, seed: int | None = None, options: dict | None = None):
+        # DirectRLEnv.reset (api_reference/direct_env.py:313-331) calls sim.forward before returning.
+        result = super().reset(seed=seed, options=options)
+        if not self.spawn_checked:
+            clearance = (self.robot.data.body_pos_w[:, self.wheels, 2]-self.terrain.env_origins[:, 2:3]
+                         - self.training.shared["wheel_radius_m"])
+            values = clearance[self.spawn_check_mask]
+            maximum = self.training.shared["spawn_clearance_max_m"]
+            bad = ~torch.isfinite(values) | (values > maximum)
+            if bad.any():
+                measured = values[bad].detach().cpu().tolist()
+                raise ValueError(f"Initial wheel-bottom clearance exceeds {maximum} m or is non-finite: {measured[:16]} m")
+            self.spawn_checked = True
+        return result
 
     def _reset_idx(self, env_ids: torch.Tensor) -> None:
         t = self.training
@@ -732,11 +769,13 @@ class WheelLegEnv(DirectRLEnv):
             self.terrain.update_env_origins(env_ids, (distance > size / 2) & ran, (distance < size / 4) & ran)
         super()._reset_idx(env_ids)
         n = len(env_ids)
+        self.spawn_check_mask[env_ids] = True
         root = self.robot.data.default_root_state[env_ids].clone()
         root[:, :3] += self.terrain.env_origins[env_ids]
         q, qd = self.robot.data.default_joint_pos[env_ids].clone(), self.robot.data.default_joint_vel[env_ids].clone()
         if self.transition_states is not None and not self.cfg.evaluation:
             selected = torch.rand(n, device=self.device) < t.settings["transition_reset"]["probability"]
+            self.spawn_check_mask[env_ids[selected]] = False
             rows = torch.randint(len(self.transition_states["root_state"]), (int(selected.sum()),), device=self.device)
             root[selected] = self.transition_states["root_state"][rows]
             root[selected, :3] += self.terrain.env_origins[env_ids[selected]]
@@ -745,10 +784,12 @@ class WheelLegEnv(DirectRLEnv):
         self.recovery_episode[env_ids] = False
         if self.family == "p1" and t.stage["air_reset_probability"] > 0:
             air = torch.rand(n, device=self.device) < t.stage["air_reset_probability"]
+            self.spawn_check_mask[env_ids[air]] = False
             root[:, 2] += uniform(t.stage["air_height_offset_m"], (n,), self.device) * air
             root[:, 7] = torch.where(air, uniform(t.stage["air_vx_range_m_s"], (n,), self.device), root[:, 7])
         if t.task == "p1-recovery":
             recover = torch.rand(n, device=self.device) < t.stage["recovery_probability"]
+            self.spawn_check_mask[env_ids[recover]] = False
             rows = torch.randint(len(self.handover["root_state"]), (int(recover.sum()),), device=self.device)
             root[recover] = self.handover["root_state"][rows]
             root[recover, :3] += self.terrain.env_origins[env_ids[recover]]

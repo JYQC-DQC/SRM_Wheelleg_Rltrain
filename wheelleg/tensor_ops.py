@@ -6,21 +6,32 @@ from .config import PolicyConfig, RobotConfig
 from .observation import OBS_FIELDS
 
 
-def observation_tensor(robot: RobotConfig, policy: PolicyConfig, fields: dict[str, torch.Tensor]) -> torch.Tensor:
+def clipped_component(values: torch.Tensor, bounds: tuple[float, float], scale: float = 1.0) -> torch.Tensor:
+    return torch.nan_to_num(values.clamp(*bounds)*scale, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def observation_tensor(robot: RobotConfig, policy: PolicyConfig, fields: dict[str, torch.Tensor],
+                       noise: torch.Tensor | None = None) -> torch.Tensor:
     q = torch.zeros_like(fields["joint_position"])
     indices = list(robot.leg_indices)
     default = q.new_tensor([robot.q_default_rad[i] for i in indices])
     q[:, indices] = fields["joint_position"][:, indices] - default
-    values = {
-        **fields,
-        "command": fields["command"] * q.new_tensor(policy.command_scale),
-        "height": fields["height"] * policy.height_scale,
-        "angular_velocity": fields["angular_velocity"] * policy.angular_velocity_scale,
-        "gravity": fields["gravity"] * policy.gravity_scale,
-        "joint_position": q * policy.joint_position_scale,
-        "joint_velocity": fields["joint_velocity"] * policy.joint_velocity_scale,
-    }
-    return torch.cat([values[name] for name, _ in OBS_FIELDS], dim=-1)
+    values = {**fields, "joint_position": q}
+    scales = dict(command=q.new_tensor(policy.command_scale), height=policy.height_scale,
+                  angular_velocity=policy.angular_velocity_scale, gravity=policy.gravity_scale,
+                  joint_position=policy.joint_position_scale, joint_velocity=policy.joint_velocity_scale,
+                  previous_action=1.0, mode=1.0)
+    clips = dict(robot.observation_clip)
+    parts = []
+    offset = 0
+    for name, width in OBS_FIELDS:
+        raw = values[name]
+        if noise is not None:
+            # noise is expressed in scaled observation units; apply it before the physical clip.
+            raw = raw+noise[:, offset:offset+width]/scales[name]
+        parts.append(clipped_component(raw, clips[name], scales[name]))
+        offset += width
+    return torch.cat(parts, dim=-1)
 
 
 def observation_noise(robot: RobotConfig, policy: PolicyConfig, settings: dict, device: str) -> torch.Tensor:
