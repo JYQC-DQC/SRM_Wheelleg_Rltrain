@@ -1,5 +1,5 @@
-from rsl_rl.runners import OnPolicyRunner
 import torch
+from rsl_rl.runners import OnPolicyRunner
 
 from wheelleg.training import mutable
 
@@ -9,8 +9,11 @@ class WheelLegRunner(OnPolicyRunner):
 
     def observation_contract(self) -> dict:
         cfg = self.env.unwrapped.training
-        return {"revision": 1, "clip": mutable(cfg.shared["observation_clip"]),
-                "critic_torque_scale": cfg.shared["critic_torque_scale"]}
+        return {
+            "revision": 1,
+            "clip": mutable(cfg.shared["observation_clip"]),
+            "critic_torque_scale": cfg.shared["critic_torque_scale"],
+        }
 
     def log(self, locs: dict, width: int = 80, pad: int = 35) -> None:
         super().log(locs, width, pad)
@@ -18,8 +21,9 @@ class WheelLegRunner(OnPolicyRunner):
         iteration = locs["it"]
         self.writer.add_scalar("Safety/raw_action_abs_max", env.iteration_raw_action_max.item(), iteration)
         self.writer.add_scalar("Safety/numerical_terminations", env.iteration_numerical_terminations.item(), iteration)
-        env.iteration_raw_action_max.zero_()
-        env.iteration_numerical_terminations.zero_()
+        # The rollout runs under torch.inference_mode(); its tensors cannot be zeroed in place here.
+        env.iteration_raw_action_max = torch.zeros((), device=env.device)
+        env.iteration_numerical_terminations = torch.zeros((), dtype=torch.long, device=env.device)
 
     def save(self, path: str, infos: dict | None = None) -> None:
         extra = {} if infos is None else dict(infos)
@@ -36,7 +40,9 @@ class WheelLegRunner(OnPolicyRunner):
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         infos = checkpoint["infos"]
         if not infos or infos.get("observation_contract") != self.observation_contract():
-            raise ValueError("Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden")
+            raise ValueError(
+                "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"
+            )
         infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
         env = self.env.unwrapped
         env.commands.command_fraction = infos["command_fraction"]

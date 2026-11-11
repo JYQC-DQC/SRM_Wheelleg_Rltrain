@@ -47,12 +47,16 @@ def main() -> None:
             raise ValueError("SCUT zero-pose height preparation requires zero initial joint positions")
         body_prims = {p.GetName(): p for p in stage.Traverse() if p.HasAPI(UsdPhysics.RigidBodyAPI)}
         transform_cache = UsdGeom.XformCache(Usd.TimeCode.Default())
-        base_position = list(transform_cache.GetLocalToWorldTransform(
-            body_prims[asset["base_body_name"]]).ExtractTranslation())
-        wheel_positions = [list(transform_cache.GetLocalToWorldTransform(body_prims[name]).ExtractTranslation())
-                           for name in asset["wheel_body_names"]]
-        spawn_height = scut_spawn_height(base_position, wheel_positions, robot["training"]["wheel_radius_m"],
-                                         robot["training"]["spawn_clearance_m"])
+        base_position = list(
+            transform_cache.GetLocalToWorldTransform(body_prims[asset["base_body_name"]]).ExtractTranslation()
+        )
+        wheel_positions = [
+            list(transform_cache.GetLocalToWorldTransform(body_prims[name]).ExtractTranslation())
+            for name in asset["wheel_body_names"]
+        ]
+        spawn_height = scut_spawn_height(
+            base_position, wheel_positions, robot["training"]["wheel_radius_m"], robot["training"]["spawn_clearance_m"]
+        )
         asset["initial_root_position_m"][2] = spawn_height
         for name in asset["active_joint_names"] + asset["spring_joint_names"]:
             if name not in joints:

@@ -4,14 +4,31 @@ from pathlib import Path
 
 import yaml
 
-
 # Shared actor/critic raw-quantity limits; SCUT wheelbipe_V14/cfg_utils.py:75-124.
 OBSERVATION_CLIP_FIELDS = (
-    "command", "height", "angular_velocity", "gravity", "joint_position",
-    "joint_velocity", "previous_action", "mode", "base_linear_velocity", "base_height",
-    "torque", "wheel_linear_velocity", "kp", "kd", "delay_steps", "mass_ratio",
-    "wheel_contact", "material", "spring_force", "voltage_scale", "power_scale",
-    "command_error", "height_scan",
+    "command",
+    "height",
+    "angular_velocity",
+    "gravity",
+    "joint_position",
+    "joint_velocity",
+    "previous_action",
+    "mode",
+    "base_linear_velocity",
+    "base_height",
+    "torque",
+    "wheel_linear_velocity",
+    "kp",
+    "kd",
+    "delay_steps",
+    "mass_ratio",
+    "wheel_contact",
+    "material",
+    "spring_force",
+    "voltage_scale",
+    "power_scale",
+    "command_error",
+    "height_scan",
 )
 
 

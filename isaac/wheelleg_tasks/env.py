@@ -184,7 +184,7 @@ class WheelLegEnv(DirectRLEnv):
         if self.cfg.height_scanner is not None:
             self.scanner = RayCaster(self.cfg.height_scanner)
             self.scene.sensors["height"] = self.scanner
-        # 鏀硅嚜 SCUT wheelbipe25_v3/env.py:2731-2741: explicit terrain, then one clone.
+        # 改自 SCUT wheelbipe25_v3/env.py:2731-2741: explicit terrain, then one clone.
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
@@ -267,7 +267,10 @@ class WheelLegEnv(DirectRLEnv):
                 allowed = (self.beam_start_x - x <= p["trigger_distance_m"]) & (x < self.beam_start_x)
             tunnel_height = self.beam_top_z + t.stage["tunnel"]["clearance_margin_m"] if t.task == "p3-tunnel" else None
             self.jump.trigger(
-                age, self.robot.data.root_pos_w[:, 2], allowed, target_height=tunnel_height,
+                age,
+                self.robot.data.root_pos_w[:, 2],
+                allowed,
+                target_height=tunnel_height,
                 require_trigger_time=t.task != "p3-tunnel",
             )
             started = (self.jump.active & ~was_active).nonzero().flatten()
@@ -325,7 +328,7 @@ class WheelLegEnv(DirectRLEnv):
                 self.collision_timer[collision_ids] = uniform(schedule["collision_interval_s"], (count,), self.device)
 
     def _apply_wrench(self) -> None:
-        # 鏀硅嚜 SCUT manager/mdp/isaaclab/events.py:438-488: local-frame force/torque sampling.
+        # 改自 SCUT manager/mdp/isaaclab/events.py:438-488: local-frame force/torque sampling.
         # Isaac 2.3.2 events.py:1038-1043 and wrench_composer.py:221 verify the new API.
         # Scale the last partial physics step to preserve the configured impulse.
         push_fraction = (self.push_remaining / self.physics_dt).clamp(0, 1)[:, None, None]
@@ -478,8 +481,11 @@ class WheelLegEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self.numerical_bad = numerical_failure(
-            self.robot.data.joint_vel, self.robot.data.root_lin_vel_b,
-            self.robot.data.root_ang_vel_b, self.training.shared["numerical_safety"])
+            self.robot.data.joint_vel,
+            self.robot.data.root_lin_vel_b,
+            self.robot.data.root_ang_vel_b,
+            self.training.shared["numerical_safety"],
+        )
         self.iteration_numerical_terminations += self.numerical_bad.sum()
         self._record_contacts()
         s = self._measure()
@@ -686,11 +692,13 @@ class WheelLegEnv(DirectRLEnv):
             )
 
         clean = observation_tensor(t.robot, t.policy, make_fields(sensor))
-        noise = None if self.cfg.evaluation else (2*torch.rand_like(clean)-1)*self.noise
+        noise = None if self.cfg.evaluation else (2 * torch.rand_like(clean) - 1) * self.noise
         actor = observation_tensor(t.robot, t.policy, make_fields(self.delayed_sensor), noise=noise)
         clips = dict(t.robot.observation_clip)
+
         def component(name, value, scale=1.0):
             return clipped_component(value, clips[name], scale)
+
         privileged = torch.cat(
             (
                 component("kp", self.kp),
@@ -719,7 +727,7 @@ class WheelLegEnv(DirectRLEnv):
             -1,
         )
         if self.scanner is not None:
-            scan = self.robot.data.root_pos_w[:, 2:3]-self.scanner.data.ray_hits_w[:, :, 2]
+            scan = self.robot.data.root_pos_w[:, 2:3] - self.scanner.data.ray_hits_w[:, :, 2]
             critic = torch.cat((critic, component("height_scan", scan)), -1)
         return {"policy": actor, "critic": critic}
 
@@ -727,14 +735,19 @@ class WheelLegEnv(DirectRLEnv):
         # DirectRLEnv.reset (api_reference/direct_env.py:313-331) calls sim.forward before returning.
         result = super().reset(seed=seed, options=options)
         if not self.spawn_checked:
-            clearance = (self.robot.data.body_pos_w[:, self.wheels, 2]-self.terrain.env_origins[:, 2:3]
-                         - self.training.shared["wheel_radius_m"])
+            clearance = (
+                self.robot.data.body_pos_w[:, self.wheels, 2]
+                - self.terrain.env_origins[:, 2:3]
+                - self.training.shared["wheel_radius_m"]
+            )
             values = clearance[self.spawn_check_mask]
             maximum = self.training.shared["spawn_clearance_max_m"]
             bad = ~torch.isfinite(values) | (values > maximum)
             if bad.any():
                 measured = values[bad].detach().cpu().tolist()
-                raise ValueError(f"Initial wheel-bottom clearance exceeds {maximum} m or is non-finite: {measured[:16]} m")
+                raise ValueError(
+                    f"Initial wheel-bottom clearance exceeds {maximum} m or is non-finite: {measured[:16]} m"
+                )
             self.spawn_checked = True
         return result
 

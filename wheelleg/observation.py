@@ -41,9 +41,19 @@ def build_observation(
     for i in robot.leg_indices:  # 四个固定通道，不是逐环境循环
         relative_q[..., i] = joint_position[..., i] - robot.q_default_rad[i]
     raw = (command, height, angular_velocity, gravity, relative_q, joint_velocity, previous_action, mode)
-    scales = (np.asarray(policy.command_scale), policy.height_scale, policy.angular_velocity_scale,
-              policy.gravity_scale, policy.joint_position_scale, policy.joint_velocity_scale, 1.0, 1.0)
+    scales = (
+        np.asarray(policy.command_scale),
+        policy.height_scale,
+        policy.angular_velocity_scale,
+        policy.gravity_scale,
+        policy.joint_position_scale,
+        policy.joint_velocity_scale,
+        1.0,
+        1.0,
+    )
     clips = dict(robot.observation_clip)
-    parts = [np.nan_to_num(np.clip(value, *clips[name])*scale, nan=0.0, posinf=0.0, neginf=0.0)
-             for (name, _), value, scale in zip(OBS_FIELDS, raw, scales, strict=True)]
+    parts = [
+        np.nan_to_num(np.clip(value, *clips[name]) * scale, nan=0.0, posinf=0.0, neginf=0.0)
+        for (name, _), value, scale in zip(OBS_FIELDS, raw, scales, strict=True)
+    ]
     return np.concatenate(parts, axis=-1).astype(np.float32)
