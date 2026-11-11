@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from wheelleg.spawn import scut_spawn_height
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -41,6 +43,17 @@ def main() -> None:
         if len(bodies) != len(set(bodies)):
             raise ValueError("USD body names must be unique")
         asset = robot["asset"]
+        if any(value != 0.0 for value in asset["initial_joint_positions_rad"].values()):
+            raise ValueError("SCUT zero-pose height preparation requires zero initial joint positions")
+        body_prims = {p.GetName(): p for p in stage.Traverse() if p.HasAPI(UsdPhysics.RigidBodyAPI)}
+        transform_cache = UsdGeom.XformCache(Usd.TimeCode.Default())
+        base_position = list(transform_cache.GetLocalToWorldTransform(
+            body_prims[asset["base_body_name"]]).ExtractTranslation())
+        wheel_positions = [list(transform_cache.GetLocalToWorldTransform(body_prims[name]).ExtractTranslation())
+                           for name in asset["wheel_body_names"]]
+        spawn_height = scut_spawn_height(base_position, wheel_positions, robot["training"]["wheel_radius_m"],
+                                         robot["training"]["spawn_clearance_m"])
+        asset["initial_root_position_m"][2] = spawn_height
         for name in asset["active_joint_names"] + asset["spring_joint_names"]:
             if name not in joints:
                 raise ValueError(f"USD missing joint {name}")
@@ -68,6 +81,9 @@ def main() -> None:
             "body_names": bodies,
             "spring_stroke_m": spans,
             "hip_pivots_b_m": pivots,
+            "zero_pose_base_position_w_m": base_position,
+            "zero_pose_wheel_positions_w_m": wheel_positions,
+            "initial_root_height_m": spawn_height,
             "initialization": "random network; no old checkpoint or teacher",
         }
         args.output.mkdir(parents=True, exist_ok=False)

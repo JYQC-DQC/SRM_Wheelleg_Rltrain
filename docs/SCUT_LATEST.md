@@ -88,3 +88,15 @@ command_curriculum.min_completed_episodes=4096，参考机器人模板同步exte
 已生成的runs/scut_reference配置不会自动更新。运行本次版本时，重新用prepare_scut生成一个新的
 输出目录（例如runs/scut_reference_644775e），再用该目录的robot.yaml和policy_meta.yaml启动新的run。
 不要复用含100回合课程窗口或0.01秒外力持续时间的旧生成配置。
+# 2026-11-11 共用数值安全更新
+
+共用观测已修复上一动作反馈：物理分量先限幅再缩放、最后清理非有限值，critic 力矩缩放为 0.05。
+必须重新使用 `tools.prepare_scut` 生成配置；旧 runs 中的 robot.yaml 不会自动更新。
+旧 checkpoint 的 critic 分布不兼容，禁止 `--resume`，只能 `--initialize-from` 提取 Actor。
+
+模板出生高度不再硬填 0.38 m，而留 null 给准备工具计算。工具从 USD 零位姿读取 base_link、
+左右轮刚体世界坐标，验证触地高度接近 0.185 m、左右差不超过 1 mm，再加 0.01 m 余量。
+首次重置后还检查实际轮底离地高度不超过 0.03 m。计算不符合条件就报错，不自动回退旧高度。
+
+这批修改未运行测试、USD 准备、反馈诊断或 Isaac/GPU 训练；高度检查是否通过尚无实测结果。
+
