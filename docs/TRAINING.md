@@ -1,5 +1,42 @@
 # 多策略训练代码（2026-11-10）
 
+## 2026-11-11 动作反馈与数值安全修复
+
+修复在共用代码路径生效，SRM 和华南虎参考配置共用，不以 `reference_preset` 分流。
+
+- `training.observation_clip` 必填，原始物理分量先限幅、再缩放、最后 nan_to_num。
+  上一帧动作输入限到 ±100，原始输出仍不裁剪，单独记录诊断最大值。
+  指令/角速度/重力/关节角/力矩/轮心速度/kp/kd/延迟为 ±100，关节速度 ±200；
+  腿高指令 [0,1]，机身高度和质量比例 ±10。来源 SCUT V14/cfg_utils.py:75-124。
+- `training.numerical_safety` 必填。原始关节速度/机身线速度/机身角速度非有限，
+  或绝对值超过 500/100/200，即终止该环境并将本步每项奖励及总奖励置零。
+- `training.critic_torque_scale` 必填，两份 robot 配置为 0.05（SCUT V14/cfg_utils.py:133）。
+  Actor 35 维、critic 81/158 维不变，obs_version 保持 2。
+- **critic 输入分布已改变：旧 checkpoint 禁止 `--resume`，只能 `--initialize-from` 提取 Actor。**
+  新 checkpoint 保存限幅/critic 缩放合同，恢复时在加载权重和优化器前比较合同；不匹配直接报错。
+  发生过动作指数增长的 Actor，即便可提取也未证明稳定，应先运行反馈诊断再决定是否继续使用。
+- `p1-flat` 和 `p2-spin` 不运行腾空状态机，airborne 恒假，倾角阈值固定 `tilt_rad`，
+  机身接触/终止倍率固定 1。其他任务的腾空逻辑和奖励权重不变。
+- `asset.initial_root_position_m[2]` 必须根据初始关节姿态下轮底触地的机身高度确定，
+  若配置离地余量，则为该触地高度加 `training.spawn_clearance_m`（0.01 m）。SRM 同样适用，当前仍为 null。
+  华南虎准备工具从 USD 零位姿的 base_link 和左右轮刚体世界坐标计算
+  `base_z-wheel_z+wheel_radius_m`；两轮相差 >1 mm 或任一触地高度偏离 0.185 m >1 cm 就报错，
+  验证触地高度后再加余量（0.185 来源 supermimic_wheelbipe/tools/mujoco_check.py:58）。
+- 第一次完整 reset 的 `sim.forward` 后检查轮底离地高度，超过 `spawn_clearance_max_m=0.03` 或非有限即报错，
+  信息包含实测值。其他任务有意的空中出生、恢复库和状态库样本不当作默认出生姿态验收。
+- 每轮 TensorBoard 写 `Safety/raw_action_abs_max` 和 `Safety/numerical_terminations`，
+  后者为这一轮发生数值安全终止的环境次数（同一槽位重置后再次失败会再次计数）。
+
+反馈诊断（本次只新增工具，不执行）：
+
+```bash
+python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --robot config/robot.yaml --policy config/policies/p1/policy_meta.yaml --observations runs/<run>/eval/rollout.npz
+```
+
+`observation[N,35]` 为有限的固定初始观测，每行一条反馈轨迹；只把 Actor 输出接回上一动作槽位，
+其余分量固定。限幅开/关各迭代 400 步，输出超过 1e6 的环境数、非有限环境数和原始动作最大绝对值。
+本次不运行 CPU 测试、反馈诊断、USD 准备工具、Isaac/GPU 训练，也不推送。
+
 对齐推进指南 v2.1。当前为无云台底盘；真实 USD、机械参数、标定和辨识量仍待填。
 本次交付是代码实现，未进行 Isaac 环境运行、GPU 冒烟训练、sim2sim 或实车验收。
 

@@ -55,6 +55,11 @@ class TrainingConfig:
     def missing(self, *, evaluation: bool = False) -> list[str]:
         asset = dict(self.asset)
         settings = dict(self.settings)
+        shared = dict(self.shared)
+        if self.task in ("p1-flat", "p2-spin"):
+            shared.pop("airborne")
+            shared["termination"] = dict(shared["termination"])
+            shared["termination"].pop("airborne_tilt_rad")
         if not evaluation:
             settings.pop("evaluation")
         if self.task in ("p1-flat", "p2-spin"):
@@ -87,7 +92,7 @@ class TrainingConfig:
             + null_fields(
                 {
                     k: v
-                    for k, v in self.shared.items()
+                    for k, v in shared.items()
                     if not (
                         self.asset.get("reference_preset") == "scut_v14_2"
                         and k in ("no_load_speed_rad_s", "saturation_torque_nm")
@@ -157,6 +162,20 @@ def load_training(task: str, robot_path: str | Path, policy_path: str | Path) ->
 
 
 def _validate_training(cfg: TrainingConfig) -> None:
+    for key in ("critic_torque_scale", "spawn_clearance_m", "spawn_clearance_max_m"):
+        if key not in cfg.shared:
+            raise ValueError(f"{cfg.robot_path}: missing training.{key}")
+        value = cfg.shared[key]
+        if type(value) not in (float, int) or not isfinite(value) or value <= 0:
+            raise ValueError(f"training.{key} must be finite and positive")
+    if "numerical_safety" not in cfg.shared:
+        raise ValueError(f"{cfg.robot_path}: missing training.numerical_safety")
+    for key in ("joint_velocity_abs_max", "base_linear_velocity_abs_max", "base_angular_velocity_abs_max"):
+        if key not in cfg.shared["numerical_safety"]:
+            raise ValueError(f"{cfg.robot_path}: missing training.numerical_safety.{key}")
+        value = cfg.shared["numerical_safety"][key]
+        if type(value) not in (float, int) or not isfinite(value) or value <= 0:
+            raise ValueError(f"training.numerical_safety.{key} must be finite and positive")
     curriculum = cfg.settings["command_curriculum"]
     if "min_completed_episodes" not in curriculum:
         raise ValueError(f"{cfg.policy_path}: missing training.command_curriculum.min_completed_episodes")

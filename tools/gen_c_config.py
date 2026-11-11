@@ -25,6 +25,10 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         f"#define WL_WHEEL_REDUCTION_RATIO {float(robot.wheel_reduction_ratio)!r}f",
     ]
     offset = 0
+    lines.append("// Raw physical limits: clip, scale, then replace non-finite values with zero.")
+    for name, (lo, hi) in robot.observation_clip:
+        lines.append(f"#define WL_OBS_CLIP_{name.upper()}_MIN {float(lo)!r}f")
+        lines.append(f"#define WL_OBS_CLIP_{name.upper()}_MAX {float(hi)!r}f")
     for name, width in OBS_FIELDS:
         lines.append(f"#define WL_OBS_{name.upper()}_OFFSET {offset}u")
         offset += width
