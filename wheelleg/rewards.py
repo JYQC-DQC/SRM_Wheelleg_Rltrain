@@ -30,7 +30,8 @@ def track_height_wide(s, p):
 
 
 def height_error(s, p):
-    return (10 * s["height_error"]).square() * s["height_mask"]
+    # ground_mask: 腾空时不罚，SCUT V14/env_cfg.py:1560 (track_height_square → 0)。
+    return (10 * s["height_error"]).square() * s["height_mask"] * s["ground_mask"]
 
 
 def flat_roll(s, p):
@@ -46,7 +47,8 @@ def roll_penalty(s, p):
 
 
 def pitch_penalty(s, p):
-    return ((2 * torch.exp(-s["velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 0]).square()
+    # ground_mask: 腾空时不罚，SCUT V14/env_cfg.py:1551 (flat_orientation_y_v → 0)。
+    return ((2 * torch.exp(-s["velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 0]).square() * s["ground_mask"]
 
 
 def vertical_velocity(s, p):
@@ -116,18 +118,26 @@ def termination(s, p):
     return s["terminated"].float() * s["termination_multiplier"]
 
 
+# 三个小陀螺正奖励乘高度门控：趴低自旋或平移不得分，与 P1 的跟踪奖励一致。
 def spin_velocity(s, p):
-    return torch.exp(-s["translation_error"].square().sum(-1) / p["spin_velocity_sigma"])
+    return torch.exp(-s["translation_error"].square().sum(-1) / p["spin_velocity_sigma"]) * s["height_gate"]
 
 
 def spin_speed(s, p):
-    return torch.exp(-s["speed_error"].square() / p["spin_velocity_sigma"])
+    return torch.exp(-s["speed_error"].square() / p["spin_velocity_sigma"]) * s["height_gate"]
 
 
 def spin_heading(s, p):
-    return torch.exp(-s["heading_error"].square() / p["spin_heading_sigma"]) * (
-        s["requested_speed"] > p["stand_deadzone"]
+    return (
+        torch.exp(-s["heading_error"].square() / p["spin_heading_sigma"])
+        * (s["requested_speed"] > p["stand_deadzone"])
+        * s["height_gate"]
     )
+
+
+def spin_heading_error(s, p):
+    # 改自 SCUT wheelbipe_V14/env.py:1049 (gimbal_spin_heading_error_square)，门控与 spin_heading 相同。
+    return (p["spin_heading_square_scale"] * s["heading_error"]).square() * (s["requested_speed"] > p["stand_deadzone"])
 
 
 def spin_velocity_error(s, p):
@@ -223,6 +233,7 @@ TERMS = {
         spin_velocity,
         spin_speed,
         spin_heading,
+        spin_heading_error,
         spin_velocity_error,
         spin_speed_error,
         leg_symmetry,

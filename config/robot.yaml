@@ -88,7 +88,8 @@ training:
     static_friction: 1.0
     dynamic_friction: 1.0
     friction_combine_mode: multiply
-    restitution: 0.0
+    # 地面恢复系数取 1.0 并按乘法合成：实际碰撞的恢复系数 = 机器人一侧随机化的值（randomization.restitution）。
+    restitution: 1.0
     restitution_combine_mode: multiply
   solver_position_iterations: 12
   solver_velocity_iterations: 6
@@ -130,6 +131,12 @@ training:
     com_offset_m: [0.04, 0.02, 0.02]
     static_friction: [0.5, 1.2]
     dynamic_friction: [0.4, 1.0]
+    # 轮子的恢复系数（碰撞后弹起的程度，0 为不弹）。地面是所有环境共用的一块，不能逐环境随机，所以随机量放在
+    # 机器人一侧。范围是设计选择：SCUT 用 0.02-0.2，但它的地面是 0、实际恒为 0；这里取 0-0.2，待实测校准。
+    restitution: [0.0, 0.2]
+    # 轮子以外刚体的摩擦随机化（机身、导轮等）：列表，每项含 body_names、static_friction、
+    # dynamic_friction、restitution、buckets；刚体名来自本车 USD。
+    body_materials: null
     hip_static_friction_add: [0.25, 1.0]
     hip_dynamic_friction_add: [0.25, 1.0]
     hip_viscous_friction_add: [0.05, 0.2]

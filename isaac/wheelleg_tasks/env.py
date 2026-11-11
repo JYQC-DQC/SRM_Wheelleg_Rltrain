@@ -52,7 +52,7 @@ class WheelLegEnv(DirectRLEnv):
         self.termination_steps = torch.zeros(n, device=d)  # 累计的触地/倾倒步数，可为小数
         # 没有触地/倾倒的每一步，计数回落这么多：满计数要 release_s 才清空。
         self.termination_leak = t.shared["termination"]["duration_s"] / t.shared["termination"]["release_s"]
-        if t.task == "p1-flat":
+        if not cfg.evaluation:  # 随机腿姿出生只在训练中使用，所有任务共用
             self.leg_reset_joints, _ = self.robot.find_joints(
                 list(t.shared["leg_reset"]["joint_names"]), preserve_order=True
             )
@@ -95,6 +95,10 @@ class WheelLegEnv(DirectRLEnv):
         self.spawn_check_mask = torch.ones(n, dtype=torch.bool, device=d)
         self.action_ticks = torch.zeros(n, dtype=torch.long, device=d)
         self.commands = Commands(t, n, d)
+        # 改自 SCUT V14/env_cfg.py:1662-1668: 落地及之后的阶段把平滑惩罚降到约 1/5，给落地缓冲留出动作空间。
+        self.reward_weights = dict(t.settings["rewards"])
+        if self.family == "p1":
+            self.reward_weights.update(t.stage["reward_overrides"])
         self.command_curriculum = CommandCurriculum(t.settings["command_curriculum"]) if self.family == "p1" else None
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         levels = (
@@ -115,6 +119,7 @@ class WheelLegEnv(DirectRLEnv):
         self.recovery_start_height = torch.zeros(n, device=d)
         self.stair_signal = torch.zeros(n, device=d)
         self.height_boost_remaining = torch.zeros(n, device=d)
+        self.command_limit_remaining = torch.zeros(n, device=d)  # 空中出生后指令限幅的剩余时间, s
         self.obstacle_hit = self.airborne.clone()
         self.obstacle_top_hit = self.airborne.clone()
         self.contact_peaks = torch.zeros(n, len(self.contact.body_names), device=d)
@@ -148,7 +153,6 @@ class WheelLegEnv(DirectRLEnv):
         self.collision_remaining = torch.zeros(n, device=d)
         self.collision_force = torch.zeros(n, 1, 3, device=d)
         self.disturbance_phase = t.stage["disturbance_phase"]
-        self.handover = None
         self.transition_states = None
         transition = t.settings["transition_reset"]
         if transition["probability"] > 0:
@@ -159,16 +163,6 @@ class WheelLegEnv(DirectRLEnv):
                     key: torch.as_tensor(data[key], device=d)
                     for key in ("root_state", "joint_position", "joint_velocity")
                 }
-        if t.task == "p1-recovery":
-            with np.load(t.stage["handover_states_npz"], allow_pickle=False) as data:
-                self.handover = {
-                    key: torch.as_tensor(data[key], device=d)
-                    for key in ("root_state", "joint_position", "joint_velocity")
-                }
-            if self.handover["root_state"].shape[1] != 13:
-                raise ValueError("handover root_state must have 13 columns: xyz, wxyz, linear/angular velocity")
-            if self.handover["joint_position"].shape[1] != self.robot.num_joints:
-                raise ValueError("handover joint order must match this USD, including passive joints")
         # Static privileged quantities are read after startup randomization.
         masses = self.robot.root_physx_view.get_masses().to(d)
         self.mass_ratio = masses[:, self.base] / self.robot.data.default_mass.to(d)[:, self.base]
@@ -301,6 +295,15 @@ class WheelLegEnv(DirectRLEnv):
         frozen = self.jump.active if self.jump is not None else torch.zeros_like(self.airborne)
         if not self.commands_fixed:
             self.commands.step(self.step_dt, frozen)
+        if self.family == "p1" and t.stage["air_reset_probability"] > 0:
+            # 改自 SCUT V14/env_cfg.py:1510-1516 (predefined_reset_air command_limits)：空中出生后的一段时间内
+            # 限制前向速度和转向指令，落地过程中不要求高速转向。
+            limit = self.commands.value.new_tensor(
+                [t.stage["air_command_vx_limit_m_s"], float("inf"), t.stage["air_command_wz_limit_rad_s"]]
+            )
+            limited = (self.command_limit_remaining > 0)[:, None]
+            self.commands.value = torch.where(limited, self.commands.value.clamp(-limit, limit), self.commands.value)
+            self.command_limit_remaining = (self.command_limit_remaining - self.step_dt).clamp_min(0)
         if self.training.task == "p1-recovery":
             self.commands.value[self.recovery_episode & (age < self.training.stage["rise_duration_s"])] = 0
         if not self.cfg.evaluation:
@@ -532,9 +535,8 @@ class WheelLegEnv(DirectRLEnv):
         # 与 SCUT 不同：条件中断时计数慢慢回落而不是清零。清零时策略靠“碰一下抬一下”
         # 在约 40% 的时间里撑地也从不终止（standup2 的曲线）。
         physical = (tilt_fail | body_hit) & ~self.recovery_episode
-        if t.task == "p1-flat":
-            # 随机腿姿出生后先落地，起立窗口内不按倾倒/触地终止；触地惩罚照常累计。
-            physical &= self.episode_length_buf * dt >= t.shared["leg_reset"]["settle_s"]
+        # 随机腿姿出生后先落地，起立窗口内不按倾倒/触地终止；触地惩罚照常累计。所有任务共用。
+        physical &= self.episode_length_buf * dt >= t.shared["leg_reset"]["settle_s"]
         self.termination_steps = torch.where(
             physical, self.termination_steps + 1, (self.termination_steps - self.termination_leak).clamp_min(0)
         )
@@ -590,17 +592,22 @@ class WheelLegEnv(DirectRLEnv):
             tracking_mask=one,
             height_mask=one,
             height_gate=one,
+            # 改自 SCUT V14/env_cfg.py:1549-1562 (airborne reward_scales)：腾空时关闭俯仰惩罚和高度平方惩罚，
+            # 空中机身高度和俯仰不由策略决定，继续罚只会干扰落地动作。
+            ground_mask=(~self.airborne).float(),
             requested_speed=self.commands.value[:, :2].norm(dim=-1),
             airborne=self.airborne,
             contact_multiplier=torch.where(self.airborne, 25.0, 1.0),
             termination_multiplier=torch.where(self.airborne, 6.0, 1.0),
         )
-        if t.task == "p1-flat":
+        if self.family in ("p1", "p2"):
             # 改自 SCUT wheelbipe25_v3/env.py:3842-3866 (linear_band)：高度没到位时压低速度/转速跟踪奖励，
             # 防止趴低追速度。与 SCUT env.py:3887-3893 一致，跟踪奖励和误差惩罚都乘门控。
+            # P1 的全部阶段和 P2 共用；腾空时高度误差没有意义，门控置 1。
             p = t.settings["reward_parameters"]
             band = p["height_gate_zero_error_m"] - p["height_gate_full_error_m"]
-            s["height_gate"] = ((p["height_gate_zero_error_m"] - s["height_error"].abs()) / band).clamp(0, 1)
+            gate = ((p["height_gate_zero_error_m"] - s["height_error"].abs()) / band).clamp(0, 1)
+            s["height_gate"] = torch.where(self.airborne, 1.0, gate)
         if self.family == "p2":
             actual = rotate_xy(s["velocity_w"][:, :2], -self.commands.reference_yaw)
             target = self.commands.translation
@@ -620,7 +627,7 @@ class WheelLegEnv(DirectRLEnv):
             s["tracking_mask"] = torch.where(self.jump.active, 1.0, t.stage["non_event_tracking_scale"])
             s["guidance_scale"] = self.guidance_scale
         terms = compute_rewards(
-            s, t.settings["reward_parameters"], t.settings["rewards"], self.step_dt, t.settings["reward_clip"]
+            s, t.settings["reward_parameters"], self.reward_weights, self.step_dt, t.settings["reward_clip"]
         )
         if t.task in ("p1-landing", "p1-stairs", "p1-recovery", "p3-jump", "p3-tunnel"):
             ar = t.settings["air_rewards"]
@@ -841,25 +848,54 @@ class WheelLegEnv(DirectRLEnv):
         root = self.robot.data.default_root_state[env_ids].clone()
         root[:, :3] += self.terrain.env_origins[env_ids]
         q, qd = self.robot.data.default_joint_pos[env_ids].clone(), self.robot.data.default_joint_vel[env_ids].clone()
-        if self.transition_states is not None and not self.cfg.evaluation:
-            selected = torch.rand(n, device=self.device) < t.settings["transition_reset"]["probability"]
-            self.spawn_check_mask[env_ids[selected]] = False
-            rows = torch.randint(len(self.transition_states["root_state"]), (int(selected.sum()),), device=self.device)
-            root[selected] = self.transition_states["root_state"][rows]
-            root[selected, :3] += self.terrain.env_origins[env_ids[selected]]
-            q[selected] = self.transition_states["joint_position"][rows]
-            qd[selected] = self.transition_states["joint_velocity"][rows]
         self.recovery_episode[env_ids] = False
-        if t.task == "p1-flat" and not self.cfg.evaluation:
+        if self.cfg.evaluation:
+            # 评测保持默认零位出生；空中出生只给高度和前向速度，评测口径不变。
+            if self.family == "p1" and t.stage["air_reset_probability"] > 0:
+                air = torch.rand(n, device=self.device) < t.stage["air_reset_probability"]
+                self.spawn_check_mask[env_ids[air]] = False
+                root[:, 2] += uniform(t.stage["air_height_offset_m"], (n,), self.device) * air
+                root[:, 7] = torch.where(air, uniform(t.stage["air_vx_range_m_s"], (n,), self.device), root[:, 7])
+        else:
             # 改自 SCUT wheelbipe25_v3/env.py:5380-5541 和 V14/env_cfg.py:342-353: 随机腿长/摆角加机身倾角出生，
-            # 否则每回合都从腿全折叠的零位开始，策略学不到起立。两条腿独立采样。
-            r = t.shared["leg_reset"]
+            # 否则每回合都从腿全折叠的零位开始，策略学不到起立。两条腿独立采样；所有任务的训练回合共用。
+            r, stage = t.shared["leg_reset"], t.stage
             length = uniform(r["length_range_m"], (n, 2), self.device)  # 髋轴中点到轮心, m
             angle = uniform(r["angle_range_rad"], (n, 2), self.device)  # 正值时轮心在髋轴后方, rad
+            tilt = uniform((-r["root_tilt_rad"], r["root_tilt_rad"]), (n, 2), self.device)  # roll, pitch, rad
+            air = torch.zeros(n, dtype=torch.bool, device=self.device)
+            recover = air.clone()
+            if self.family == "p1" and stage["air_reset_probability"] > 0:
+                # 改自 SCUT V14/env_cfg.py:1488-1521 (predefined_reset_air)：空中出生同时随机机身倾角、
+                # 横向速度、角速度和腿姿，而不只是高度和前向速度。
+                air = torch.rand(n, device=self.device) < stage["air_reset_probability"]
+                length = torch.where(
+                    air[:, None], uniform(stage["air_leg_length_range_m"], (n, 2), self.device), length
+                )
+                angle = torch.where(air[:, None], uniform(stage["air_leg_angle_range_rad"], (n, 2), self.device), angle)
+                air_tilt = uniform((-1.0, 1.0), (n, 2), self.device) * tilt.new_tensor(stage["air_tilt_rad"])
+                tilt = torch.where(air[:, None], air_tilt, tilt)
+            if t.task == "p1-recovery":
+                # 改自 SCUT V14/cfg_utils.py:198-226 和 wheelbipe25_v3/env.py:5465-5523 (predefined_reset_ground)：
+                # 腿接近水平、机身水平地从 recovery_root_height_m 落下，趴在地上再起身。不再需要接管状态库。
+                recover = torch.rand(n, device=self.device) < stage["recovery_probability"]
+                air &= ~recover
+                forward = torch.rand(n, 2, device=self.device) < stage["recovery_forward_probability"]
+                drop = torch.where(
+                    forward,
+                    uniform(stage["recovery_forward_leg_height_m"], (n, 2), self.device),
+                    uniform(stage["recovery_leg_height_m"], (n, 2), self.device),
+                )  # 轮心低于髋轴的距离 m；负值表示轮心高于髋轴
+                lying_length = uniform(stage["recovery_leg_length_m"], (n, 2), self.device)
+                lying_angle = torch.where(forward, -1.0, 1.0) * torch.arccos(drop / lying_length)
+                length = torch.where(recover[:, None], lying_length, length)
+                angle = torch.where(recover[:, None], lying_angle, angle)
+                tilt = torch.where(recover[:, None], 0.0, tilt)
+            if self.family == "p1" and stage["air_reset_probability"] > 0:
+                self.command_limit_remaining[env_ids] = stage["air_command_limit_s"] * air
             q[:, self.leg_reset_joints] = five_bar_joint_angles(
                 length, angle, r["link_lengths_m"], r["angle_offsets_rad"]
             )
-            tilt = uniform((-r["root_tilt_rad"], r["root_tilt_rad"]), (n, 2), self.device)
             yaw = uniform((-torch.pi, torch.pi), (n,), self.device)
             root[:, 3:7] = quat_from_euler_xyz(tilt[:, 0], tilt[:, 1], yaw)
             wheel_b = root.new_tensor(t.shared["hip_pivot_positions_b_m"]).expand(n, 2, 3).clone()
@@ -869,22 +905,32 @@ class WheelLegEnv(DirectRLEnv):
                 n, 2, 3
             )[:, :, 2]
             # 较低的轮底离地 spawn_clearance_m；min_root_height_m 防止短腿大摆角时机身和连杆出生在地面以下。
-            height = t.shared["wheel_radius_m"] + t.shared["spawn_clearance_m"] - wheel_z.amin(-1)
-            root[:, 2] = self.terrain.env_origins[env_ids, 2] + height.clamp_min(r["min_root_height_m"])
-            self.spawn_check_mask[env_ids] = False
-        if self.family == "p1" and t.stage["air_reset_probability"] > 0:
-            air = torch.rand(n, device=self.device) < t.stage["air_reset_probability"]
-            self.spawn_check_mask[env_ids[air]] = False
-            root[:, 2] += uniform(t.stage["air_height_offset_m"], (n,), self.device) * air
-            root[:, 7] = torch.where(air, uniform(t.stage["air_vx_range_m_s"], (n,), self.device), root[:, 7])
-        if t.task == "p1-recovery":
-            recover = torch.rand(n, device=self.device) < t.stage["recovery_probability"]
-            self.spawn_check_mask[env_ids[recover]] = False
-            rows = torch.randint(len(self.handover["root_state"]), (int(recover.sum()),), device=self.device)
-            root[recover] = self.handover["root_state"][rows]
-            root[recover, :3] += self.terrain.env_origins[env_ids[recover]]
-            q[recover], qd[recover] = self.handover["joint_position"][rows], self.handover["joint_velocity"][rows]
+            height = (t.shared["wheel_radius_m"] + t.shared["spawn_clearance_m"] - wheel_z.amin(-1)).clamp_min(
+                r["min_root_height_m"]
+            )
+            if air.any():
+                height = height + uniform(stage["air_height_offset_m"], (n,), self.device) * air
+                velocity_b = torch.zeros(n, 3, device=self.device)  # 机体系线速度 m/s
+                velocity_b[:, 0] = uniform(stage["air_vx_range_m_s"], (n,), self.device)
+                velocity_b[:, 1] = uniform(stage["air_vy_range_m_s"], (n,), self.device)
+                rate_b = uniform((-1.0, 1.0), (n, 3), self.device) * tilt.new_tensor(
+                    stage["air_angular_velocity_rad_s"]
+                )  # 机体系 roll/pitch/yaw 角速度 rad/s
+                root[:, 7:10] = torch.where(air[:, None], quat_apply(root[:, 3:7], velocity_b), root[:, 7:10])
+                root[:, 10:13] = torch.where(air[:, None], quat_apply(root[:, 3:7], rate_b), root[:, 10:13])
+            if recover.any():
+                height = torch.where(recover, stage["recovery_root_height_m"], height)
+            root[:, 2] = self.terrain.env_origins[env_ids, 2] + height
             self.recovery_episode[env_ids] = recover
+            self.spawn_check_mask[env_ids] = False
+        if self.transition_states is not None and not self.cfg.evaluation:
+            selected = torch.rand(n, device=self.device) < t.settings["transition_reset"]["probability"]
+            rows = torch.randint(len(self.transition_states["root_state"]), (int(selected.sum()),), device=self.device)
+            root[selected] = self.transition_states["root_state"][rows]
+            root[selected, :3] += self.terrain.env_origins[env_ids[selected]]
+            q[selected] = self.transition_states["joint_position"][rows]
+            qd[selected] = self.transition_states["joint_velocity"][rows]
+            self.recovery_episode[env_ids[selected]] = False
         if self.jump is not None:
             self.jump.reset(env_ids)
         if t.task == "p3-tunnel":

@@ -108,11 +108,13 @@ def main() -> None:
         args.output.mkdir(parents=True, exist_ok=False)
         (args.output / "robot.yaml").write_text(yaml.safe_dump(robot, sort_keys=False), encoding="utf-8")
         (args.output / "policy_meta.yaml").write_bytes((root / "config/reference/scut_p1.yaml").read_bytes())
+        (args.output / "policy_p2.yaml").write_bytes((root / "config/reference/scut_p2.yaml").read_bytes())
         (args.output / "reference_manifest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         from wheelleg.training import load_training
 
         cfg = load_training("p1-flat", args.output / "robot.yaml", args.output / "policy_meta.yaml")
         cfg.require_ready()
+        load_training("p2-spin", args.output / "robot.yaml", args.output / "policy_p2.yaml").require_ready()
         print("SCUT_PROFILE_READY", str(args.output.resolve()), flush=True)
     except Exception:
         import traceback

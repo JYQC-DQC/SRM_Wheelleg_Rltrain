@@ -60,8 +60,8 @@ class TrainingConfig:
             shared.pop("airborne")
             shared["termination"] = dict(shared["termination"])
             shared["termination"].pop("airborne_tilt_rad")
-        if self.task != "p1-flat" or evaluation:
-            shared.pop("leg_reset")  # 只有 p1-flat 训练出生使用
+        if evaluation:
+            shared["leg_reset"] = {"settle_s": shared["leg_reset"]["settle_s"]}  # 评测从默认零位出生
         if not evaluation:
             settings.pop("evaluation")
         if self.task in ("p1-flat", "p2-spin"):
@@ -117,8 +117,6 @@ class TrainingConfig:
             module = Path(self.asset["reference_package"]) / "agent_world/assets/wheelbipe_V14_2.py"
             if not module.is_file():
                 raise ValueError(f"Missing SCUT reference asset module: {module}")
-        if self.task == "p1-recovery" and not Path(self.stage["handover_states_npz"]).is_file():
-            raise ValueError("handover_states_npz must name a real recovery handover state library")
         transition = self.settings["transition_reset"]
         if transition["probability"] > 0 and not Path(transition["states_npz"]).is_file():
             raise ValueError("transition_reset.states_npz must name a real rollout state library")
@@ -193,6 +191,9 @@ def _validate_training(cfg: TrainingConfig) -> None:
     value = cfg.shared["termination"]["duration_s"]
     if type(value) not in (float, int) or not isfinite(value) or value * cfg.robot.policy_hz < 1:
         raise ValueError("training.termination.duration_s must cover at least one policy step")
+    for key in ("body_materials", "restitution"):
+        if key not in cfg.shared["randomization"]:
+            raise ValueError(f"{cfg.robot_path}: missing training.randomization.{key}")
     if "release_s" not in cfg.shared["termination"]:
         raise ValueError(f"{cfg.robot_path}: missing training.termination.release_s")
     value = cfg.shared["termination"]["release_s"]
@@ -202,13 +203,60 @@ def _validate_training(cfg: TrainingConfig) -> None:
         for key in ("relative_error", "height_error_threshold_m"):
             if key not in curriculum:
                 raise ValueError(f"{cfg.policy_path}: missing training.command_curriculum.{key}")
-    if cfg.task == "p1-flat":
+    if TASKS[cfg.task].policy in ("p1", "p2"):
         parameters = cfg.settings["reward_parameters"]
         for key in ("height_gate_full_error_m", "height_gate_zero_error_m"):
             if key not in parameters:
                 raise ValueError(f"{cfg.policy_path}: missing training.reward_parameters.{key}")
         if not 0 <= parameters["height_gate_full_error_m"] < parameters["height_gate_zero_error_m"]:
             raise ValueError("reward_parameters: expected 0 <= height_gate_full_error_m < height_gate_zero_error_m")
+    if TASKS[cfg.task].policy == "p1":
+        if "reward_overrides" not in cfg.stage:
+            raise ValueError(f"{cfg.policy_path}: missing stages.{TASKS[cfg.task].stage}.reward_overrides")
+        unknown = [name for name in cfg.stage["reward_overrides"] if name not in cfg.settings["rewards"]]
+        if unknown:
+            raise ValueError(f"stages.{TASKS[cfg.task].stage}.reward_overrides: not in training.rewards: {unknown}")
+    if "terrain" in cfg.stage:
+        for key in (
+            "rough_proportion",
+            "rough_noise_range_m",
+            "rough_noise_step_m",
+            "rough_downsampled_scale_m",
+            "heightfield_border_width_m",
+        ):
+            if key not in cfg.stage["terrain"]:
+                raise ValueError(f"{cfg.policy_path}: missing stages.{TASKS[cfg.task].stage}.terrain.{key}")
+    stage_keys = []
+    if TASKS[cfg.task].policy == "p1" and cfg.stage["air_reset_probability"] > 0:
+        stage_keys += [
+            ("air_tilt_rad", 2),
+            ("air_vy_range_m_s", 2),
+            ("air_angular_velocity_rad_s", 3),
+            ("air_leg_length_range_m", 2),
+            ("air_leg_angle_range_rad", 2),
+            ("air_command_limit_s", None),
+            ("air_command_vx_limit_m_s", None),
+            ("air_command_wz_limit_rad_s", None),
+        ]
+    if cfg.task == "p1-recovery":
+        stage_keys += [
+            ("recovery_root_height_m", None),
+            ("recovery_forward_probability", None),
+            ("recovery_leg_length_m", 2),
+            ("recovery_leg_height_m", 2),
+            ("recovery_forward_leg_height_m", 2),
+        ]
+    for key, size in stage_keys:
+        if key not in cfg.stage:
+            raise ValueError(f"{cfg.policy_path}: missing stages.{TASKS[cfg.task].stage}.{key}")
+        if size is not None and cfg.stage[key] is not None and len(cfg.stage[key]) != size:
+            raise ValueError(f"stages.{TASKS[cfg.task].stage}.{key}: expected {size} entries")
+    if cfg.task == "p1-recovery" and cfg.stage["recovery_leg_length_m"] is not None:
+        # 腿摆角 = ±arccos(轮心低于髋轴的距离 / 腿长)：距离的绝对值不能超过最短腿长。
+        shortest = cfg.stage["recovery_leg_length_m"][0]
+        for key in ("recovery_leg_height_m", "recovery_forward_leg_height_m"):
+            if cfg.stage[key] is not None and max(abs(v) for v in cfg.stage[key]) > shortest:
+                raise ValueError(f"stages.recovery.{key}: magnitude must not exceed the shortest recovery leg length")
     if "leg_reset" not in cfg.shared:
         raise ValueError(f"{cfg.robot_path}: missing training.leg_reset")
     leg_reset = cfg.shared["leg_reset"]

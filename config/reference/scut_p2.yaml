@@ -1,0 +1,223 @@
+# 华南虎参考模型的 P2（小陀螺加平移）配置，仅仿真参考，不用于实车。由 config/policies/p2 填空生成。
+# 取自 SCUT 的：
+# - PD、力矩上限：assets/wheelbipe_V14_2.py（60/2，轮 0/0.2，40/5 Nm）。SCUT 小陀螺与平地是同一策略、同一套 PD，
+#   未采用指南 §6.5 的“Kp 约为 P1 的 2/3”。
+# - 转速：V14/env_cfg.py:1286-1300 (gimbal_spin_translate) 的 2.4π-3.6π rad/s，分成等宽两档；平移 0-0.75 m/s。
+# - 推扰用第一阶段（0.25 m/s）；value_loss_coef 4.0。
+# 按本项目平地训练的教训调整的（不与 SCUT 严格对齐，都未经训练验证）：
+# - track_height_wide +2、undesired_contact -4、高度指令 0.20-0.35 m、四项平滑惩罚：与 P1 平地参考配置一致。
+# - 自旋/平移的正奖励和转速跟踪乘高度门控：趴低自旋不得分。
+# - ang_vel_error -0.1（SRM 配置为 -1）：项是 (0.5e)²，刚从平地策略切入时转速误差约 10 rad/s，-1 会每秒扣约 25，
+#   活着比摔倒（-4）还亏；-0.1 时约 2.5。SCUT 发布的 flat_and_rotation 模型用的也是 -0.1。
+# - spin_heading_error -0.02×(4e)²：SCUT 的权重是 -0.2，但还不会平移时方向误差近似随机，-0.2 会每秒扣约 10；
+#   -0.02 时约 1。
+# - spin_velocity_error、spin_speed_error 保持 -0.2（SCUT 的有效系数是 -0.05 和 0）：平移最大 0.75 m/s，
+#   这两项每秒最多扣约 0.1，留着给“不平移”一个明确的代价。
+# vx/wz/dash 范围和课程门槛 P2 不使用，保持 null。
+name: scut_p2_spin_reference
+obs_version: 2
+hidden_dims:
+- 256
+- 128
+- 64
+activation: elu
+observation_scales:
+  command:
+  - 1.0
+  - 1.0
+  - 1.0
+  height: 5.0
+  angular_velocity: 0.5
+  gravity: 1.0
+  joint_position: 1.0
+  joint_velocity: 0.1
+action_scales:
+- 0.5
+- 0.5
+- 10.0
+- 0.5
+- 0.5
+- 10.0
+action_clip: null
+kp:
+- 60
+- 60
+- 0
+- 60
+- 60
+- 0
+kd:
+- 2
+- 2
+- 0.2
+- 2
+- 2
+- 0.2
+torque_limit_nm:
+- 40
+- 40
+- 5
+- 40
+- 40
+- 5
+policy_family: p2
+training:
+  seed: 42
+  num_envs: 4096
+  rollout_steps: 48
+  max_iterations: 20000
+  save_interval: 500
+  episode_length_s: 40.0
+  init_noise_std: 1.0
+  reward_clip: 2.5
+  ppo:
+    value_loss_coef: 4.0
+    use_clipped_value_loss: true
+    clip_param: 0.2
+    entropy_coef: 0.005
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    learning_rate: 0.0001
+    schedule: adaptive
+    gamma: 0.995
+    lam: 0.95
+    desired_kl: 0.01
+    max_grad_norm: 1.0
+  commands:
+    segment_duration_s:
+    - 3.0
+    - 15.0
+    height_duration_s:
+    - 2.0
+    - 6.0
+    vx_range_m_s: null
+    wz_range_rad_s: null
+    height_range_m:
+    - 0.2
+    - 0.35
+    linear_slew_m_s2: 2.0
+    angular_slew_rad_s2: 10.0
+    height_slew_m_s: 0.1
+    segment_probabilities:
+    - 0.1
+    - 0.25
+    - 0.15
+    - 0.25
+    - 0.1
+    - 0.15
+    dash_range_m_s: null
+  reward_parameters:
+    linear_sigma: 0.5
+    angular_sigma: 0.25
+    height_sigma: 0.001
+    height_gate_full_error_m: 0.05
+    height_gate_zero_error_m: 0.1
+    roll_sigma: 0.01
+    pitch_sigma: 0.02
+    fork_deadzone_m: 0.05
+    stand_deadzone: 0.1
+    contact_force_n: 3.0
+    spin_velocity_sigma: 0.25
+    spin_heading_sigma: 0.025
+    air_wheel_torque_sigma: 1.5
+    fork_square_scale: 5.0
+    leg_length_symmetry_scale: 10.0
+    height_wide_sigma: 0.025
+    spin_heading_square_scale: 4.0
+  rewards:
+    track_lin_vel: 0.0
+    lin_vel_error: 0.0
+    track_ang_vel: 1.0
+    ang_vel_error: -0.1
+    track_height: 1.0
+    height_error: -1.0
+    flat_roll: 1.0
+    flat_pitch: 1.0
+    roll_penalty: -2.0
+    pitch_penalty: -2.0
+    vertical_velocity: -0.5
+    angular_xy: -0.05
+    no_fork: -1.0
+    no_fork_square: -1.0
+    undesired_contact: -4.0
+    stand_still: -1.0
+    joint_torque: -1.0e-05
+    wheel_power: -1.0e-05
+    action_rate: -0.01
+    termination: -4.0
+    spin_velocity: 1.0
+    spin_speed: 1.0
+    spin_heading: 5.0
+    spin_velocity_error: -0.2
+    spin_speed_error: -0.2
+    leg_symmetry: 0.0
+    track_height_wide: 2.0
+    spin_heading_error: -0.02
+    leg_joint_vel: -0.005
+    wheel_vel: -1.0e-05
+    action_smoothness_leg: -0.05
+    action_smoothness_wheel: -0.01
+  evaluation:
+    observation_delay_steps: 0
+    action_delay_steps: 0
+    duration_s: 30.0
+    settling_s: 1.0
+    episodes_per_case: 16
+    seed: 123
+    height_m: 0.22
+    vx_values_m_s: null
+    wz_values_rad_s: null
+    combined_commands: null
+  disturbance:
+    baseline_evaluation_passed: false
+    ramp_iterations: 3000
+    final_push_velocity_m_s: 1.25
+    collision_interval_s:
+    - 8.0
+    - 15.0
+    collision_duration_s: 0.1
+    collision_force_range_n:
+    - 100.0
+    - 300.0
+    lateral_probability: 0.8
+    phase2_start_iteration: null
+  air_rewards:
+    joint_limit: -10.0
+    wheel_center: 10.0
+    wheel_center_sigma: 0.02
+    wheel_torque: 20.0
+    wheel_torque_sigma: 1.5
+    wheel_speed_alignment: -10.0
+  command_curriculum:
+    min_completed_episodes: 4096
+    initial_fraction: 1.0
+    increment: 0.05
+    success_fraction: 0.8
+    velocity_error_threshold_m_s: null
+    yaw_error_threshold_rad_s: null
+  transition_reset:
+    probability: 0.0
+    states_npz: null
+stages:
+  spin:
+    translation_speed_range_m_s:
+    - 0.0
+    - 0.75
+    spin_low_range_rad_s:
+    - 7.5398223686155035
+    - 9.42477796076938
+    spin_high_range_rad_s:
+    - 9.42477796076938
+    - 11.309733552923255
+    reference_frame: fixed_world_yaw
+    reference_yaw_rad: 0.0
+    disturbance_phase: 1
+mode_semantics:
+- zero
+- spin
+- translation_speed_m_s
+- sin_heading_reference
+- cos_heading_reference
+- sin_reference_relative_body
+- cos_reference_relative_body
+guide_version: '2.2'

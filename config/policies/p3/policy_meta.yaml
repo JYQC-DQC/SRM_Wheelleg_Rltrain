@@ -280,4 +280,4 @@ stages:
     disturbance_phase: 2
     curriculum_min_events: 100
     height_tolerance_m: 0.05
-guide_version: '2.1'
+guide_version: '2.2'

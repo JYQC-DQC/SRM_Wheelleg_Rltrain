@@ -8,7 +8,7 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
-from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
+from isaaclab.terrains import HfRandomUniformTerrainCfg, TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
 from wheelleg.training import TrainingConfig, mutable
@@ -120,6 +120,9 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
     if t.task in ("p1-stairs", "p1-recovery"):
         s = t.stage["terrain"]
         terrain.terrain_type = "generator"
+        step_proportion = (
+            1 - s["flat_proportion"] - s["slope_proportion"] - s["bump_proportion"] - s["rough_proportion"]
+        ) / 2
         terrain.terrain_generator = TerrainGeneratorCfg(
             seed=t.settings["seed"],
             size=tuple(s["tile_size_m"]),
@@ -134,13 +137,13 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
                     step_width=s["step_width_m"],
                 ),
                 "one": StepsCfg(
-                    proportion=(1 - s["flat_proportion"] - s["slope_proportion"] - s["bump_proportion"]) / 2,
+                    proportion=step_proportion,
                     step_count=1,
                     step_height_range=tuple(s["step_height_range_m"]),
                     step_width=s["step_width_m"],
                 ),
                 "two": StepsCfg(
-                    proportion=(1 - s["flat_proportion"] - s["slope_proportion"] - s["bump_proportion"]) / 2,
+                    proportion=step_proportion,
                     step_count=2,
                     step_height_range=tuple(s["step_height_range_m"]),
                     step_width=s["step_width_m"],
@@ -151,6 +154,14 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
                     height_range=tuple(s["bump_height_range_m"]),
                     spacing=s["bump_spacing_m"],
                     width=s["bump_width_m"],
+                ),
+                # 改自 SCUT manager/mdp/isaaclab/terrains.py:109-115 (RANDOM_UNIFORM_FOR_RM)。
+                "rough": HfRandomUniformTerrainCfg(
+                    proportion=s["rough_proportion"],
+                    noise_range=tuple(s["rough_noise_range_m"]),
+                    noise_step=s["rough_noise_step_m"],
+                    downsampled_scale=s["rough_downsampled_scale_m"],
+                    border_width=s["heightfield_border_width_m"],
                 ),
             },
         )
@@ -237,10 +248,28 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
                     "asset_cfg": SceneEntityCfg("robot", body_names=list(asset["wheel_body_names"])),
                     "static_friction_range": tuple(r["static_friction"]),
                     "dynamic_friction_range": tuple(r["dynamic_friction"]),
-                    "restitution_range": (0.0, 0.0),
+                    "restitution_range": tuple(r["restitution"]),
                     "num_buckets": 64,
                     "make_consistent": True,
                 },
             ),
         )
+        # 改自 SCUT V14/env_cfg.py:136-159: 机身、导轮等非轮子刚体的摩擦。按配置条目循环，不是按环境循环。
+        for i, entry in enumerate(r["body_materials"]):
+            setattr(
+                cfg.events,
+                f"body_material_{i}",
+                EventTermCfg(
+                    func=mdp.randomize_rigid_body_material,
+                    mode="startup",
+                    params={
+                        "asset_cfg": SceneEntityCfg("robot", body_names=list(entry["body_names"])),
+                        "static_friction_range": tuple(entry["static_friction"]),
+                        "dynamic_friction_range": tuple(entry["dynamic_friction"]),
+                        "restitution_range": tuple(entry["restitution"]),
+                        "num_buckets": entry["buckets"],
+                        "make_consistent": True,
+                    },
+                ),
+            )
     return cfg

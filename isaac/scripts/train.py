@@ -67,7 +67,7 @@ def main() -> None:
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
         obs_version=cfg.policy.obs_version,
-        guide_version="2.1",
+        guide_version="2.2",
         guide_sha256=hashlib.sha256(Path("docs/轮腿RL_推进指南_v2.md").read_bytes()).hexdigest(),
     )
     (params / "run.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

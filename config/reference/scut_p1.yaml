@@ -199,7 +199,7 @@ training:
   air_rewards:
     joint_limit: -10.0
     wheel_center: 10.0
-    wheel_center_sigma: null
+    wheel_center_sigma: 0.02
     wheel_torque: 20.0
     wheel_torque_sigma: 1.5
     wheel_speed_alignment: -10.0
@@ -221,6 +221,7 @@ stages:
     air_reset_probability: 0.0
     recovery_probability: 0.0
     disturbance_phase: 1
+    reward_overrides: {}
   landing:
     air_reset_probability: 0.3
     air_height_offset_m: &id001
@@ -229,12 +230,39 @@ stages:
     air_vx_range_m_s: &id002
     - -2.5
     - 2.5
+    # SCUT V14/env_cfg.py:1488-1521 (predefined_reset_air air_1)：空中出生同时随机倾角、横向速度、角速度和腿姿。
+    air_tilt_rad: [0.1, 0.2]  # roll、pitch 的上限
+    air_vy_range_m_s: [-0.5, 0.5]
+    air_angular_velocity_rad_s: [0.05, 0.1, 0.5]  # roll、pitch、yaw 的上限
+    air_leg_length_range_m: [0.15, 0.35]
+    air_leg_angle_range_rad: [-0.7853981633974483, 0.7853981633974483]
+    # SCUT V14/env_cfg.py:1510-1516：空中出生后 3 s 内限制指令，落地过程中不要求高速转向。
+    # SCUT 还限制高度 0.18-0.43 m，包含了我们的高度指令范围，不起作用，没有实现。
+    air_command_limit_s: 3.0
+    air_command_vx_limit_m_s: 2.5
+    air_command_wz_limit_rad_s: 1.5707963267948966
     recovery_probability: 0.0
     disturbance_phase: 1
+    # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，
+    # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
+    # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
+    reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
+      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
   stairs:
     air_reset_probability: 0.3
     air_height_offset_m: *id001
     air_vx_range_m_s: *id002
+    # SCUT V14/env_cfg.py:1488-1521 (predefined_reset_air air_1)：空中出生同时随机倾角、横向速度、角速度和腿姿。
+    air_tilt_rad: [0.1, 0.2]  # roll、pitch 的上限
+    air_vy_range_m_s: [-0.5, 0.5]
+    air_angular_velocity_rad_s: [0.05, 0.1, 0.5]  # roll、pitch、yaw 的上限
+    air_leg_length_range_m: [0.15, 0.35]
+    air_leg_angle_range_rad: [-0.7853981633974483, 0.7853981633974483]
+    # SCUT V14/env_cfg.py:1510-1516：空中出生后 3 s 内限制指令，落地过程中不要求高速转向。
+    # SCUT 还限制高度 0.18-0.43 m，包含了我们的高度指令范围，不起作用，没有实现。
+    air_command_limit_s: 3.0
+    air_command_vx_limit_m_s: 2.5
+    air_command_wz_limit_rad_s: 1.5707963267948966
     recovery_probability: 0.0
     terrain:
       tile_size_m: &id003
@@ -243,16 +271,27 @@ stages:
       rows: 8
       columns: 10
       flat_proportion: 0.3
-      step_height_range_m: null
-      step_width_m: null
+      # RMUC 2027 规则手册 V1.0.0 图 4-27（中央高地 A-A 剖面）：外侧平台高 200 mm、宽 800 mm，路面 300 mm，
+      # 边缘挡块 400 mm。上限取 200 mm × 1.2（指南 §6.3），下限 2 cm；踏面宽取平台宽度。
+      step_height_range_m: [0.02, 0.24]
+      step_width_m: 0.8
       slope_proportion: 0.1
       bump_proportion: 0.1
       slope_angle_range_rad:
       - 0.0
       - 0.4363323129985824
-      bump_height_range_m: null
-      bump_spacing_m: null
-      bump_width_m: null
+      # 同一手册图 4-37（起伏路段凸起）：高 70 mm、间距 240 mm。场地凸起是三角形截面，这里用矩形条近似，
+      # 宽度取间距的一半，是设计选择，比实际凸起更难越过。
+      bump_height_range_m: [0.01, 0.07]
+      bump_spacing_m: 0.24
+      bump_width_m: 0.12
+      # 改自 SCUT manager/mdp/isaaclab/terrains.py:109-115 (RANDOM_UNIFORM_FOR_RM)：随机起伏地面，噪声 0-3 cm。
+      # SCUT 定义了波浪地形但各地形集都没有启用，这里也不加。
+      rough_proportion: 0.1
+      rough_noise_range_m: [0.0, 0.03]
+      rough_noise_step_m: 0.005
+      rough_downsampled_scale_m: 0.2
+      heightfield_border_width_m: 1.0
     stair_detection_distance_m: 0.5
     stair_detection_height_m: 0.05
     stair_false_positive: 0.1
@@ -263,6 +302,11 @@ stages:
     stuck_window_s: 1.0
     stuck_distance_m: 0.05
     disturbance_phase: 2
+    # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，
+    # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
+    # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
+    reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
+      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
     step_height_boost_m: 0.16
     step_height_hold_s: 2.0
     step_height_trigger_distance_m: 0.14
@@ -270,27 +314,61 @@ stages:
     air_reset_probability: 0.3
     air_height_offset_m: *id001
     air_vx_range_m_s: *id002
+    # SCUT V14/env_cfg.py:1488-1521 (predefined_reset_air air_1)：空中出生同时随机倾角、横向速度、角速度和腿姿。
+    air_tilt_rad: [0.1, 0.2]  # roll、pitch 的上限
+    air_vy_range_m_s: [-0.5, 0.5]
+    air_angular_velocity_rad_s: [0.05, 0.1, 0.5]  # roll、pitch、yaw 的上限
+    air_leg_length_range_m: [0.15, 0.35]
+    air_leg_angle_range_rad: [-0.7853981633974483, 0.7853981633974483]
+    # SCUT V14/env_cfg.py:1510-1516：空中出生后 3 s 内限制指令，落地过程中不要求高速转向。
+    # SCUT 还限制高度 0.18-0.43 m，包含了我们的高度指令范围，不起作用，没有实现。
+    air_command_limit_s: 3.0
+    air_command_vx_limit_m_s: 2.5
+    air_command_wz_limit_rad_s: 1.5707963267948966
     recovery_probability: 0.15
-    handover_states_npz: null
+    # 倒地出生，改自 SCUT V14/cfg_utils.py:198-226 (predefined_reset_ground)：腿接近水平，机身水平地从
+    # recovery_root_height_m 落下。leg_height 是轮心低于髋轴的距离（负值为轮心高于髋轴）；
+    # forward 指轮心在髋轴前方，对应 SCUT 的 negative 模式（概率 0.2/0.5）。不再使用接管状态库。
+    recovery_root_height_m: 0.25
+    recovery_forward_probability: 0.4
+    recovery_leg_length_m: [0.14, 0.36]
+    recovery_leg_height_m: [-0.06, 0.12]
+    recovery_forward_leg_height_m: [-0.06, 0.0]
     rise_duration_s: 1.5
     zero_torque_s: 0.2
     recovery_timeout_s: 5.0
     disturbance_phase: 2
+    # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，
+    # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
+    # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
+    reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
+      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
     terrain:
       tile_size_m: *id003
       rows: 8
       columns: 10
       flat_proportion: 0.3
-      step_height_range_m: null
-      step_width_m: null
+      # RMUC 2027 规则手册 V1.0.0 图 4-27（中央高地 A-A 剖面）：外侧平台高 200 mm、宽 800 mm，路面 300 mm，
+      # 边缘挡块 400 mm。上限取 200 mm × 1.2（指南 §6.3），下限 2 cm；踏面宽取平台宽度。
+      step_height_range_m: [0.02, 0.24]
+      step_width_m: 0.8
       slope_proportion: 0.1
       bump_proportion: 0.1
       slope_angle_range_rad:
       - 0.0
       - 0.4363323129985824
-      bump_height_range_m: null
-      bump_spacing_m: null
-      bump_width_m: null
+      # 同一手册图 4-37（起伏路段凸起）：高 70 mm、间距 240 mm。场地凸起是三角形截面，这里用矩形条近似，
+      # 宽度取间距的一半，是设计选择，比实际凸起更难越过。
+      bump_height_range_m: [0.01, 0.07]
+      bump_spacing_m: 0.24
+      bump_width_m: 0.12
+      # 改自 SCUT manager/mdp/isaaclab/terrains.py:109-115 (RANDOM_UNIFORM_FOR_RM)：随机起伏地面，噪声 0-3 cm。
+      # SCUT 定义了波浪地形但各地形集都没有启用，这里也不加。
+      rough_proportion: 0.1
+      rough_noise_range_m: [0.0, 0.03]
+      rough_noise_step_m: 0.005
+      rough_downsampled_scale_m: 0.2
+      heightfield_border_width_m: 1.0
     stair_detection_distance_m: 0.5
     stair_detection_height_m: 0.05
     stair_false_positive: 0.1
@@ -311,6 +389,6 @@ mode_semantics:
 - zero
 - zero
 - zero
-guide_version: '2.1'
+guide_version: '2.2'
 reference_notes: P1-flat baseline only. Ranges/classifier thresholds are simulation
   design choices. Other stages retain their readiness requirements.

@@ -93,6 +93,9 @@ training:
     linear_sigma: 0.5
     angular_sigma: 0.25
     height_sigma: 0.001
+    # 高度门控（与 P1 相同）：高度误差 5 cm 内自旋/平移奖励全给，10 cm 外为 0。
+    height_gate_full_error_m: 0.05
+    height_gate_zero_error_m: 0.1
     roll_sigma: 0.01
     pitch_sigma: 0.02
     fork_deadzone_m: 0.05
@@ -187,4 +190,4 @@ mode_semantics:
 - cos_heading_reference
 - sin_reference_relative_body
 - cos_reference_relative_body
-guide_version: '2.1'
+guide_version: '2.2'
