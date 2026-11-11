@@ -203,6 +203,15 @@ def _validate_training(cfg: TrainingConfig) -> None:
         for key in ("relative_error", "height_error_threshold_m"):
             if key not in curriculum:
                 raise ValueError(f"{cfg.policy_path}: missing training.command_curriculum.{key}")
+        if "combined_wz_limit_rad_s" not in cfg.settings["commands"]:
+            raise ValueError(f"{cfg.policy_path}: missing training.commands.combined_wz_limit_rad_s")
+        if "height_wide_anneal" not in cfg.settings:
+            raise ValueError(f"{cfg.policy_path}: missing training.height_wide_anneal")
+        for key in ("final_weight", "start_iteration", "ramp_iterations"):
+            if key not in cfg.settings["height_wide_anneal"]:
+                raise ValueError(f"{cfg.policy_path}: missing training.height_wide_anneal.{key}")
+        if cfg.settings["height_wide_anneal"]["ramp_iterations"] <= 0:
+            raise ValueError("training.height_wide_anneal.ramp_iterations must be positive")
     if TASKS[cfg.task].policy in ("p1", "p2"):
         parameters = cfg.settings["reward_parameters"]
         for key in ("height_gate_full_error_m", "height_gate_zero_error_m"):

@@ -89,6 +89,8 @@ training:
     - 0.1
     - 0.15
     dash_range_m_s: null
+    # “直行加转向”片段的转向上限 rad/s：课程放大后超过它时等比例缩到这个范围内；按本车轮速能力填写。
+    combined_wz_limit_rad_s: null
   reward_parameters:
     linear_sigma: 0.5
     angular_sigma: 0.25
@@ -176,6 +178,12 @@ training:
     yaw_error_threshold_rad_s: null
     relative_error: 0.25
     height_error_threshold_m: null
+  # 宽核高度奖励只在 p1-flat 退火：从 rewards.track_height_wide 线性退到 final_weight。
+  # start_iteration 是绝对训练轮数；用 --resume 续训时要不小于续训起点，否则权重在续训第一步就跳变。
+  height_wide_anneal:
+    final_weight: 0.5
+    start_iteration: 2000
+    ramp_iterations: 500
   transition_reset:
     probability: 0.0
     states_npz: null

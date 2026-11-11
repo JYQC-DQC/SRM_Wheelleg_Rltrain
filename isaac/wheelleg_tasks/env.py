@@ -626,9 +626,16 @@ class WheelLegEnv(DirectRLEnv):
             s["height_mask"] = (~self.jump.active).float()
             s["tracking_mask"] = torch.where(self.jump.active, 1.0, t.stage["non_event_tracking_scale"])
             s["guidance_scale"] = self.guidance_scale
-        terms = compute_rewards(
-            s, t.settings["reward_parameters"], self.reward_weights, self.step_dt, t.settings["reward_clip"]
-        )
+        weights = self.reward_weights
+        if t.task == "p1-flat":
+            # 宽核高度奖励在起立阶段提供梯度；站稳后它接近常数，按训练轮数线性退到 final_weight，
+            # 保留一个下限是因为每回合仍从随机腿姿起立。
+            anneal = t.settings["height_wide_anneal"]
+            iteration = self.training_iteration_offset + self.common_step_counter / t.settings["rollout_steps"]
+            progress = min(max((iteration - anneal["start_iteration"]) / anneal["ramp_iterations"], 0.0), 1.0)
+            initial = weights["track_height_wide"]
+            weights = {**weights, "track_height_wide": initial + progress * (anneal["final_weight"] - initial)}
+        terms = compute_rewards(s, t.settings["reward_parameters"], weights, self.step_dt, t.settings["reward_clip"])
         if t.task in ("p1-landing", "p1-stairs", "p1-recovery", "p3-jump", "p3-tunnel"):
             ar = t.settings["air_rewards"]
             terms["air_wheel_torque"] = (
@@ -801,6 +808,7 @@ class WheelLegEnv(DirectRLEnv):
 
     def _reset_idx(self, env_ids: torch.Tensor) -> None:
         t = self.training
+        curriculum_log = {}
         if self.family == "p1" and not self.cfg.evaluation:
             ran = self.command_sample_count[env_ids] > 0
             completed = env_ids[ran]
@@ -813,12 +821,26 @@ class WheelLegEnv(DirectRLEnv):
                 allowed = curriculum["relative_error"] * self.command_abs_sum[completed] / count + error.new_tensor(
                     [curriculum["velocity_error_threshold_m_s"], curriculum["yaw_error_threshold_rad_s"]]
                 )
-                passed = (
-                    (error[:, :2] < allowed).all(-1)
-                    & (error[:, 2] < curriculum["height_error_threshold_m"])
-                    & ~self.reset_terminated[completed]
-                )
+                checks = torch.stack(
+                    (
+                        error[:, 0] < allowed[:, 0],
+                        error[:, 1] < allowed[:, 1],
+                        error[:, 2] < curriculum["height_error_threshold_m"],
+                        ~self.reset_terminated[completed],
+                    ),
+                    -1,
+                )  # (K, 4): 速度、转速、高度、未终止
+                passed = checks.all(-1)
                 self.commands.command_fraction = self.command_curriculum.record(passed)
+                # 课程停住时要能看出是哪个条件没过；数值是本步结束的回合里的通过比例。
+                rates = checks.float().mean(0)
+                curriculum_log = {
+                    "Curriculum/pass_rate": passed.float().mean(),
+                    "Curriculum/pass_velocity": rates[0],
+                    "Curriculum/pass_yaw_rate": rates[1],
+                    "Curriculum/pass_height": rates[2],
+                    "Curriculum/pass_survived": rates[3],
+                }
         self.command_error_sum[env_ids] = 0
         self.command_abs_sum[env_ids] = 0
         self.command_sample_count[env_ids] = 0
@@ -831,7 +853,7 @@ class WheelLegEnv(DirectRLEnv):
                 iteration,
             )
         if self.reward_sums:
-            self.extras["log"] = {
+            self.extras["log"] = curriculum_log | {
                 f"Episode_Reward/{k}": v[env_ids].mean() / self.max_episode_length_s
                 for k, v in self.reward_sums.items()
             }

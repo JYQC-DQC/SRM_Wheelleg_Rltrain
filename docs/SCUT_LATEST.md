@@ -188,3 +188,18 @@ standup2_4096_2000 到第 301 轮仍停在机身约 0.18 m（`track_height_wide`
 - 指南升到 v2.2，新增 `docs/LESSONS.md`。
 - **启动 `p1-stairs` / `p1-recovery` 前要改两项**（`training.disturbance`）：`baseline_evaluation_passed: true`、
   `phase2_start_iteration: 0`。不改的话训练会拒绝启动并列出这两项。
+
+## 2026-11-12 课程停在 0.85 后的调整（只改代码，未部署、未在 Isaac 中运行）
+
+现象：`standup3` 续训到约 1900 轮已站稳（高度误差约 1.3 cm），课程从第 1411 轮起停在 0.85。推算是“直行加转向”
+的外侧轮转速接近 60 rad/s 的目标上限，没有力矩留给平衡（见 docs/LESSONS.md §2.7）。
+
+- 转向指令上限 2π→5 rad/s。
+- 轮速目标上限 `wheel_speed_limit_rad_s` 60→100（SCUT 配置里的 max_wheel_vel；它的代码再乘 1.5 得 150，这里没有乘）。
+- `scut_p1.yaml` 的 `save_interval` 500→200。
+- 新增 `commands.combined_wz_limit_rad_s=3.0`：“直行加转向”片段的转向在课程比例超过 0.6 后等比例缩到 ±3 rad/s 以内，
+  对 P1 全部阶段生效；纯转向、纯直行、冲刺不变。（先前按外侧轮 55 rad/s 裁剪的方案已去掉。）
+- 新增 `training.height_wide_anneal`：`p1-flat` 的宽核高度奖励从 2 线性退到 0.5（默认第 2000 轮起、500 轮内）。
+  用 `--resume` 续训时把 `start_iteration` 设成不小于续训起点的轮数。落地等后续阶段仍用 2，没有改。
+- TensorBoard 新增 `Curriculum/pass_rate`、`pass_velocity`、`pass_yaw_rate`、`pass_height`、`pass_survived`。
+- 需要重新运行 `tools.prepare_scut`（模板和生成内容都变了）。观测合同没变，可以从 `standup3` 的检查点 `--resume`。

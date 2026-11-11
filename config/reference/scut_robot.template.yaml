@@ -208,7 +208,11 @@ training:
   - null
   - null
   - null
-  wheel_speed_limit_rad_s: 60.0
+  # 轮速目标限幅 100 rad/s：SCUT 配置里的 max_wheel_vel（wheelbipe25_v3/env_cfg.py:410）；它的代码再乘 1.5 得 150
+  # （env.py:2032），这里没有乘。原先取资产里的 60：轮子力矩 = 0.2×(目标轮速−实际轮速)，目标封顶在 60 时
+  # 高速下没有力矩留给平衡。取 100 时实际轮速 75 rad/s 以下都能给满 5 N·m。
+  # 这是理想 PD 参考模型的设定，不是电机的实际转速能力。
+  wheel_speed_limit_rad_s: 100.0
   passive_damping: 0.01
   passive_effort_limit: 50.0
   spring:

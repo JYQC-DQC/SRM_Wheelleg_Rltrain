@@ -62,6 +62,12 @@ class Commands:
         kinds = torch.multinomial(self.value.new_tensor(self.settings["segment_probabilities"]), n, replacement=True)
         vx = uniform(self.settings["vx_range_m_s"], (n,), self.device) * self.command_fraction
         wz = uniform(self.settings["wz_range_rad_s"], (n,), self.device) * self.command_fraction
+        if self.family == "p1":
+            # “直行加转向”片段的转向单独封顶：课程放大后的转向上限超过 combined_wz_limit_rad_s 时，
+            # 把这类片段的转向等比例缩到该上限以内（仍是均匀分布）；纯转向、纯直行和冲刺片段不变。
+            wz_limit = max(abs(v) for v in self.settings["wz_range_rad_s"]) * self.command_fraction  # rad/s
+            scale = min(1.0, self.settings["combined_wz_limit_rad_s"] / wz_limit)
+            wz = torch.where(kinds == 3, wz * scale, wz)
         self.target[ids, 0] = torch.where((kinds == 1) | (kinds >= 3), vx, 0)
         self.target[ids, 2] = torch.where((kinds == 2) | (kinds == 3), wz, 0)
         dash = uniform(self.settings["dash_range_m_s"], (n,), self.device) * self.command_fraction

@@ -50,7 +50,7 @@ training:
   num_envs: 4096
   rollout_steps: 48
   max_iterations: 20000
-  save_interval: 500
+  save_interval: 200
   episode_length_s: 20.0
   init_noise_std: 1.0
   reward_clip: 2.5
@@ -79,9 +79,10 @@ training:
     vx_range_m_s:
     - -2.7
     - 2.7
+    # 转向上限 5 rad/s（原为 SCUT 的 2π）：更高的转速归 P2。
     wz_range_rad_s:
-    - -6.283185307179586
-    - 6.283185307179586
+    - -5.0
+    - 5.0
     # 上限 0.35 按用户要求设定（SCUT V14/env_cfg.py:564 为 0.20-0.42）；对应腿长约 0.29 m，在 0.32 m 以内。
     height_range_m:
     - 0.2
@@ -99,6 +100,9 @@ training:
     dash_range_m_s:
     - -3.0
     - 3.0
+    # “直行加转向”片段的转向上限：课程比例超过 0.6（5×0.6=3）后，这类片段的转向等比例缩到 ±3 rad/s 以内，
+    # 纯转向仍到 ±5。满速 2.7 m/s 加 3 rad/s 时外侧轮约 56 rad/s。
+    combined_wz_limit_rad_s: 3.0
   reward_parameters:
     linear_sigma: 0.5
     angular_sigma: 0.25
@@ -213,6 +217,12 @@ training:
     yaw_error_threshold_rad_s: 0.1
     relative_error: 0.25
     height_error_threshold_m: 0.05
+  # 宽核高度奖励只在 p1-flat 退火：从 rewards.track_height_wide 线性退到 final_weight。
+  # start_iteration 是绝对训练轮数；用 --resume 续训时要不小于续训起点，否则权重在续训第一步就跳变。
+  height_wide_anneal:
+    final_weight: 0.5
+    start_iteration: 2000
+    ramp_iterations: 500
   transition_reset:
     probability: 0.0
     states_npz: null
