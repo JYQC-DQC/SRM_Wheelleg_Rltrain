@@ -1,0 +1,34 @@
+# Synthetic experience terrain, NOT measurements of SRM or an official RM field.
+# References: SCUT agent_tasks/manager/mdp/isaaclab/terrains.py
+# RM_ROTATION_TERRAINS_CFG_99: 9 m tiles; selected low-difficulty terrain families.
+seed: 42
+tile_size_m: 9.0
+columns: 4
+border_m: 1.0
+horizontal_scale_m: 0.1
+physics_timestep_s: 0.002
+friction: [1.0, 0.01, 0.001]
+floor_thickness_m: 0.05
+spawn_offset_m: [-3.8, 0.0]
+tiles:
+  - {name: flat, kind: flat, color: [0.25, 0.35, 0.43, 1]}
+  - {name: slope, kind: slope, slope: 0.10, color: [0.20, 0.55, 0.46, 1]}
+  - {name: basin, kind: basin, slope: 0.10, color: [0.24, 0.47, 0.62, 1]}
+  - {name: stairs, kind: stairs, step_height_m: 0.015, step_width_m: 0.1, platform_width_m: 1.0, color: [0.72, 0.52, 0.25, 1]}
+  - {name: inverse_stairs, kind: inverse_stairs, step_height_m: 0.015, step_width_m: 0.1, platform_width_m: 2.0, color: [0.62, 0.42, 0.28, 1]}
+  - {name: grid_bars, kind: grid, bars_per_axis: 4, bar_width_m: 0.12, bar_height_m: 0.025, color: [0.62, 0.55, 0.23, 1]}
+  - {name: rough, kind: rough, max_height_m: 0.03, height_step_m: 0.005, sample_scale_m: 0.2, color: [0.42, 0.52, 0.30, 1]}
+  # Custom practice dimensions; not copied from the SCUT course or competition rules.
+  - name: tunnel_jump
+    kind: tunnel
+    color: [0.55, 0.36, 0.62, 1]
+    length_m: 0.9
+    width_m: 1.4
+    clearance_m: 0.26
+    roof_thickness_m: 0.09
+    wall_thickness_m: 0.08
+    ramp_center_x_m: -1.8
+    ramp_length_m: 1.2
+    ramp_height_m: 0.18
+    landing_start_x_m: 1.1
+    landing_length_m: 2.0

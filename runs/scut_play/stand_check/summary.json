@@ -1,0 +1,30 @@
+{
+  "model_sha256": "a1244761f7ede02f8c80d076d4315a25f014df43df3f7f0d20c2ca5bcd518719",
+  "scene": "D:\\SRM_Wheelleg_Rltrain\\runs\\scut_experience\\scene.xml",
+  "tile": "flat",
+  "physics_hz": 500,
+  "policy_hz": 50,
+  "steps": 5000,
+  "policy_calls": 500,
+  "resets": 0,
+  "simulated_seconds": 10.0,
+  "final_base_xyz_m": [
+    -4.266679799774193,
+    0.036285975169545896,
+    0.22572938439091816
+  ],
+  "worst_projected_gravity_z": -0.9958425164222717,
+  "min_base_height_after_1s_m": 0.22290948473147584,
+  "warning_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "error": null,
+  "scope": "MuJoCo policy playback only; no training or real-robot validation"
+}

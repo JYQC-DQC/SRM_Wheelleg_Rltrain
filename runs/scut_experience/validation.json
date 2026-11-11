@@ -1,0 +1,21 @@
+{
+  "mujoco_version": "3.5.0",
+  "bodies": 22,
+  "geoms": 179,
+  "heightfields": 3,
+  "actuators": 8,
+  "physics_timestep_s": 0.002,
+  "simulated_seconds": 2.0000000000000013,
+  "finite_state": true,
+  "warning_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "controller": "none; passive fall only, not balance or policy validation"
+}

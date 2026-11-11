@@ -1,0 +1,116 @@
+{
+  "purpose": "SCUT robot experience scene, not the measured SRM robot or an exact Isaac scene conversion",
+  "robot_source": "D:\\wheelbipe_ros2_sim2sim\\src\\resources\\robot_descriptions\\wheelbipeV14_2\\mjcf\\wheelbipeV14_2.xml",
+  "robot_sha256": "81e1b966c2f3df3f9af12a91739d11a5c9b7ba7a785151e78a11f0e0bfdfc6ea",
+  "physics_timestep_s": 0.002,
+  "policy_controller_included": false,
+  "training_environment_included": false,
+  "tiles": [
+    {
+      "name": "flat",
+      "kind": "flat",
+      "center_xy_m": [
+        0.0,
+        0.0
+      ],
+      "spawn_xy_m": [
+        -3.8,
+        0.0
+      ]
+    },
+    {
+      "name": "slope",
+      "kind": "slope",
+      "center_xy_m": [
+        9.0,
+        0.0
+      ],
+      "spawn_xy_m": [
+        5.2,
+        0.0
+      ]
+    },
+    {
+      "name": "basin",
+      "kind": "basin",
+      "center_xy_m": [
+        18.0,
+        0.0
+      ],
+      "spawn_xy_m": [
+        14.2,
+        0.0
+      ]
+    },
+    {
+      "name": "stairs",
+      "kind": "stairs",
+      "center_xy_m": [
+        27.0,
+        0.0
+      ],
+      "spawn_xy_m": [
+        23.2,
+        0.0
+      ]
+    },
+    {
+      "name": "inverse_stairs",
+      "kind": "inverse_stairs",
+      "center_xy_m": [
+        0.0,
+        9.0
+      ],
+      "spawn_xy_m": [
+        -3.8,
+        9.0
+      ]
+    },
+    {
+      "name": "grid_bars",
+      "kind": "grid",
+      "center_xy_m": [
+        9.0,
+        9.0
+      ],
+      "spawn_xy_m": [
+        5.2,
+        9.0
+      ]
+    },
+    {
+      "name": "rough",
+      "kind": "rough",
+      "center_xy_m": [
+        18.0,
+        9.0
+      ],
+      "spawn_xy_m": [
+        14.2,
+        9.0
+      ]
+    },
+    {
+      "name": "tunnel_jump",
+      "kind": "tunnel",
+      "center_xy_m": [
+        27.0,
+        9.0
+      ],
+      "spawn_xy_m": [
+        23.2,
+        9.0
+      ],
+      "forbidden_landing_geom": "tunnel_roof",
+      "landing_x_range_m": [
+        28.1,
+        30.1
+      ],
+      "landing_y_range_m": [
+        8.3,
+        9.7
+      ],
+      "landing_rule": "Entire robot must pass the rear edge and land on ground; roof contact is not success."
+    }
+  ]
+}
