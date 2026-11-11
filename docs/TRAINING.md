@@ -37,7 +37,7 @@ python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --rob
 其余分量固定。限幅开/关各迭代 400 步，输出超过 1e6 的环境数、非有限环境数和原始动作最大绝对值。
 本次不运行 CPU 测试、反馈诊断、USD 准备工具、Isaac/GPU 训练，也不推送。
 
-对齐推进指南 v2.1。当前为无云台底盘；真实 USD、机械参数、标定和辨识量仍待填。
+对齐推进指南 v2.2（2026-11-12 的修改见 docs/SCUT_LATEST.md 末尾和 docs/LESSONS.md）。当前为无云台底盘；真实 USD、机械参数、标定和辨识量仍待填。
 本次交付是代码实现，未进行 Isaac 环境运行、GPU 冒烟训练、sim2sim 或实车验收。
 
 ## 任务与续训关系
@@ -47,7 +47,7 @@ python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --rob
 | `p1-flat` | P1 | 平地速度/转向/腿高；指令片段及指令范围课程 | 从头训练 |
 | `p1-landing` | P1 | 混入空中出生、airborne 状态、落地约束 | p1-flat |
 | `p1-stairs` | P1 | 单/双台阶、坡道、凸起；30% 平地；地形等级课程 | p1-landing |
-| `p1-recovery` | P1 | 接管状态库、低姿态起身、高度参考、零力矩窗口；保留粗糙地形 | p1-stairs |
+| `p1-recovery` | P1 | 随机倒地出生、低姿态起身、高度参考、零力矩窗口；保留粗糙地形 | p1-stairs |
 | `p2-spin` | P2 | 双档转速、旋转平移、独立 PD 参数 | p1-flat |
 | `p3-jump` | P3 | 0/1/2 次事件、接触驱动相位、五档跳高、引导项退火 | p1-landing |
 | `p3-tunnel` | P3 | 横梁/护栏、横梁高度课程、后方地面落地 | p3-jump |
@@ -118,7 +118,7 @@ python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot ru
 
 - P1 固定 16 条指令；P2 双向旋转/平移组合；P3 包含不跳基线和五档跳高；具体指令等待本车能力确定。
 - 评测关闭域随机化和噪声，固定种子；传感/动作延迟分别使用 policy 的 `evaluation.observation_delay_steps` / `action_delay_steps`（单位 2 ms，必填，不默认 0）。失败之后的自动重置不计入成功或误差。
-- 输出 `evaluation.json/md`、`rollout.npz`，可选录像；末尾有效状态输出 `transition_states.npz`。R 的接管库仍由 `handover_states_npz` 指定，两者用途不同。
+- 输出 `evaluation.json/md`、`rollout.npz`，可选录像；末尾有效状态输出 `transition_states.npz`。起身任务不再使用接管状态库（2026-11-12）。
 - 评测旧阶段时重新选择旧 `--task`，用新 checkpoint 回归旧任务，不能仅看新技能回报。
 - 导出只接受至少 100 帧真实 rollout 观测；ONNX 输入固定 `[1,35]`，输出 `[1,6]`，与 PyTorch 最大误差须 `<1e-5`。
 - 导出包含 ONNX、golden.npz/h、参数头、机器人和策略快照、manifest；未生成 CubeAI C 网络，不声明固件可用。
@@ -153,7 +153,7 @@ python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot ru
 ## 当前边界
 
 - 已写训练、课程、评测和导出逻辑；真实 CAD→USD/MJCF 资产生成、五连杆 CAD 数值标定、
-  MuJoCo 双引擎验收及手写恢复控制器 R 不在本次训练代码中伪造。起身任务读取 R 的真实接管状态库。
+  MuJoCo 双引擎验收及手写恢复控制器 R 不在本次训练代码中伪造。起身任务从随机倒地姿态出生，不读取接管状态库。
 - 按回报重置采样和历史估计器按指南后置；当前使用均匀高度 bin 和成功率课程。
 - 尚未在目标 Isaac/GPU 上运行，训练收敛与 sim2real 未验证。
 - 用户要求先完成代码、暂停完整测试；最后只做静态检查及配置加载。先前中间版本的一轮 CPU 检查为 31 passed，

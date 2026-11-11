@@ -151,3 +151,40 @@ standup2_4096_2000 到第 301 轮仍停在机身约 0.18 m（`track_height_wide`
 - 上一轮站起来的激励估算已有约 5/s 仍未站起，权重不一定是瓶颈；部署前建议先回放 standup2 的 checkpoint 看实际姿态。
 
 - 终止计数改为慢慢回落：新增 `training.termination.release_s=2.0`（满计数回落到 0 的时间），对所有任务生效。
+
+## 2026-11-12 P1 后续阶段适配（只改代码，未部署、未在 Isaac 中运行）
+
+- 随机腿姿出生、起立窗口对所有任务的训练回合生效；高度门控对 P1 全部阶段生效（腾空时置 1）。评测仍从零位出生。
+- 空中出生照 SCUT V14/env_cfg.py:1488-1521：随机 roll ±0.1 / pitch ±0.2 rad、vy ±0.5 m/s、角速度、
+  腿长 0.15-0.35 m、摆角 ±45°。腾空时关闭 `pitch_penalty` 和 `height_error`（SCUT airborne reward_scales）。
+  `air_rewards.wheel_center_sigma` 取 SCUT 的 0.02。
+- `p1-recovery` 不再使用接管状态库（删除 `handover_states_npz`）：按 SCUT predefined_reset_ground 的参数，
+  腿接近水平、机身水平地从 0.25 m 落下后起身；占比仍由 `recovery_probability` 决定。
+- 地形尺寸取自 RMUC 2027 规则手册 V1.0.0：图 4-27 中央高地外侧平台高 200 mm、宽 800 mm，路面 300 mm；
+  图 4-37 起伏路段凸起高 70 mm、间距 240 mm。台阶高 0.02-0.24 m（200 mm × 1.2）、踏面 0.8 m；凸起 0.01-0.07 m。
+  尺寸是从图上读的，图中 350/360 mm 两个标注的含义未确认。
+- 新增 `randomization.body_materials`：机身（0.01-0.1）和导轮（0.1-0.7）摩擦随机化，SCUT V14/env_cfg.py:136-159。
+- SRM 配置新增的几何量留 null。P2、P3 仍没有华南虎版策略配置。
+
+## 2026-11-12 P2 参考配置、起伏/波浪地形、落地阶段平滑惩罚（只改代码，未部署、未在 Isaac 中运行）
+
+- 新增 `config/reference/scut_p2.yaml`，`tools.prepare_scut` 同时输出 `policy_p2.yaml` 并检查 `p2-spin` 可启动。
+  取值来源和与 SRM P2 配置的差别写在该文件开头。新增奖励项 `spin_heading_error`（SCUT 的方向误差平方项）。
+  P3 没有华南虎版配置。
+- 台阶/起身阶段的地形增加随机起伏和波浪两种高度场地块（各 5%，参数照 SCUT terrains.py:102-115），地形列数 10→20。
+  （波浪地形在下一条记录里去掉了。）
+- P1 各阶段新增 `reward_overrides`：landing/stairs/recovery 按 SCUT V14/env_cfg.py:1662-1668 把
+  `action_rate`、`action_smoothness_leg/wheel`、`leg_joint_vel`、`wheel_vel` 降到约 1/5；flat 为空。
+- 未做：SCUT 空中出生后 3 s 的指令限幅（vx ±2.5、wz ±0.5π）。
+
+## 2026-11-12 指南 v2.2 对应的修改（已提交，未部署、未在 Isaac 中运行）
+
+- 恢复系数：地面取 1.0（乘法合成），轮子 0–0.2、机身 0–0.2、导轮 0–0.1 随机。范围是设计选择，待实测。
+- 去掉波浪地形（SCUT 没有启用）；随机起伏地面占 10%，地形列数回到 10。
+- 落地及之后阶段的平滑惩罚按本项目平地权重 ×0.2，不照抄 SCUT 的数值（两边策略频率不同）。
+- 空中出生后 3 s 指令限幅：vx ±2.5 m/s、wz ±0.5π rad/s（SCUT V14/env_cfg.py:1510-1516）。
+- P2 参考配置按平地经验调整奖励（高度门控、宽核高度奖励、触地 −4、转速平方惩罚 −0.1、方向误差 −0.02），理由写在
+  `config/reference/scut_p2.yaml` 开头；P2 的高度门控参数在 SRM 的 P2 配置里也成为必填。
+- 指南升到 v2.2，新增 `docs/LESSONS.md`。
+- **启动 `p1-stairs` / `p1-recovery` 前要改两项**（`training.disturbance`）：`baseline_evaluation_passed: true`、
+  `phase2_start_iteration: 0`。不改的话训练会拒绝启动并列出这两项。
