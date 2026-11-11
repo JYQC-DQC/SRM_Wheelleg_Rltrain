@@ -117,6 +117,31 @@ def smooth_height(start: torch.Tensor, target: torch.Tensor, elapsed: torch.Tens
     return start + (target - start) * t.square() * (3 - 2 * t)
 
 
+def five_bar_joint_angles(
+    length: torch.Tensor, angle: torch.Tensor, links: tuple[float, ...], offsets: tuple[float, ...]
+) -> torch.Tensor:
+    """闭链腿逆解，改自 SCUT wheelbipe25_v3/env.py:5604-5631。
+
+    length (N, 2) 髋轴到轮心距离 m；angle (N, 2) 腿相对机体 -z 的摆角 rad，每条腿一列（左、右）。
+    返回 (N, 12)，顺序 front1, rear1, front2, front3, front4, rear2，每个关节先左后右。
+    """
+    l0, l1, l2 = links
+    half = torch.arccos((l0**2 * length.square() + l2**2 * (l0**2 - l1**2)) / (2 * l2 * l0**2 * length))
+    knee = torch.arccos((l0**2 + l1**2 - l0**2 * length.square() / l2**2) / (2 * l0 * l1))
+    closing = 2 * torch.pi - 2 * half - 2 * knee
+    return torch.stack(
+        (
+            angle + torch.pi / 2 - half - offsets[0],
+            angle + torch.pi / 2 + half - offsets[1],
+            offsets[2] - knee,
+            offsets[3] - closing,
+            offsets[4] - knee,
+            knee - offsets[5],
+        ),
+        dim=1,
+    ).flatten(1)
+
+
 def reference_pd_torque(
     q: torch.Tensor,
     qd: torch.Tensor,

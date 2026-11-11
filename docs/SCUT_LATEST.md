@@ -100,3 +100,54 @@ command_curriculum.min_completed_episodes=4096，参考机器人模板同步exte
 
 这批修改未运行测试、USD 准备、反馈诊断或 Isaac/GPU 训练；高度检查是否通过尚无实测结果。
 
+
+# 2026-11-11 平地起立修复（分支 fix/flat-standup，未测试）
+
+现象：`model_1000` 把腿折到最短、轮子悬空，用导轮和后大腿撑地不动，回报仍接近满分。本次修改：
+
+- 接触：`asset.undesired_contact_body_names` 扩为机身、腿连杆、云台、导轮（只罚，二值项）；
+  新增 `asset.termination_contact_body_names`（机身、云台、导轮）。倾倒/触地须连续
+  `training.termination.duration_s=0.4` 才终止，数值异常仍立即终止。来源 SCUT V14/env.py:118-139。
+- 出生：`p1-flat` 训练回合用 `training.leg_reset` 的闭链逆解随机两条腿的腿长/摆角，机身 roll/pitch ±0.15 rad、
+  yaw 随机，出生高度按较低的轮底离地 `spawn_clearance_m` 计算；前 `settle_s=1.0` 不按倾倒/触地终止。
+  评测仍用默认零位姿出生。弹簧连杆关节仍写默认值，闭链由 PhysX 收敛，需实测复位后的关节速度尖峰。
+- 指令：最终范围 vx ±2.7 m/s、wz ±2π rad/s、冲刺 ±3.0 m/s；课程仍从 25% 起。死区 0.1 内的指令按 0 跟踪。
+- 课程：允许误差 = 0.1 + 0.25 × 回合平均指令幅值，另要求回合平均高度误差 < 0.03 m；原地不动或趴地不能升级。
+- 奖励：`stand_still` 改为速度绝对值；新增 `leg_joint_vel`、`wheel_vel`、`action_smoothness_leg/wheel`。
+  `value_loss_coef` 改为 4.0（SCUT V14 实际值）。
+
+必须重新运行 `tools.prepare_scut` 生成配置：它把接触名单正则展开成 USD 实际刚体名，未匹配的正则
+（例如 USD 没有 `*_guide_link`）打印为 `UNMATCHED_CONTACT_PATTERNS` 并写入 `reference_manifest.json`。
+奖励项和课程状态已变，旧 checkpoint 不要 `--resume`，从零训练。
+本次未运行测试、Ruff、`prepare_scut` 或 Isaac/GPU 训练；本地 tests/ 里依赖 `contact_base`、二维 `command_error_sum`、
+旧 `stand_still`/`undesired_contact` 数值的用例需要同步更新。
+
+## 2026-11-11 第二轮调整（standup_4096_2000 停在 281 轮后）
+
+第一轮从第 40 轮起 `height_error` 停在 -0.57（机身约 0.18 m，腿折叠），回合跑满但约 30% 时间有非轮触地。调整：
+新增宽核 `track_height_wide`（σ=0.025，权重 1）；高度指令上限 0.3→0.4 m（未验证腿长可达）；
+`height_error` -1→-1.5；`lin_vel_error` -1→-20；腿连杆加入终止名单。未冒烟，直接 4096×2000 从零训练。
+
+## 2026-11-11 第三轮调整（只改代码，未部署、未测试）
+
+- 课程起步 `initial_fraction` 0.25→0.4；高度指令上限 0.40→0.35 m。
+- `p1-flat` 加高度门控：高度误差 5 cm 内 `track_lin_vel`/`track_ang_vel` 全给，10 cm 外为 0（SCUT linear_band）。
+- `lin_vel_error` -20→-16（即 e²：差 1 m/s 每秒扣 1）；`height_error` -1.5→-2（误差 10 cm 每秒扣 2）。
+- 腿位置目标限幅恢复 SCUT 的 ±3.14 rad（余量 0）；出生摆角改为 SCUT 的 [-90°, 135°]，机身从 0.38 m 落下；
+  不含 predefined_reset_ground 倒地出生，不随机关节初速度。
+- TensorBoard 新增 `Curriculum/command_fraction`。
+需重新运行 `tools.prepare_scut`（模板已变）。
+
+## 2026-11-11 第四轮调整（覆盖第三轮中的出生范围和两项权重；只改代码，未部署、未测试）
+
+standup2_4096_2000 到第 301 轮仍停在机身约 0.18 m（`track_height_wide` 0.55、`height_error` -2.5），
+约 40% 的时间有非轮触地但不终止，回合总回报约 -2.7。据此：
+
+- 出生摆角恢复 ±0.6 rad（不用 SCUT 的 [-90°, 135°]），`min_root_height_m` 0.25。本地 MuJoCo 网格纯运动学检查：
+  全部边角组合下出生时机身最低点离地 >= 0.05 m、腿连杆 >= 0.028 m；导轮只在 USD 里，未检查。
+- 课程高度门槛 0.03→0.05 m。
+- 权重：`track_height_wide` 1→2，`height_error` -2→-1，`lin_vel_error` -16→-8，`undesired_contact` -2→-4；
+  高度门控同时作用于速度/转速的跟踪奖励和误差惩罚（与 SCUT 一致）。
+- 上一轮站起来的激励估算已有约 5/s 仍未站起，权重不一定是瓶颈；部署前建议先回放 standup2 的 checkpoint 看实际姿态。
+
+- 终止计数改为慢慢回落：新增 `training.termination.release_s=2.0`（满计数回落到 0 的时间），对所有任务生效。

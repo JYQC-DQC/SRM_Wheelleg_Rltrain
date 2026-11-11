@@ -4,23 +4,29 @@ import torch
 
 
 def track_lin_vel(s, p):
-    return torch.exp(-s["linear_error"].square() / p["linear_sigma"]) * s["tracking_mask"]
+    return torch.exp(-s["linear_error"].square() / p["linear_sigma"]) * s["tracking_mask"] * s["height_gate"]
 
 
 def lin_vel_error(s, p):
-    return (0.25 * s["linear_error"]).square() * s["tracking_mask"]
+    return (0.25 * s["linear_error"]).square() * s["tracking_mask"] * s["height_gate"]
 
 
 def track_ang_vel(s, p):
-    return torch.exp(-s["angular_error"].square() / p["angular_sigma"]) * s["tracking_mask"]
+    return torch.exp(-s["angular_error"].square() / p["angular_sigma"]) * s["tracking_mask"] * s["height_gate"]
 
 
 def ang_vel_error(s, p):
-    return (0.5 * s["angular_error"]).square() * s["tracking_mask"]
+    return (0.5 * s["angular_error"]).square() * s["tracking_mask"] * s["height_gate"]
 
 
 def track_height(s, p):
     return torch.exp(-s["height_error"].square() / p["height_sigma"]) * s["height_mask"]
+
+
+def track_height_wide(s, p):
+    # 改自 SCUT wheelbipe25_v3/env.py:3831 (track_height_exp，V14 的 height_sigma=0.025)：
+    # 紧核在误差 7 cm 处只有 0.007，没有梯度；宽核让腿折叠的姿态也能感到“再高一点更好”。
+    return torch.exp(-s["height_error"].square() / p["height_wide_sigma"]) * s["height_mask"]
 
 
 def height_error(s, p):
@@ -68,11 +74,13 @@ def leg_symmetry(s, p):
 
 
 def undesired_contact(s, p):
-    return (s["undesired_force"] > p["contact_force_n"]).float().sum(-1) * s["contact_multiplier"]
+    # 改自 SCUT wheelbipe25_v3/env.py:3929-3935: 二值项，名单变长后不随触地刚体数放大。
+    return (s["undesired_force"] > p["contact_force_n"]).any(-1).float() * s["contact_multiplier"]
 
 
 def stand_still(s, p):
-    return s["velocity"][:, :2].square().sum(-1) * (s["requested_speed"] < p["stand_deadzone"])
+    # 改自 SCUT wheelbipe25_v3/env.py:3748-3751 (stand_still_lin_vel): 绝对值，慢速溜车也有梯度。
+    return s["velocity"][:, :2].abs().sum(-1) * (s["requested_speed"] < p["stand_deadzone"])
 
 
 def joint_torque(s, p):
@@ -85,6 +93,23 @@ def wheel_power(s, p):
 
 def action_rate(s, p):
     return (s["action"] - s["previous_action"]).square().sum(-1)
+
+
+# 以下四项改自 SCUT wheelbipe25_v3/env.py:3515-3561，权重见 V14/env_cfg.py:869-883。
+def leg_joint_vel(s, p):
+    return s["hip_velocity"].square().sum(-1)  # (N,), (rad/s)^2
+
+
+def wheel_vel(s, p):
+    return s["wheel_velocity"].square().sum(-1)  # (N,), (rad/s)^2
+
+
+def action_smoothness_leg(s, p):
+    return s["leg_action_second_difference"].square().sum(-1)
+
+
+def action_smoothness_wheel(s, p):
+    return s["wheel_action_second_difference"].square().sum(-1)
 
 
 def termination(s, p):
@@ -175,6 +200,7 @@ TERMS = {
         track_ang_vel,
         ang_vel_error,
         track_height,
+        track_height_wide,
         height_error,
         flat_roll,
         flat_pitch,
@@ -189,6 +215,10 @@ TERMS = {
         joint_torque,
         wheel_power,
         action_rate,
+        leg_joint_vel,
+        wheel_vel,
+        action_smoothness_leg,
+        action_smoothness_wheel,
         termination,
         spin_velocity,
         spin_speed,

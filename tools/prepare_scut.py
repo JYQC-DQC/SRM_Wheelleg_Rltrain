@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -58,9 +59,20 @@ def main() -> None:
             base_position, wheel_positions, robot["training"]["wheel_radius_m"], robot["training"]["spawn_clearance_m"]
         )
         asset["initial_root_position_m"][2] = spawn_height
-        for name in asset["active_joint_names"] + asset["spring_joint_names"]:
+        leg_reset_joints = robot["training"]["leg_reset"]["joint_names"]
+        for name in asset["active_joint_names"] + asset["spring_joint_names"] + leg_reset_joints:
             if name not in joints:
                 raise ValueError(f"USD missing joint {name}")
+        # 模板里的接触名单是正则（SCUT V14/env.py:118-139）。Isaac 的 find_bodies 遇到匹配不到的正则会报错，
+        # 所以这里按 USD 实际刚体展开成精确名字，并把没匹配到的正则写进报告，由人确认。
+        unmatched_contact_patterns = {}
+        for key in ("undesired_contact_body_names", "termination_contact_body_names"):
+            patterns = asset[key]
+            asset[key] = [body for body in bodies if any(re.fullmatch(p, body) for p in patterns)]
+            unmatched_contact_patterns[key] = [p for p in patterns if not any(re.fullmatch(p, body) for body in bodies)]
+            if asset["base_body_name"] not in asset[key]:
+                raise ValueError(f"asset.{key} must include {asset['base_body_name']}")
+        print("UNMATCHED_CONTACT_PATTERNS", json.dumps(unmatched_contact_patterns), flush=True)
         pivots = []
         for side in ("left", "right"):
             anchors = []
@@ -83,6 +95,9 @@ def main() -> None:
             "target": "SCUT reference simulation only; NOT SRM calibration",
             "files_sha256": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (usd, asset_py)},
             "body_names": bodies,
+            "undesired_contact_body_names": asset["undesired_contact_body_names"],
+            "termination_contact_body_names": asset["termination_contact_body_names"],
+            "unmatched_contact_patterns": unmatched_contact_patterns,
             "spring_stroke_m": spans,
             "hip_pivots_b_m": pivots,
             "zero_pose_base_position_w_m": base_position,

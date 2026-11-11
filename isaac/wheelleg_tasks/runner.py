@@ -21,6 +21,8 @@ class WheelLegRunner(OnPolicyRunner):
         iteration = locs["it"]
         self.writer.add_scalar("Safety/raw_action_abs_max", env.iteration_raw_action_max.item(), iteration)
         self.writer.add_scalar("Safety/numerical_terminations", env.iteration_numerical_terminations.item(), iteration)
+        # 指令范围课程进度（0-1）；不写出来就看不出课程是否卡住。
+        self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
         # The rollout runs under torch.inference_mode(); its tensors cannot be zeroed in place here.
         env.iteration_raw_action_max = torch.zeros((), device=env.device)
         env.iteration_numerical_terminations = torch.zeros((), dtype=torch.long, device=env.device)

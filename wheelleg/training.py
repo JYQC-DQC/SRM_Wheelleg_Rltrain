@@ -60,6 +60,8 @@ class TrainingConfig:
             shared.pop("airborne")
             shared["termination"] = dict(shared["termination"])
             shared["termination"].pop("airborne_tilt_rad")
+        if self.task != "p1-flat" or evaluation:
+            shared.pop("leg_reset")  # 只有 p1-flat 训练出生使用
         if not evaluation:
             settings.pop("evaluation")
         if self.task in ("p1-flat", "p2-spin"):
@@ -183,6 +185,47 @@ def _validate_training(cfg: TrainingConfig) -> None:
         raise ValueError("command_curriculum.min_completed_episodes must be a positive integer")
     if curriculum["min_completed_episodes"] < cfg.settings["num_envs"]:
         raise ValueError("command_curriculum.min_completed_episodes must be >= training.num_envs")
+    # 旧的生成配置没有以下字段：在这里指明文件和字段，而不是在 Isaac 启动后报 KeyError。
+    if "termination_contact_body_names" not in cfg.asset:
+        raise ValueError(f"{cfg.robot_path}: missing asset.termination_contact_body_names")
+    if "duration_s" not in cfg.shared["termination"]:
+        raise ValueError(f"{cfg.robot_path}: missing training.termination.duration_s")
+    value = cfg.shared["termination"]["duration_s"]
+    if type(value) not in (float, int) or not isfinite(value) or value * cfg.robot.policy_hz < 1:
+        raise ValueError("training.termination.duration_s must cover at least one policy step")
+    if "release_s" not in cfg.shared["termination"]:
+        raise ValueError(f"{cfg.robot_path}: missing training.termination.release_s")
+    value = cfg.shared["termination"]["release_s"]
+    if type(value) not in (float, int) or not isfinite(value) or value <= 0:
+        raise ValueError("training.termination.release_s must be finite and positive")
+    if TASKS[cfg.task].policy == "p1":
+        for key in ("relative_error", "height_error_threshold_m"):
+            if key not in curriculum:
+                raise ValueError(f"{cfg.policy_path}: missing training.command_curriculum.{key}")
+    if cfg.task == "p1-flat":
+        parameters = cfg.settings["reward_parameters"]
+        for key in ("height_gate_full_error_m", "height_gate_zero_error_m"):
+            if key not in parameters:
+                raise ValueError(f"{cfg.policy_path}: missing training.reward_parameters.{key}")
+        if not 0 <= parameters["height_gate_full_error_m"] < parameters["height_gate_zero_error_m"]:
+            raise ValueError("reward_parameters: expected 0 <= height_gate_full_error_m < height_gate_zero_error_m")
+    if "leg_reset" not in cfg.shared:
+        raise ValueError(f"{cfg.robot_path}: missing training.leg_reset")
+    leg_reset = cfg.shared["leg_reset"]
+    for key, size in (
+        ("joint_names", 12),
+        ("link_lengths_m", 3),
+        ("angle_offsets_rad", 6),
+        ("length_range_m", 2),
+        ("angle_range_rad", 2),
+        ("root_tilt_rad", None),
+        ("min_root_height_m", None),
+        ("settle_s", None),
+    ):
+        if key not in leg_reset:
+            raise ValueError(f"{cfg.robot_path}: missing training.leg_reset.{key}")
+        if size is not None and leg_reset[key] is not None and len(leg_reset[key]) != size:
+            raise ValueError(f"training.leg_reset.{key}: expected {size} entries")
     for key in ("observation_delay_steps", "action_delay_steps"):
         if key not in cfg.settings["evaluation"]:
             raise ValueError(f"{cfg.policy_path}: missing training.evaluation.{key}")

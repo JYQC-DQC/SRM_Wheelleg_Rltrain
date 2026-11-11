@@ -93,6 +93,10 @@ training:
     linear_sigma: 0.5
     angular_sigma: 0.25
     height_sigma: 0.001
+    height_wide_sigma: 0.025
+    # SCUT V14/env_cfg.py:749-752 的 linear_band 高度门控：误差 5 cm 内速度/转速奖励全给，10 cm 外为 0。
+    height_gate_full_error_m: 0.05
+    height_gate_zero_error_m: 0.1
     roll_sigma: 0.01
     pitch_sigma: 0.02
     fork_deadzone_m: 0.05
@@ -109,6 +113,7 @@ training:
     track_ang_vel: 1.0
     ang_vel_error: -1.0
     track_height: 1.0
+    track_height_wide: 1.0
     height_error: -1.0
     flat_roll: 1.0
     flat_pitch: 1.0
@@ -123,6 +128,11 @@ training:
     joint_torque: -0.0001
     wheel_power: -0.0001
     action_rate: -0.01
+    # SCUT V14/env_cfg.py:869-883 的权重。
+    leg_joint_vel: -0.005
+    wheel_vel: -0.00001
+    action_smoothness_leg: -0.05
+    action_smoothness_wheel: -0.01
     termination: -4.0
     leg_symmetry: 0.0
   evaluation:
@@ -161,8 +171,11 @@ training:
     initial_fraction: 0.25
     increment: 0.05
     success_fraction: 0.8
+    # 允许的回合平均误差 = 底限 + relative_error × 平均指令幅值；另要求平均高度误差达标。
     velocity_error_threshold_m_s: null
     yaw_error_threshold_rad_s: null
+    relative_error: 0.25
+    height_error_threshold_m: null
   transition_reset:
     probability: 0.0
     states_npz: null

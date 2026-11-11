@@ -55,7 +55,8 @@ training:
   init_noise_std: 1.0
   reward_clip: 2.5
   ppo:
-    value_loss_coef: 2.0
+    # SCUT agents/rsl_rl_ppo_cfg.py:219（V14 继承 V13 的 4.0，不是 25v3 基类的 2.0）。
+    value_loss_coef: 4.0
     use_clipped_value_loss: true
     clip_param: 0.2
     entropy_coef: 0.005
@@ -74,15 +75,17 @@ training:
     height_duration_s:
     - 2.0
     - 6.0
+    # 指南 §6.1 / SCUT V14/env_cfg.py:988-993 的最终范围；课程从 initial_fraction 起逐步放大。
     vx_range_m_s:
-    - -0.6
-    - 0.6
+    - -2.7
+    - 2.7
     wz_range_rad_s:
-    - -0.6
-    - 0.6
+    - -6.283185307179586
+    - 6.283185307179586
+    # 上限 0.35 按用户要求设定（SCUT V14/env_cfg.py:564 为 0.20-0.42）；对应腿长约 0.29 m，在 0.32 m 以内。
     height_range_m:
     - 0.2
-    - 0.3
+    - 0.35
     linear_slew_m_s2: 2.0
     angular_slew_rad_s2: 10.0
     height_slew_m_s: 0.1
@@ -94,12 +97,16 @@ training:
     - 0.1
     - 0.15
     dash_range_m_s:
-    - -0.6
-    - 0.6
+    - -3.0
+    - 3.0
   reward_parameters:
     linear_sigma: 0.5
     angular_sigma: 0.25
     height_sigma: 0.001
+    height_wide_sigma: 0.025
+    # SCUT V14/env_cfg.py:749-752 的 linear_band 高度门控：误差 5 cm 内速度/转速奖励全给，10 cm 外为 0。
+    height_gate_full_error_m: 0.05
+    height_gate_zero_error_m: 0.1
     roll_sigma: 0.01
     pitch_sigma: 0.02
     fork_deadzone_m: 0.05
@@ -112,10 +119,17 @@ training:
     leg_length_symmetry_scale: 10.0
   rewards:
     track_lin_vel: 1.0
-    lin_vel_error: -1.0
+    # 权重按“先站稳再走稳”配：站姿类正奖励满分 5（高度 1+2、横滚 1、俯仰 1），运动类满分 2 且乘高度门控。
+    # 约束：腿折叠但不倒的状态净收益仍为正（估算约 +0.4/s），否则摔倒（-4）反而比活着划算。
+    # lin_vel_error 项是 (0.25e)²，-8 即 0.5e²：站起来后原地不动在 40% 课程下每秒约扣 0.13，另失去约 0.29 的跟踪分。
+    lin_vel_error: -8.0
     track_ang_vel: 1.0
     ang_vel_error: -1.0
     track_height: 1.0
+    # 宽核是起立阶段唯一有梯度的正奖励，权重取 2。
+    track_height_wide: 2.0
+    # 上一轮把这项加到每秒扣 2.5 也没有让机身抬高，反而把回合总回报压到约 -2.7（接近摔倒的 -4）。
+    # 恢复 SCUT 的 -1.0：腿折叠、指令 0.20-0.35 m 时平均每秒约扣 1.0。
     height_error: -1.0
     flat_roll: 1.0
     flat_pitch: 1.0
@@ -125,11 +139,18 @@ training:
     angular_xy: -0.05
     no_fork: -1.0
     no_fork_square: -1.0
-    undesired_contact: -2.0
+    # SCUT 平地为 -2、粗糙地形为 -5。上一轮约 40% 的时间有非轮触地却从不连续 0.4 s，只罚 -0.8/s；加到 -4。
+    undesired_contact: -4.0
     stand_still: -1.0
     joint_torque: -0.0001
     wheel_power: -0.0001
     action_rate: -0.01
+    # SCUT V14/env_cfg.py:869-883 的权重。动作二阶差分按策略步计算，100 Hz 下对同样平滑的轨迹比 50 Hz 弱，
+    # 若训练后仍抖动再加大；关节/轮加速度项未移植。
+    leg_joint_vel: -0.005
+    wheel_vel: -0.00001
+    action_smoothness_leg: -0.05
+    action_smoothness_wheel: -0.01
     termination: -4.0
     leg_symmetry: 0.0
   evaluation:
@@ -141,27 +162,27 @@ training:
     seed: 123
     height_m: 0.22
     vx_values_m_s:
-    - -0.6
-    - -0.4
-    - -0.2
+    - -2.0
+    - -1.0
+    - -0.5
     - 0
-    - 0.2
-    - 0.4
-    - 0.6
+    - 0.5
+    - 1.0
+    - 2.0
     wz_values_rad_s:
-    - -0.6
-    - -0.4
-    - -0.2
-    - 0.2
-    - 0.4
-    - 0.6
+    - -4.0
+    - -2.0
+    - -1.0
+    - 1.0
+    - 2.0
+    - 4.0
     combined_commands:
-    - - 0.3
+    - - 1.0
       - 0
-      - 0.3
-    - - -0.3
+      - 1.0
+    - - -1.0
       - 0
-      - -0.3
+      - -1.0
   disturbance:
     baseline_evaluation_passed: false
     ramp_iterations: 3000
@@ -184,11 +205,14 @@ training:
     wheel_speed_alignment: -10.0
   command_curriculum:
     min_completed_episodes: 4096
-    initial_fraction: 0.25
+    initial_fraction: 0.4
     increment: 0.05
     success_fraction: 0.8
-    velocity_error_threshold_m_s: 0.2
-    yaw_error_threshold_rad_s: 0.2
+    # 允许的回合平均误差 = 底限 + relative_error × 平均指令幅值；另要求平均高度误差达标。
+    velocity_error_threshold_m_s: 0.1
+    yaw_error_threshold_rad_s: 0.1
+    relative_error: 0.25
+    height_error_threshold_m: 0.05
   transition_reset:
     probability: 0.0
     states_npz: null

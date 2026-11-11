@@ -11,7 +11,7 @@ from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sensors import ContactSensor, RayCaster
 from isaaclab.utils.buffers import DelayBuffer
-from isaaclab.utils.math import euler_xyz_from_quat, quat_apply_inverse, quat_from_euler_xyz, wrap_to_pi
+from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inverse, quat_from_euler_xyz, wrap_to_pi
 
 from wheelleg.commands import Commands, uniform
 from wheelleg.curriculum import CommandCurriculum, JumpCurriculum
@@ -23,6 +23,7 @@ from wheelleg.tasks import TASKS
 from wheelleg.tensor_ops import (
     action_targets,
     clipped_component,
+    five_bar_joint_angles,
     motor_torque,
     observation_noise,
     observation_tensor,
@@ -45,7 +46,16 @@ class WheelLegEnv(DirectRLEnv):
         self.base, _ = self.robot.find_bodies(t.asset["base_body_name"])
         self.contact_wheels, _ = self.contact.find_bodies(list(t.asset["wheel_body_names"]), preserve_order=True)
         self.contact_bad, _ = self.contact.find_bodies(list(t.asset["undesired_contact_body_names"]))
-        self.contact_base, _ = self.contact.find_bodies(t.asset["base_body_name"])
+        # 改自 SCUT wheelbipe_V14/env.py:134-145: 平地终止名单含机身、云台和导轮，不只是机身。
+        self.contact_terminal, _ = self.contact.find_bodies(list(t.asset["termination_contact_body_names"]))
+        self.termination_duration_steps = round(t.shared["termination"]["duration_s"] / self.step_dt)
+        self.termination_steps = torch.zeros(n, device=d)  # 累计的触地/倾倒步数，可为小数
+        # 没有触地/倾倒的每一步，计数回落这么多：满计数要 release_s 才清空。
+        self.termination_leak = t.shared["termination"]["duration_s"] / t.shared["termination"]["release_s"]
+        if t.task == "p1-flat":
+            self.leg_reset_joints, _ = self.robot.find_joints(
+                list(t.shared["leg_reset"]["joint_names"]), preserve_order=True
+            )
         if len(self.joints) != 6 or len(self.springs) != 2 or len(self.wheels) != 2 or len(self.base) != 1:
             raise ValueError("USD must resolve exactly 6 active joints, 2 springs, 2 wheels and 1 base")
         self.legs, self.wheel_channels = list(t.robot.leg_indices), list(t.robot.wheel_indices)
@@ -76,6 +86,7 @@ class WheelLegEnv(DirectRLEnv):
         self.torque = torch.zeros(n, 6, device=d)
         self.raw_action = torch.zeros_like(self.torque)
         self.previous_action = torch.zeros_like(self.torque)
+        self.previous_previous_action = torch.zeros_like(self.torque)
         self.bad_action = torch.zeros(n, dtype=torch.bool, device=d)
         self.numerical_bad = torch.zeros(n, dtype=torch.bool, device=d)
         self.iteration_raw_action_max = torch.zeros((), device=d)
@@ -93,7 +104,8 @@ class WheelLegEnv(DirectRLEnv):
         )
         self.jump_curriculum = JumpCurriculum(t.stage, d, levels) if self.family == "p3" else None
         self.jump_bins = torch.zeros(n, dtype=torch.long, device=d)
-        self.command_error_sum = torch.zeros(n, 2, device=d)
+        self.command_error_sum = torch.zeros(n, 3, device=d)  # |vx 误差| m/s, |wz 误差| rad/s, |高度误差| m
+        self.command_abs_sum = torch.zeros(n, 2, device=d)  # |vx 指令| m/s, |wz 指令| rad/s
         self.command_sample_count = torch.zeros(n, dtype=torch.long, device=d)
         self.airborne = torch.zeros(n, dtype=torch.bool, device=d)
         self.air_enter = torch.zeros(n, device=d)
@@ -251,6 +263,7 @@ class WheelLegEnv(DirectRLEnv):
         t = self.training
         maximum = torch.nan_to_num(actions.abs(), nan=float("inf"), posinf=float("inf")).amax()
         self.iteration_raw_action_max = torch.maximum(self.iteration_raw_action_max, maximum)
+        self.previous_previous_action.copy_(self.previous_action)
         self.previous_action.copy_(self.raw_action)
         self.bad_action = ~torch.isfinite(actions).all(-1)
         self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
@@ -444,11 +457,18 @@ class WheelLegEnv(DirectRLEnv):
         if t.task == "p1-recovery":
             rise = smooth_height(self.recovery_start_height, height_target, age, t.stage["rise_duration_s"])
             height_target = torch.where(self.recovery_episode, rise, height_target)
-        linear_error = data.root_lin_vel_b[:, 0] * pitch.cos() - self.commands.value[:, 0]
-        angular_error = data.root_ang_vel_b[:, 2] - self.commands.value[:, 2]
+        # 改自 SCUT wheelbipe25_v3/env.py:3573-3582: 死区内的指令按 0 跟踪，避免同时要求“跟小速度”和“别动”。
+        deadzone = t.settings["reward_parameters"]["stand_deadzone"]
+        tracked = torch.where(self.commands.value.abs() < deadzone, 0.0, self.commands.value)
+        linear_error = data.root_lin_vel_b[:, 0] * pitch.cos() - tracked[:, 0]
+        angular_error = data.root_ang_vel_b[:, 2] - tracked[:, 2]
         height_error = base_height - height_target
         leg_vector = wheel_b - wheel_b.new_tensor(t.shared["hip_pivot_positions_b_m"])
+        second_difference = self.raw_action - 2 * self.previous_action + self.previous_previous_action
         return dict(
+            tracked_command=tracked[:, [0, 2]],
+            leg_action_second_difference=second_difference[:, self.legs],
+            wheel_action_second_difference=second_difference[:, self.wheel_channels],
             velocity=data.root_lin_vel_b,
             velocity_w=data.root_lin_vel_w,
             angular_velocity=data.root_ang_vel_b,
@@ -506,8 +526,19 @@ class WheelLegEnv(DirectRLEnv):
             self.airborne.zero_()
             tilt_limit = t.shared["termination"]["tilt_rad"]
         tilt_fail = (s["roll"].abs() > tilt_limit) | (s["pitch"].abs() > tilt_limit)
-        body_hit = (self.contact_peaks[:, self.contact_base] > t.shared["termination"]["contact_force_n"]).any(-1)
-        terminated = ((tilt_fail | body_hit) & ~self.recovery_episode) | self.bad_action | self.numerical_bad
+        body_hit = (self.contact_peaks[:, self.contact_terminal] > t.shared["termination"]["contact_force_n"]).any(-1)
+        # 改自 SCUT wheelbipe25_v3/env.py:4863-4895, 5017-5022: 倾倒/触地累计满 duration_s 才终止，
+        # 否则随机出生的瞬时触地会让回合立刻结束；数值异常仍立即终止。
+        # 与 SCUT 不同：条件中断时计数慢慢回落而不是清零。清零时策略靠“碰一下抬一下”
+        # 在约 40% 的时间里撑地也从不终止（standup2 的曲线）。
+        physical = (tilt_fail | body_hit) & ~self.recovery_episode
+        if t.task == "p1-flat":
+            # 随机腿姿出生后先落地，起立窗口内不按倾倒/触地终止；触地惩罚照常累计。
+            physical &= self.episode_length_buf * dt >= t.shared["leg_reset"]["settle_s"]
+        self.termination_steps = torch.where(
+            physical, self.termination_steps + 1, (self.termination_steps - self.termination_leak).clamp_min(0)
+        )
+        terminated = (self.termination_steps >= self.termination_duration_steps) | self.bad_action | self.numerical_bad
         timeout = self.episode_length_buf >= self.max_episode_length - 1
         if t.task == "p1-recovery":
             timeout |= self.recovery_episode & (self.episode_length_buf * dt >= t.stage["recovery_timeout_s"])
@@ -548,18 +579,28 @@ class WheelLegEnv(DirectRLEnv):
 
     def _get_rewards(self) -> torch.Tensor:
         t, s = self.training, self.state
-        self.command_error_sum += torch.stack((s["linear_error"].abs(), s["angular_error"].abs()), -1)
+        self.command_error_sum += torch.stack(
+            (s["linear_error"].abs(), s["angular_error"].abs(), s["height_error"].abs()), -1
+        )
+        self.command_abs_sum += s["tracked_command"].abs()
         self.command_sample_count += 1
         n = self.num_envs
         one = torch.ones(n, device=self.device)
         s.update(
             tracking_mask=one,
             height_mask=one,
+            height_gate=one,
             requested_speed=self.commands.value[:, :2].norm(dim=-1),
             airborne=self.airborne,
             contact_multiplier=torch.where(self.airborne, 25.0, 1.0),
             termination_multiplier=torch.where(self.airborne, 6.0, 1.0),
         )
+        if t.task == "p1-flat":
+            # 改自 SCUT wheelbipe25_v3/env.py:3842-3866 (linear_band)：高度没到位时压低速度/转速跟踪奖励，
+            # 防止趴低追速度。与 SCUT env.py:3887-3893 一致，跟踪奖励和误差惩罚都乘门控。
+            p = t.settings["reward_parameters"]
+            band = p["height_gate_zero_error_m"] - p["height_gate_full_error_m"]
+            s["height_gate"] = ((p["height_gate_zero_error_m"] - s["height_error"].abs()) / band).clamp(0, 1)
         if self.family == "p2":
             actual = rotate_xy(s["velocity_w"][:, :2], -self.commands.reference_yaw)
             target = self.commands.translation
@@ -758,14 +799,21 @@ class WheelLegEnv(DirectRLEnv):
             completed = env_ids[ran]
             if len(completed):
                 curriculum = t.settings["command_curriculum"]
-                error = self.command_error_sum[completed] / self.command_sample_count[completed, None]
+                count = self.command_sample_count[completed, None]
+                error = self.command_error_sum[completed] / count
+                # 允许误差 = 固定底限 + 比例 × 平均指令幅值。原地不动时误差等于指令幅值，无法靠不动升级；
+                # 高度误差把“趴在地上滑行”排除在成功之外。
+                allowed = curriculum["relative_error"] * self.command_abs_sum[completed] / count + error.new_tensor(
+                    [curriculum["velocity_error_threshold_m_s"], curriculum["yaw_error_threshold_rad_s"]]
+                )
                 passed = (
-                    (error[:, 0] < curriculum["velocity_error_threshold_m_s"])
-                    & (error[:, 1] < curriculum["yaw_error_threshold_rad_s"])
+                    (error[:, :2] < allowed).all(-1)
+                    & (error[:, 2] < curriculum["height_error_threshold_m"])
                     & ~self.reset_terminated[completed]
                 )
                 self.commands.command_fraction = self.command_curriculum.record(passed)
         self.command_error_sum[env_ids] = 0
+        self.command_abs_sum[env_ids] = 0
         self.command_sample_count[env_ids] = 0
         if self.jump is not None and not self.cfg.evaluation:
             interrupted = env_ids[self.jump.active[env_ids]]
@@ -802,6 +850,28 @@ class WheelLegEnv(DirectRLEnv):
             q[selected] = self.transition_states["joint_position"][rows]
             qd[selected] = self.transition_states["joint_velocity"][rows]
         self.recovery_episode[env_ids] = False
+        if t.task == "p1-flat" and not self.cfg.evaluation:
+            # 改自 SCUT wheelbipe25_v3/env.py:5380-5541 和 V14/env_cfg.py:342-353: 随机腿长/摆角加机身倾角出生，
+            # 否则每回合都从腿全折叠的零位开始，策略学不到起立。两条腿独立采样。
+            r = t.shared["leg_reset"]
+            length = uniform(r["length_range_m"], (n, 2), self.device)  # 髋轴中点到轮心, m
+            angle = uniform(r["angle_range_rad"], (n, 2), self.device)  # 正值时轮心在髋轴后方, rad
+            q[:, self.leg_reset_joints] = five_bar_joint_angles(
+                length, angle, r["link_lengths_m"], r["angle_offsets_rad"]
+            )
+            tilt = uniform((-r["root_tilt_rad"], r["root_tilt_rad"]), (n, 2), self.device)
+            yaw = uniform((-torch.pi, torch.pi), (n,), self.device)
+            root[:, 3:7] = quat_from_euler_xyz(tilt[:, 0], tilt[:, 1], yaw)
+            wheel_b = root.new_tensor(t.shared["hip_pivot_positions_b_m"]).expand(n, 2, 3).clone()
+            wheel_b[:, :, 0] -= length * angle.sin()
+            wheel_b[:, :, 2] -= length * angle.cos()
+            wheel_z = quat_apply(root[:, None, 3:7].expand(-1, 2, -1).reshape(-1, 4), wheel_b.reshape(-1, 3)).reshape(
+                n, 2, 3
+            )[:, :, 2]
+            # 较低的轮底离地 spawn_clearance_m；min_root_height_m 防止短腿大摆角时机身和连杆出生在地面以下。
+            height = t.shared["wheel_radius_m"] + t.shared["spawn_clearance_m"] - wheel_z.amin(-1)
+            root[:, 2] = self.terrain.env_origins[env_ids, 2] + height.clamp_min(r["min_root_height_m"])
+            self.spawn_check_mask[env_ids] = False
         if self.family == "p1" and t.stage["air_reset_probability"] > 0:
             air = torch.rand(n, device=self.device) < t.stage["air_reset_probability"]
             self.spawn_check_mask[env_ids[air]] = False
@@ -841,6 +911,8 @@ class WheelLegEnv(DirectRLEnv):
             self.stuck_time,
             self.raw_action,
             self.previous_action,
+            self.previous_previous_action,
+            self.termination_steps,
             self.bad_action,
             self.torque,
             self.contact_peaks,

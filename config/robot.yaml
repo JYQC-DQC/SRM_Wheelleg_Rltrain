@@ -37,7 +37,10 @@ asset:
   passive_joint_names: null
   wheel_body_names: [null, null]
   base_body_name: null
+  # 轮子以外不该触地的刚体（机身、腿连杆、导轮）；只罚不终止。
   undesired_contact_body_names: null
+  # 持续触地即终止回合的刚体（机身、导轮）。
+  termination_contact_body_names: null
   initial_root_position_m: [0.0, 0.0, null]
   initial_joint_positions_rad: null
   # One filtered ContactSensor per USD body; exact asset names, no bounding spheres.
@@ -151,6 +154,21 @@ training:
     tilt_rad: 0.6981317007977318
     airborne_tilt_rad: null
     contact_force_n: 3.0
+    # 倾倒/触地须连续满足这么久才终止（SCUT V14/env_cfg.py:589-590 的 20×0.02 s）。
+    duration_s: 0.4
+    # 条件中断后计数不清零，满计数要 release_s 才回落到 0。取 2.0 s 时，触地时间占比超过约 1/6 就会累计到终止；
+    # 若取 0.4 s（对称回落），占比低于 50% 的间歇撑地仍然不会终止。
+    release_s: 2.0
+  # 仅 p1-flat 训练出生使用：随机腿长/摆角的闭链逆解。几何量来自本车 CAD，不照抄参考机器人。
+  leg_reset:
+    joint_names: null
+    link_lengths_m: null
+    angle_offsets_rad: null
+    length_range_m: null
+    angle_range_rad: null
+    root_tilt_rad: 0.15
+    min_root_height_m: null
+    settle_s: 1.0
   airborne:
     contact_force_n: 20.0
     enter_duration_s: 0.02
