@@ -14,7 +14,7 @@ from isaaclab.utils import configclass
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
-from .terrain import BumpsCfg, SlopeCfg, StepsCfg
+from .terrain import BumpsCfg, SlopeCfg, SpinSlopeCfg, StepsCfg
 
 
 @configclass
@@ -165,6 +165,38 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
                 ),
             },
         )
+    if t.task == "p2-spin":
+        # SCUT terrains.py:672-699 mixes flat/low slopes/rough terrain for rotation.
+        # Keep a fixed mild mixture in this task, with no displacement-based promotion.
+        s = t.stage["terrain"]
+        terrain.terrain_type = "generator"
+        terrain.max_init_terrain_level = None
+        terrain.terrain_generator = TerrainGeneratorCfg(
+            seed=t.settings["seed"],
+            size=tuple(s["tile_size_m"]),
+            num_rows=s["rows"],
+            num_cols=s["columns"],
+            curriculum=True,
+            difficulty_range=tuple(s["difficulty_range"]),
+            sub_terrains={
+                "flat": StepsCfg(
+                    proportion=s["flat_proportion"],
+                    step_count=0,
+                    step_height_range=(0.0, 0.0),
+                    step_width=s["tile_size_m"][0],
+                ),
+                # Same noise parameters as SCUT RANDOM_UNIFORM_FOR_RM (terrains.py:109-115).
+                "rough": HfRandomUniformTerrainCfg(
+                    proportion=s["rough_proportion"],
+                    noise_range=tuple(s["rough_noise_range_m"]),
+                    noise_step=s["rough_noise_step_m"],
+                    downsampled_scale=s["rough_downsampled_scale_m"],
+                    border_width=s["heightfield_border_width_m"],
+                ),
+                "slope": SpinSlopeCfg(proportion=s["slope_proportion"], angle_range=tuple(s["slope_angle_range_rad"])),
+            },
+        )
+    if t.task in ("p1-stairs", "p1-recovery", "p2-spin"):
         scanner = RayCasterCfg(
             prim_path=f"/World/envs/env_.*/Robot/{asset['base_body_name']}",
             offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),

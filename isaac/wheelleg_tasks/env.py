@@ -453,7 +453,7 @@ class WheelLegEnv(DirectRLEnv):
         force = self.contact_peaks[:, self.contact_wheels]
         contact = force > t.shared["airborne"]["contact_force_n"]
         height_target = self.commands.height[:, 0]
-        if self.scanner is not None:
+        if t.task in ("p1-stairs", "p1-recovery"):
             height_target = height_target + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)
             height_target = height_target.clamp(max=t.settings["commands"]["height_range_m"][1])
         age = self.episode_length_buf * self.step_dt
@@ -657,7 +657,7 @@ class WheelLegEnv(DirectRLEnv):
             terms["air_wheel_alignment"] = (
                 ar["wheel_speed_alignment"] * self.step_dt * wheel_speed_error.square().sum(-1) * self.airborne
             )
-        if self.scanner is not None:
+        if t.task in ("p1-stairs", "p1-recovery"):
             position = self.robot.data.root_pos_w
             delta_b = quat_apply_inverse(self.robot.data.root_quat_w, position - self.previous_position)
             terms["progress"] = t.stage["progress_weight"] * delta_b[:, 0] * self.commands.value[:, 0].sign()
@@ -701,7 +701,7 @@ class WheelLegEnv(DirectRLEnv):
         self._sample_sensors(self._sim_step_counter)
         s = self._measure()
         t = self.training
-        if self.scanner is not None:
+        if t.task in ("p1-stairs", "p1-recovery"):
             hits = self.scanner.data.ray_hits_w
             points_b = quat_apply_inverse(
                 self.robot.data.root_quat_w[:, None].expand(-1, hits.shape[1], -1).reshape(-1, 4),
@@ -731,7 +731,7 @@ class WheelLegEnv(DirectRLEnv):
 
         def make_fields(values):
             height = self.commands.height
-            if self.scanner is not None:
+            if t.task in ("p1-stairs", "p1-recovery"):
                 height = (height + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)[:, None]).clamp(
                     max=t.settings["commands"]["height_range_m"][1]
                 )
@@ -859,7 +859,7 @@ class WheelLegEnv(DirectRLEnv):
             }
             for value in self.reward_sums.values():
                 value[env_ids] = 0
-        if self.scanner is not None and not self.cfg.evaluation:
+        if t.task in ("p1-stairs", "p1-recovery") and not self.cfg.evaluation:
             distance = (self.robot.data.root_pos_w[env_ids] - self.initial_position[env_ids])[:, :2].norm(dim=-1)
             size = t.stage["terrain"]["tile_size_m"][0]
             ran = self.episode_length_buf[env_ids] > 0

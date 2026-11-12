@@ -26,6 +26,8 @@ Actor 仍为 35 维，顺序和缩放不变；固件必须与 Python 共用以�
 - v2.1：action_clip=null 表示原始输出不裁剪；q_ref 只在实测髋限位内收 0.05 rad 后裁剪，轮速按独立上限裁剪。C 头使用 WL_ACTION_CLIP_ENABLED=0，不能将 null 当作缺参或零上限。
 - 训练 sensor 延迟在 2 ms 物理步采样，命令、模式和上一原始动作不随传感延迟一起倒退。
 - Actor 35 维保持 obs_v2；新增 critic 信息不进入固件输入。
+- 2026-11-12：P2 混合地形训练增加77点特权扫描，critic从81变158维；部署Actor合同不变。
+  旧P2检查点只能提取Actor初始化，不能恢复旧critic/优化器。新增历史估计器尚未实施。
 
 `gen_c_config.py --interface-only` 仅导出 ABI、时序及已确认的减速比，明确标记 `WL_DEPLOYMENT_CONFIG_READY=0`。
 去掉该选项会在缺少参数时拒绝导出；它不生成或伪造神经网络代码。

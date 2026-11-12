@@ -100,6 +100,23 @@ def main() -> None:
                     completed_duration=int(alive.sum()),
                     maximum_displacement_m=float(np.max(displacement)),
                 )
+                if cfg.task == "p2-spin":
+                    # terrain_importer.py:348 assigns environments to terrain columns.
+                    # Groups describe the spawn patch; translating robots can cross patch boundaries.
+                    terrain = cfg.stage["terrain"]
+                    columns = raw.terrain.terrain_types.cpu().numpy()
+                    lower = 0
+                    result["spawn_terrain_groups"] = {}
+                    for name in ("flat", "rough", "slope"):
+                        upper = lower + round(terrain[f"{name}_proportion"] * terrain["columns"])
+                        selected = (columns >= lower) & (columns < upper)
+                        if selected.any():
+                            result["spawn_terrain_groups"][name] = metrics(
+                                np.stack(errors)[:, selected],
+                                np.stack(valid)[:, selected],
+                                failed.cpu().numpy()[selected],
+                            )
+                        lower = upper
                 report.append(result)
             (args.output / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
             np.savez(args.output / "rollout.npz", observation=np.asarray(observations, dtype=np.float32))

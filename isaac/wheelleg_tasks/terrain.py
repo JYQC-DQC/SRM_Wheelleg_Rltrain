@@ -47,6 +47,19 @@ class SlopeCfg(SubTerrainBaseCfg):
     angle_range: tuple[float, float] = MISSING
 
 
+def spin_slope_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
+    """Spawn on the slope: a stationary spinning policy must actually experience it."""
+    meshes, _ = slope_terrain(difficulty, cfg)
+    sx, sy = cfg.size
+    angle = cfg.angle_range[0] + difficulty * (cfg.angle_range[1] - cfg.angle_range[0])
+    return meshes, np.array((3 * sx / 8, sy / 2, np.tan(angle) * sx / 8))
+
+
+@configclass
+class SpinSlopeCfg(SlopeCfg):
+    function = spin_slope_terrain
+
+
 def bumps_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     sx, sy = cfg.size
     ground = trimesh.creation.box((sx, sy, 0.1))

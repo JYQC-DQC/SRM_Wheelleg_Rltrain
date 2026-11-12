@@ -48,12 +48,12 @@ python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --rob
 | `p1-landing` | P1 | 混入空中出生、airborne 状态、落地约束 | p1-flat |
 | `p1-stairs` | P1 | 单/双台阶、坡道、凸起；30% 平地；地形等级课程 | p1-landing |
 | `p1-recovery` | P1 | 随机倒地出生、低姿态起身、高度参考、零力矩窗口；保留粗糙地形 | p1-stairs |
-| `p2-spin` | P2 | 双档转速、旋转平移、独立 PD 参数 | p1-flat |
+| `p2-spin` | P2 | 双档转速、旋转平移；50% 平地、30% 小起伏、20% 缓坡混训 | p1-flat |
 | `p3-jump` | P3 | 0/1/2 次事件、接触驱动相位、五档跳高、引导项退火 | p1-landing |
 | `p3-tunnel` | P3 | 横梁/护栏、横梁高度课程、后方地面落地 | p3-jump |
 
 以上是 3 个策略、7 个训练阶段，P1 的各阶段通常依次续训成为同一策略。
-Actor 均为 35→256→128→64→6；critic 为 81 维，台阶/起身阶段加入 77 点扫描后为 158 维。
+Actor 均为 35→256→128→64→6；critic 为 81 维，台阶/起身及 P2 阶段加入 77 点扫描后为 158 维。
 跨阶段用 `--initialize-from` 严格加载 Actor，不裁切/补零网络输入；critic 和优化器重新初始化。
 相同任务用 `--resume` 恢复 Actor、critic、优化器、迭代和课程状态。
 
@@ -107,6 +107,19 @@ python -m isaac.scripts.train --task p1-flat --run-name p1_continue --resume run
 
 P2 当前采用固定世界航向作为“虚拟云台”参考。模式位 33/34 表示参考航向相对机体 yaw 的 sin/cos；
 没有模拟不存在的实体云台。后续装云台时必须增加其真实惯量与 yaw 控制，并同步部署合同。
+
+### 2026-11-12：P2 同任务混合地形
+
+`p2-spin` 从第一轮混合平地50%、随机起伏30%、缓坡20%，不新增 `p2-rough`，不单独续训 rough。
+布局借鉴 SCUT `RM_ROTATION_TERRAINS_CFG_99`，简化为三类，比例为本项目设计选择。
+起伏使用 SCUT 0–3 cm、5 mm 噪声步长、0.2 m 下采样；坡角 ±0.1 rad（约±5.7°），坡地出生点放在坡面。
+每块9×9 m，8行10列，按行生成不同几何难度，初始环境随机取所有行；这不是训练升级课程。
+不使用 P1 按位移升降级、台阶信号、抬腿指令、进度/卡住奖励，P2 腾空状态仍禁用。
+扫描仅用于局部地面高度和 critic；Actor输入、模式位、动作与 obs_version=2 不变。
+旧 P2 critic 为81维，新版158维，因此用 `--initialize-from` 提取 Actor，禁止用旧 P2 `--resume`。
+重跑 `tools.prepare_scut` 生成 `policy_p2.yaml` 后启动；SRM P2 同步地形设计参数，真实资产/PD缺参仍留空。
+P2 评测也使用混合地形，JSON按出生地块给出 `spawn_terrain_groups`；移动时可能跨地块，不能当成全程地形标签。
+本批未运行测试、Isaac/GPU训练或评测，比例和范围尚无收敛证据。
 
 ## 评测、录像与导出
 

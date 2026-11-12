@@ -225,6 +225,49 @@ def _validate_training(cfg: TrainingConfig) -> None:
         unknown = [name for name in cfg.stage["reward_overrides"] if name not in cfg.settings["rewards"]]
         if unknown:
             raise ValueError(f"stages.{TASKS[cfg.task].stage}.reward_overrides: not in training.rewards: {unknown}")
+    if cfg.task == "p2-spin":
+        if "terrain" not in cfg.stage:
+            raise ValueError(f"{cfg.policy_path}: missing stages.spin.terrain; regenerate the P2 configuration")
+        terrain = cfg.stage["terrain"]
+        required = (
+            "tile_size_m",
+            "rows",
+            "columns",
+            "difficulty_range",
+            "flat_proportion",
+            "rough_proportion",
+            "slope_proportion",
+            "slope_angle_range_rad",
+            "rough_noise_range_m",
+            "rough_noise_step_m",
+            "rough_downsampled_scale_m",
+            "heightfield_border_width_m",
+        )
+        for key in required:
+            if key not in terrain:
+                raise ValueError(f"{cfg.policy_path}: missing stages.spin.terrain.{key}")
+        proportions = [terrain[k] for k in ("flat_proportion", "rough_proportion", "slope_proportion")]
+        if any(not isfinite(v) or v <= 0 for v in proportions) or abs(sum(proportions) - 1) > 1e-6:
+            raise ValueError("stages.spin.terrain proportions must be positive and sum to 1")
+        for key in ("rows", "columns"):
+            if type(terrain[key]) is not int or terrain[key] <= 0:
+                raise ValueError(f"stages.spin.terrain.{key} must be a positive integer")
+        # Curriculum terrain generation assigns whole columns to types.
+        if any(abs(v * terrain["columns"] - round(v * terrain["columns"])) > 1e-6 for v in proportions):
+            raise ValueError("stages.spin.terrain columns must represent each requested proportion exactly")
+        for key in ("difficulty_range", "slope_angle_range_rad", "rough_noise_range_m", "tile_size_m"):
+            value = terrain[key]
+            if len(value) != 2 or any(not isfinite(v) for v in value):
+                raise ValueError(f"stages.spin.terrain.{key} must contain two finite numbers")
+            if key != "tile_size_m" and value[0] > value[1]:
+                raise ValueError(f"stages.spin.terrain.{key} must be ordered")
+        if not 0 <= terrain["difficulty_range"][0] <= terrain["difficulty_range"][1] <= 1:
+            raise ValueError("stages.spin.terrain.difficulty_range must be in [0,1]")
+        if min(terrain["tile_size_m"]) <= 0:
+            raise ValueError("stages.spin.terrain.tile_size_m must be positive")
+        for key in ("rough_noise_step_m", "rough_downsampled_scale_m", "heightfield_border_width_m"):
+            if not isfinite(terrain[key]) or terrain[key] <= 0:
+                raise ValueError(f"stages.spin.terrain.{key} must be finite and positive")
     if "terrain" in cfg.stage:
         for key in (
             "rough_proportion",

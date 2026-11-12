@@ -176,6 +176,23 @@ training:
     states_npz: null
 stages:
   spin:
+    # SCUT RM_ROTATION_TERRAINS_CFG_99 (terrains.py:672-699), simplified for this task.
+    # Fixed mixture from the first iteration; rows encode geometric variation, not promotion.
+    terrain:
+      tile_size_m: [9.0, 9.0]
+      rows: 8
+      columns: 10
+      difficulty_range: [0.0, 1.0]
+      flat_proportion: 0.5
+      rough_proportion: 0.3
+      slope_proportion: 0.2
+      # SCUT RANDOM_UNIFORM_FOR_RM, terrains.py:109-115.
+      rough_noise_range_m: [0.0, 0.03]
+      rough_noise_step_m: 0.005
+      rough_downsampled_scale_m: 0.2
+      heightfield_border_width_m: 1.0
+      # Our mild signed slopes, about +/-5.7 degrees; not a measured capability.
+      slope_angle_range_rad: [-0.1, 0.1]
     translation_speed_range_m_s: null
     spin_low_range_rad_s: null
     spin_high_range_rad_s: null
