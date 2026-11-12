@@ -131,9 +131,11 @@ training:
     flat_roll: 1.0
     flat_pitch: 1.0
     roll_penalty: -2.0
-    pitch_penalty: -2.0
-    vertical_velocity: -0.5
-    angular_xy: -0.05
+    # 抑制平地“上下起伏换速度”（见 scut_p1.yaml 同处注释）：俯仰 -2→-3、竖直速度 -0.5→-4（世界系 vz 减高度指令变化率）、
+    # 俯仰/横滚角速度 -0.05→-0.2（复旦值）、新增髋关节加速度 -2e-5。stairs/recovery 覆盖回旧值。
+    pitch_penalty: -3.0
+    vertical_velocity: -4.0
+    angular_xy: -0.2
     no_fork: -1.0
     no_fork_square: -1.0
     undesired_contact: -2.0
@@ -143,6 +145,7 @@ training:
     action_rate: -0.01
     # SCUT V14/env_cfg.py:869-883 的权重。
     leg_joint_vel: -0.005
+    leg_joint_acc: -2.0e-05
     wheel_vel: -0.00001
     action_smoothness_leg: -0.05
     action_smoothness_wheel: -0.01
@@ -293,7 +296,7 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {track_height_wide: 1.5, action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06}
   stairs:
     air_reset_probability: 0.3
     air_height_offset_m: *id001
@@ -352,7 +355,8 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06,
+      pitch_penalty: -2.0, vertical_velocity: -0.5, angular_xy: -0.05}
     step_height_boost_m: 0.16
     step_height_hold_s: 2.0
     step_height_trigger_distance_m: 0.14
@@ -386,7 +390,8 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06,
+      pitch_penalty: -2.0, vertical_velocity: -0.5, angular_xy: -0.05}
     terrain:
       tile_size_m: *id003
       rows: 8

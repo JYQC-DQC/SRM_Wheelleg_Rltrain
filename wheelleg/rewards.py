@@ -43,16 +43,20 @@ def flat_pitch(s, p):
 
 
 def roll_penalty(s, p):
-    return ((2 * torch.exp(-s["velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 1]).square()
+    return ((2 * torch.exp(-s["heading_velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 1]).square()
 
 
 def pitch_penalty(s, p):
     # ground_mask: 腾空时不罚，SCUT V14/env_cfg.py:1551 (flat_orientation_y_v → 0)。
-    return ((2 * torch.exp(-s["velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 0]).square() * s["ground_mask"]
+    return ((2 * torch.exp(-s["heading_velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 0]).square() * s[
+        "ground_mask"
+    ]
 
 
 def vertical_velocity(s, p):
-    return s["velocity"][:, 2].square() * s["height_mask"]
+    # World vz relative to the height-reference rate: commanded height changes are free, bobbing is not.
+    # The body-frame vz used before (SCUT V14 lin_vel_z) also charged forward speed whenever the body leaned.
+    return (s["velocity_w"][:, 2] - s["height_target_rate"]).square() * s["height_mask"]
 
 
 def angular_xy(s, p):
@@ -82,7 +86,8 @@ def undesired_contact(s, p):
 
 def stand_still(s, p):
     # 改自 SCUT wheelbipe25_v3/env.py:3748-3751 (stand_still_lin_vel): 绝对值，慢速溜车也有梯度。
-    return s["velocity"][:, :2].abs().sum(-1) * (s["requested_speed"] < p["stand_deadzone"])
+    # Heading-frame horizontal velocity, so vertical motion of a pitched body does not count as drifting.
+    return s["heading_velocity"].abs().sum(-1) * (s["requested_speed"] < p["stand_deadzone"])
 
 
 def joint_torque(s, p):
@@ -100,6 +105,11 @@ def action_rate(s, p):
 # 以下四项改自 SCUT wheelbipe25_v3/env.py:3515-3561，权重见 V14/env_cfg.py:869-883。
 def leg_joint_vel(s, p):
     return s["hip_velocity"].square().sum(-1)  # (N,), (rad/s)^2
+
+
+def leg_joint_acc(s, p):
+    # 改自 SCUT wheelbipe25_v3/env.py:3508 (V14 权重 -5e-7)，但加速度按 100 Hz 策略步差分而非物理步，权重另定。
+    return s["hip_acceleration"].square().sum(-1)  # (N,), (rad/s^2)^2
 
 
 def wheel_vel(s, p):
@@ -226,6 +236,7 @@ TERMS = {
         wheel_power,
         action_rate,
         leg_joint_vel,
+        leg_joint_acc,
         wheel_vel,
         action_smoothness_leg,
         action_smoothness_wheel,

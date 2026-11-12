@@ -149,9 +149,16 @@ training:
     flat_roll: 1.0
     flat_pitch: 1.0
     roll_penalty: -2.0
-    pitch_penalty: -2.0
-    vertical_velocity: -0.5
-    angular_xy: -0.05
+    # 以下四项抑制平地“上下起伏换速度”。估算按机身高度正弦起伏：
+    # - vertical_velocity 改为 (世界系 vz − 高度指令变化率)²，-0.5→-4：2 cm/2 Hz 起伏每秒约扣 0.13，3 cm/3 Hz 约 0.64；
+    #   跟高度指令（斜率 0.1 m/s）几乎不扣。旧的机体系 vz 前倾高速时把前向速度误罚进来，现在没有。
+    # - angular_xy -0.05→-0.2（复旦 ang_vel_xy 值）：±0.1 rad/3 Hz 俯仰摆动每秒约扣 0.36，匀速行驶约为 0。
+    # - pitch_penalty -2→-3：温和加强，保留随速度放宽；加减速必需的前倾（0.2 rad、1.5 m/s）每秒约扣 1.0（原 0.68）。
+    #   不学复旦 orientation -100：那会压住加速前倾。roll 不加强：高速转向需要侧倾。
+    # - leg_joint_acc 见下。stairs/recovery 的 reward_overrides 把前三项覆盖回旧值（地形和起身带来正常的竖直运动）。
+    pitch_penalty: -3.0
+    vertical_velocity: -4.0
+    angular_xy: -0.2
     no_fork: -1.0
     no_fork_square: -1.0
     # SCUT 平地为 -2、粗糙地形为 -5。上一轮约 40% 的时间有非轮触地却从不连续 0.4 s，只罚 -0.8/s；加到 -4。
@@ -163,6 +170,11 @@ training:
     # SCUT V14/env_cfg.py:869-883 的权重。动作二阶差分按策略步计算，100 Hz 下对同样平滑的轨迹比 50 Hz 弱，
     # 若训练后仍抖动再加大；关节/轮加速度项未移植。
     leg_joint_vel: -0.005
+    # 髋关节加速度（100 Hz 策略步差分）。对正弦运动它与 leg_joint_vel 之比为 (2e-5/0.005)·ω²，二者在约 2.5 Hz 相等，
+    # 更高频率按 f² 增长。本车 d(髋角)/d(腿长)≈3.5 rad/m，2 cm 起伏只对应 0.07 rad，故对低频起伏作用很小
+    # （3 cm/3 Hz 每秒约 0.06），主要压高频腿部抖动；起伏主要靠 vertical_velocity。SCUT 的 -5e-7 是物理步差分，不可照搬。
+    # 校准：若 Episode_Reward/leg_joint_acc 在早期超过约 -0.3/s，说明主要在罚探索噪声，应减小。
+    leg_joint_acc: -2.0e-05
     wheel_vel: -0.00001
     action_smoothness_leg: -0.05
     action_smoothness_wheel: -0.01
@@ -333,7 +345,7 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {track_height_wide: 1.5, action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06}
   stairs:
     air_reset_probability: 0.3
     air_height_offset_m: *id001
@@ -396,7 +408,8 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06,
+      pitch_penalty: -2.0, vertical_velocity: -0.5, angular_xy: -0.05}
     step_height_boost_m: 0.16
     step_height_hold_s: 2.0
     step_height_trigger_distance_m: 0.14
@@ -432,7 +445,8 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06,
+      pitch_penalty: -2.0, vertical_velocity: -0.5, angular_xy: -0.05}
     terrain:
       tile_size_m: *id003
       rows: 8

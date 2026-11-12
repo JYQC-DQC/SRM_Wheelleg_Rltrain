@@ -19,6 +19,7 @@ class Commands:
         self.value = torch.zeros(count, 3, device=device)
         self.target = torch.zeros_like(self.value)
         self.height = torch.zeros(count, 1, device=device)
+        self.height_rate = torch.zeros(count, device=device)  # slewed height command rate, m/s
         self.target_height = torch.zeros_like(self.height)
         self.remaining = torch.zeros(count, device=device)
         self.height_remaining = torch.zeros_like(self.remaining)
@@ -38,6 +39,7 @@ class Commands:
         self._resample(ids)
         self._resample_height(ids)
         self.height[ids] = self.target_height[ids]
+        self.height_rate[ids] = 0
 
     def _resample(self, ids: torch.Tensor) -> None:
         n = len(ids)
@@ -87,9 +89,11 @@ class Commands:
         self._resample(((self.remaining <= 0) & ~frozen).nonzero().flatten())
         self._resample_height(((self.height_remaining <= 0) & ~frozen).nonzero().flatten())
         self.value = torch.where(frozen[:, None], self.value, slew(self.value, self.target, self.rates, dt))
+        previous = self.height
         self.height = torch.where(
             frozen[:, None], self.height, slew(self.height, self.target_height, self.settings["height_slew_m_s"], dt)
         )
+        self.height_rate.copy_((self.height - previous)[:, 0] / dt)
         self.translation = slew(self.translation, self.translation_target, self.settings["linear_slew_m_s2"], dt)
 
     def mode(

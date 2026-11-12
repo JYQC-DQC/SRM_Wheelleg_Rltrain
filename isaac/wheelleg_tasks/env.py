@@ -37,6 +37,7 @@ from wheelleg.tensor_ops import (
     reference_pd_torque,
     rotate_xy,
     smooth_height,
+    smooth_height_rate,
     spring_force,
     terrain_half_extent,
 )
@@ -152,6 +153,7 @@ class WheelLegEnv(DirectRLEnv):
         self.state = {}
         self.initial_position = torch.zeros(n, 3, device=d)
         self.previous_position = torch.zeros_like(self.initial_position)
+        self.previous_hip_velocity = torch.zeros(n, len(self.legs), device=d)  # rad/s, last policy step
         self.stuck_start = torch.zeros_like(self.initial_position)
         self.stuck_time = torch.zeros(n, device=d)
         self.stuck = self.airborne.clone()
@@ -499,17 +501,26 @@ class WheelLegEnv(DirectRLEnv):
         force = self.contact_peaks[:, self.contact_wheels]
         contact = force > t.shared["airborne"]["contact_force_n"]
         height_target = self.commands.height[:, 0]
+        # Height-reference rate for the vertical velocity term. The stairs boost is a step change with no rate.
+        height_rate = self.commands.height_rate
         if t.task in ("p1-stairs", "p1-recovery"):
             height_target = height_target + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)
             height_target = height_target.clamp(max=t.settings["commands"]["height_range_m"][1])
         age = self.episode_length_buf * self.step_dt
         if t.task == "p1-recovery":
             rise = smooth_height(self.recovery_start_height, height_target, age, t.stage["rise_duration_s"])
+            rise_rate = smooth_height_rate(
+                self.recovery_start_height, height_target, height_rate, age, t.stage["rise_duration_s"]
+            )
             height_target = torch.where(self.recovery_episode, rise, height_target)
+            height_rate = torch.where(self.recovery_episode, rise_rate, height_rate)
         # 改自 SCUT wheelbipe25_v3/env.py:3573-3582: 死区内的指令按 0 跟踪，避免同时要求“跟小速度”和“别动”。
         deadzone = t.settings["reward_parameters"]["stand_deadzone"]
         tracked = torch.where(self.commands.value.abs() < deadzone, 0.0, self.commands.value)
-        linear_error = data.root_lin_vel_b[:, 0] * pitch.cos() - tracked[:, 0]
+        # World velocity in the yaw-only heading frame. The body-frame vx * cos(pitch) used before (SCUT V14) leaks
+        # vertical velocity into forward speed whenever the body pitches, which bobbing in phase with pitch exploits.
+        heading_velocity = rotate_xy(data.root_lin_vel_w[:, :2], -yaw)
+        linear_error = heading_velocity[:, 0] - tracked[:, 0]
         angular_error = data.root_ang_vel_b[:, 2] - tracked[:, 2]
         height_error = base_height - height_target
         leg_vector = wheel_b - wheel_b.new_tensor(t.shared["hip_pivot_positions_b_m"])
@@ -520,6 +531,8 @@ class WheelLegEnv(DirectRLEnv):
             wheel_action_second_difference=second_difference[:, self.wheel_channels],
             velocity=data.root_lin_vel_b,
             velocity_w=data.root_lin_vel_w,
+            heading_velocity=heading_velocity,
+            height_target_rate=height_rate,
             angular_velocity=data.root_ang_vel_b,
             gravity=data.projected_gravity_b,
             roll=roll,
@@ -676,6 +689,10 @@ class WheelLegEnv(DirectRLEnv):
         self.command_error_sum += torch.where(counted, errors, 0.0)
         self.command_abs_sum += torch.where(counted, s["tracked_command"].abs(), 0.0)
         self.command_sample_count += (~relaxed).long()
+        # Hip acceleration by policy-step differencing (100 Hz): physics-rate joint_acc is dominated by contact and
+        # PD jitter at 500 Hz, while leg bobbing sits at a few Hz. Read once per step here, never in _measure.
+        s["hip_acceleration"] = (s["hip_velocity"] - self.previous_hip_velocity) / self.step_dt
+        self.previous_hip_velocity.copy_(s["hip_velocity"])
         s.update(
             tracking_mask=one,
             height_mask=one,
@@ -1137,6 +1154,7 @@ class WheelLegEnv(DirectRLEnv):
         self.robot.write_root_pose_to_sim(root[:, :7], env_ids)
         self.robot.write_root_velocity_to_sim(root[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(q, qd, env_ids=env_ids)
+        self.previous_hip_velocity[env_ids] = qd[:, self.joints][:, self.legs]
         self.initial_position[env_ids] = root[:, :3]
         self.out_of_bounds[env_ids] = False
         self.last_ground[env_ids] = self.terrain.env_origins[env_ids, 2]

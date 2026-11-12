@@ -1,5 +1,21 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+2026-11-12 平地“上下起伏换前向速度”的限制（只跑了 CPU 测试，未在 Isaac 中运行）：
+
+- 速度口径：跟踪误差、课程和评测的前向速度改为航向系（只含 yaw）世界水平速度。原来的机体系 vx·cos(俯仰)（同 SCUT）
+  在机身俯仰时把竖直速度漏进前向速度，起伏与俯仰同相就能“赚”到速度奖励。stand_still 和 roll/pitch 惩罚里的速度也改用航向系。
+- 竖直速度：`vertical_velocity` 改为 (世界系 vz − 高度参考变化率)²。变化率取斜率限制后的高度指令，recovery 起身段取平滑起身曲线的导数，
+  stairs 的台阶抬高是阶跃不计速率。P1 权重 -0.5→-4。
+- 姿态：`angular_xy` -0.05→-0.2（复旦 ang_vel_xy），`pitch_penalty` -2→-3；roll 不加强（高速转向要侧倾）。
+- 新增 `leg_joint_acc` -2e-5：髋关节加速度按 100 Hz 策略步差分，不是 SCUT 的物理步 joint_acc，权重不照搬 -5e-7。
+  它在约 2.5 Hz 与 leg_joint_vel 相等，主要压高频腿部抖动；本车 2 cm 起伏只对应约 0.07 rad 髋角，低频起伏主要靠竖直速度项。
+- 估算（高度正弦起伏）：2 cm/2 Hz 每秒合计约扣 0.35（原约 0.2），3 cm/3 Hz 约 1.1（原约 0.45）。
+- 阶段：flat/landing 用新权重；stairs/recovery 用 reward_overrides 保留旧的 pitch/竖直速度/角速度权重；
+  landing/stairs/recovery 的 leg_joint_acc 按平滑项惯例取 ×0.2。P2/P3 权重未改，但共用的速度口径和竖直速度定义已变。
+- 未改：stairs/P3 的 air_wheel_alignment 仍用机体系 vx。
+- 观测和 critic 合同不变，可 `--resume`；奖励尺度变了，续训初期 critic 会重新适应。需重新运行 `tools.prepare_scut`。
+- 校准：看 `Episode_Reward/leg_joint_acc`，若早期超过约 -0.3/s，说明主要在罚探索噪声，应减小权重。
+
 2026-11-12 landing奖励第二版（只跑了 CPU 测试，未在 Isaac 中运行）：成功/失败改为发生时立即结算；
 首次触地后加一次性缓冲期；腾空时保留姿态正奖励，加只罚不奖的轮心居中和轮速对准（目标为真实地速）；
 80% 空中出生速度跟随指令、指令冻结到落地窗口结束；critic 加 9 维事件状态（landing state_space 90）。

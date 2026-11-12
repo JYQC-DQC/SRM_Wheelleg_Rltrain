@@ -117,6 +117,19 @@ def smooth_height(start: torch.Tensor, target: torch.Tensor, elapsed: torch.Tens
     return start + (target - start) * t.square() * (3 - 2 * t)
 
 
+def smooth_height_rate(
+    start: torch.Tensor,
+    target: torch.Tensor,
+    target_rate: torch.Tensor,
+    elapsed: torch.Tensor,
+    duration: float,
+) -> torch.Tensor:
+    """Time derivative of smooth_height, m/s; target_rate is the rate of a moving target."""
+    t = (elapsed / duration).clamp(0, 1)
+    blend_rate = torch.where((t > 0) & (t < 1), 6 * t * (1 - t) / duration, 0.0)
+    return target_rate * t.square() * (3 - 2 * t) + (target - start) * blend_rate
+
+
 def five_bar_joint_angles(
     length: torch.Tensor, angle: torch.Tensor, links: tuple[float, ...], offsets: tuple[float, ...]
 ) -> torch.Tensor:
