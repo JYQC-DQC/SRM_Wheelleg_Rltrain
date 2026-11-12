@@ -17,6 +17,7 @@ from wheelleg.commands import Commands, uniform
 from wheelleg.curriculum import CommandCurriculum, JumpCurriculum
 from wheelleg.history import HistoryBuffer
 from wheelleg.jump import JumpEvent, tunnel_landing
+from wheelleg.landing import FirstLanding
 from wheelleg.observation import OBS_DIM
 from wheelleg.randomization import disturbance_progress, perturb_sensors
 from wheelleg.rewards import EVENT_TERMS, compute_rewards
@@ -132,6 +133,10 @@ class WheelLegEnv(DirectRLEnv):
         self.obstacle_hit = self.airborne.clone()
         self.obstacle_top_hit = self.airborne.clone()
         self.contact_peaks = torch.zeros(n, len(self.contact.body_names), device=d)
+        self.first_landing = (
+            FirstLanding(n, list(self.contact.body_names), self.contact_wheels, t.stage["landing_diagnostics"], d)
+            if t.task == "p1-landing" and not cfg.evaluation else None
+        )
         self.commands_fixed = False
         self.fixed_command = None
         self.fixed_jump_height = None
@@ -278,6 +283,8 @@ class WheelLegEnv(DirectRLEnv):
         self.bad_action = ~torch.isfinite(actions).all(-1)
         self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
         self.contact_peaks.zero_()
+        if self.first_landing is not None:
+            self.first_landing.begin_step()
         self.obstacle_hit.zero_()
         self.obstacle_top_hit.zero_()
         age = self.episode_length_buf * self.step_dt
@@ -377,7 +384,7 @@ class WheelLegEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         self._apply_wrench()
         self._sample_sensors(self._sim_step_counter - 1)
-        self._record_contacts()
+        self._record_contacts(self._sim_step_counter - 1)
         t = self.training
         delayed = self.act_delay.compute(self.raw_action)
         delayed = torch.where((self.action_ticks < self.act_delay.time_lags)[:, None], 0.0, delayed)
@@ -434,9 +441,13 @@ class WheelLegEnv(DirectRLEnv):
         )
         self.robot.set_joint_effort_target(force, joint_ids=self.springs)
 
-    def _record_contacts(self) -> None:
+    def _record_contacts(self, tick: int) -> None:
         forces = torch.linalg.vector_norm(self.contact.data.net_forces_w_history, dim=-1).amax(1)
         self.contact_peaks = torch.maximum(self.contact_peaks, forces)
+        if self.first_landing is not None:
+            # contact_sensor_data.py:77-88: current net NORMAL force, not history maximum or friction.
+            current = self.contact.data.net_forces_w.norm(dim=-1)
+            self.first_landing.sample_contacts(tick, self.physics_dt, current, self.torque[:, self.legs])
         if self.training.task != "p3-tunnel":
             return
         threshold = self.training.shared["termination"]["contact_force_n"]
@@ -528,7 +539,7 @@ class WheelLegEnv(DirectRLEnv):
             self.training.shared["numerical_safety"],
         )
         self.iteration_numerical_terminations += self.numerical_bad.sum()
-        self._record_contacts()
+        self._record_contacts(self._sim_step_counter)
         s = self._measure()
         t, dt = self.training, self.step_dt
         if airborne_enabled(t.task):
@@ -602,6 +613,11 @@ class WheelLegEnv(DirectRLEnv):
                 finished = self.jump.finished.nonzero().flatten()
                 iteration = self.training_iteration_offset + self.common_step_counter / t.settings["rollout_steps"]
                 self.jump_curriculum.record(self.jump_bins[finished], self.jump.landing_pulse[finished], iteration)
+        if self.first_landing is not None:
+            self.first_landing.update(
+                self._sim_step_counter, self.physics_dt, dt, s, terminated, timeout,
+                self.numerical_bad | self.bad_action,
+            )
         s["terminated"] = terminated
         self.state = s
         return terminated, timeout
@@ -926,6 +942,7 @@ class WheelLegEnv(DirectRLEnv):
         root[:, :3] += self.terrain.env_origins[env_ids]
         q, qd = self.robot.data.default_joint_pos[env_ids].clone(), self.robot.data.default_joint_vel[env_ids].clone()
         self.recovery_episode[env_ids] = False
+        air = torch.zeros(n, dtype=torch.bool, device=self.device)
         if self.cfg.evaluation and not self.cfg.evaluation_random_reset:
             # 评测保持默认零位出生；空中出生只给高度和前向速度，评测口径不变。
             if self.family == "p1" and t.stage["air_reset_probability"] > 0:
@@ -1008,6 +1025,9 @@ class WheelLegEnv(DirectRLEnv):
             q[selected] = self.transition_states["joint_position"][rows]
             qd[selected] = self.transition_states["joint_velocity"][rows]
             self.recovery_episode[env_ids[selected]] = False
+            air[selected] = False  # library states are not deliberately sampled air-reset events
+        if self.first_landing is not None:
+            self.first_landing.reset(env_ids, air, self._sim_step_counter)
         if self.jump is not None:
             self.jump.reset(env_ids)
         if t.task == "p3-tunnel":

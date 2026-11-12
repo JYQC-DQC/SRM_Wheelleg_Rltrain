@@ -225,6 +225,25 @@ def _validate_training(cfg: TrainingConfig) -> None:
         unknown = [name for name in cfg.stage["reward_overrides"] if name not in cfg.settings["rewards"]]
         if unknown:
             raise ValueError(f"stages.{TASKS[cfg.task].stage}.reward_overrides: not in training.rewards: {unknown}")
+    if cfg.task == "p1-landing":
+        if "landing_diagnostics" not in cfg.stage:
+            raise ValueError(f"{cfg.policy_path}: missing stages.landing.landing_diagnostics")
+        diagnostics = cfg.stage["landing_diagnostics"]
+        for key in ("first_contact_force_n", "support_force_n", "first_contact_timeout_s",
+                    "observation_window_s", "stable_duration_s", "touchdown_difference_s", "tilt_rad",
+                    "angular_xy_rad_s", "vertical_velocity_m_s", "height_error_m"):
+            if key not in diagnostics:
+                raise ValueError(f"{cfg.policy_path}: missing stages.landing.landing_diagnostics.{key}")
+            value = diagnostics[key]
+            if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                raise ValueError(f"stages.landing.landing_diagnostics.{key}: expected finite positive value")
+        if diagnostics["support_force_n"] < diagnostics["first_contact_force_n"]:
+            raise ValueError("landing_diagnostics.support_force_n must be >= first_contact_force_n")
+        if diagnostics["stable_duration_s"] >= diagnostics["observation_window_s"]:
+            raise ValueError("landing_diagnostics observation window must exceed stable hold duration")
+        deadline = diagnostics["first_contact_timeout_s"] + diagnostics["observation_window_s"]
+        if deadline >= cfg.settings["episode_length_s"]:
+            raise ValueError("landing diagnostics deadlines must fit within a full training episode")
     if cfg.task == "p2-spin":
         if "terrain" not in cfg.stage:
             raise ValueError(f"{cfg.policy_path}: missing stages.spin.terrain; regenerate the P2 configuration")

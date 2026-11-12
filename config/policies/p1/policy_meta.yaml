@@ -228,6 +228,19 @@ stages:
     disturbance_phase: 1
     reward_overrides: {}
   landing:
+    # Training-only first air-reset landing diagnostics, independent of rewards and the airborne state machine.
+    # Engineering diagnostic thresholds; contact force peaks are not certified structural safety limits.
+    landing_diagnostics:
+      first_contact_force_n: 3.0
+      support_force_n: 20.0
+      first_contact_timeout_s: 2.0
+      observation_window_s: 3.0
+      stable_duration_s: 0.5
+      touchdown_difference_s: 0.05
+      tilt_rad: 0.17453292519943295
+      angular_xy_rad_s: 0.5
+      vertical_velocity_m_s: 0.2
+      height_error_m: 0.05
     air_reset_probability: 0.3
     air_height_offset_m: &id001
     - 0.12
@@ -251,7 +264,7 @@ stages:
     # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
-    reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
+    reward_overrides: {track_height_wide: 1.5, action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
       leg_joint_vel: -0.001, wheel_vel: -2.0e-06}
   stairs:
     air_reset_probability: 0.3

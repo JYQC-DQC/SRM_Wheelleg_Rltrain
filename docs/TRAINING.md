@@ -42,6 +42,11 @@ python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --rob
 
 ## 任务与续训关系
 
+2026-11-12 landing训练补充：仅 `p1-landing` 的宽核高度奖励显式覆盖为1.5；
+新增仅训练启用的空中出生首次落地事件诊断，不改变奖励之外的终止/课程/观测，不修改评测分支。
+事件生命周期、互斥结果、配置阈值及TensorBoard分母见 [LANDING_TRAINING.md](LANDING_TRAINING.md)。
+旧启动配置需同步 `stages.landing.landing_diagnostics` 和reward_overrides；模板修改不影响已启动训练。
+
 | 任务 | 策略 | 内容 | 建议 Actor 初始化来源 |
 |---|---|---|---|
 | `p1-flat` | P1 | 平地速度/转向/腿高；指令片段及指令范围课程 | 从头训练 |
