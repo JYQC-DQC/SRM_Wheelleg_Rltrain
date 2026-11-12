@@ -157,3 +157,24 @@ def reference_pd_torque(
     error = q_ref - q
     error[:, wheels] = 0
     return (kp * error + kd * (qd_ref - qd)).clamp(-limit, limit) * output_scale
+
+
+def terrain_half_extent(terrain: dict) -> tuple[float, float]:
+    """Half size of the generated tile grid (rows along x, columns along y), centred on the world origin."""
+    return terrain["rows"] * terrain["tile_size_m"][0] / 2, terrain["columns"] * terrain["tile_size_m"][1] / 2
+
+
+def outside_terrain(position_xy: torch.Tensor, half_extent: tuple[float, float], margin: float) -> torch.Tensor:
+    """True once the base leaves the tile grid shrunk by margin (SCUT V14 env.py:540-564)."""
+    limit = position_xy.new_tensor(half_extent) - margin
+    return (position_xy.abs() > limit).any(-1)
+
+
+def ground_from_hits(hit_z: torch.Tensor, fallback: torch.Tensor) -> torch.Tensor:
+    """Median height of the rays that hit; rays that miss return non-finite values and are ignored.
+
+    Environments without any finite hit keep the fallback (the last valid ground height).
+    """
+    finite = torch.isfinite(hit_z)
+    ground = torch.where(finite, hit_z, torch.nan).nanmedian(-1).values
+    return torch.where(finite.any(-1), ground, fallback)

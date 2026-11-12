@@ -302,6 +302,10 @@ stages:
       rough_noise_step_m: 0.005
       rough_downsampled_scale_m: 0.2
       heightfield_border_width_m: 1.0
+      # Flat ring around the whole tile grid (IsaacLab border, top at ground level); nothing exists beyond it.
+      border_width_m: 5.0
+      # Leaving the grid shrunk by this margin ends the episode as a timeout (SCUT V14 default 0.5 m).
+      boundary_margin_m: 0.5
     stair_detection_distance_m: 0.5
     stair_detection_height_m: 0.05
     stair_false_positive: 0.1
@@ -379,6 +383,10 @@ stages:
       rough_noise_step_m: 0.005
       rough_downsampled_scale_m: 0.2
       heightfield_border_width_m: 1.0
+      # Flat ring around the whole tile grid (IsaacLab border, top at ground level); nothing exists beyond it.
+      border_width_m: 5.0
+      # Leaving the grid shrunk by this margin ends the episode as a timeout (SCUT V14 default 0.5 m).
+      boundary_margin_m: 0.5
     stair_detection_distance_m: 0.5
     stair_detection_height_m: 0.05
     stair_false_positive: 0.1

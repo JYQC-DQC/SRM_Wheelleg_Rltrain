@@ -128,6 +128,7 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             size=tuple(s["tile_size_m"]),
             num_rows=s["rows"],
             num_cols=s["columns"],
+            border_width=s["border_width_m"],
             curriculum=not evaluation,
             sub_terrains={
                 "flat": StepsCfg(
@@ -177,6 +178,7 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             num_rows=s["rows"],
             num_cols=s["columns"],
             curriculum=True,
+            border_width=s["border_width_m"],
             difficulty_range=tuple(s["difficulty_range"]),
             sub_terrains={
                 "flat": StepsCfg(

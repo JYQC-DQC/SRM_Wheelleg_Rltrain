@@ -275,9 +275,18 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "rough_noise_step_m",
             "rough_downsampled_scale_m",
             "heightfield_border_width_m",
+            "border_width_m",
+            "boundary_margin_m",
         ):
             if key not in cfg.stage["terrain"]:
                 raise ValueError(f"{cfg.policy_path}: missing stages.{TASKS[cfg.task].stage}.terrain.{key}")
+        terrain = cfg.stage["terrain"]
+        for key in ("border_width_m", "boundary_margin_m"):
+            if type(terrain[key]) not in (int, float) or not isfinite(terrain[key]) or terrain[key] < 0:
+                raise ValueError(f"stages.{TASKS[cfg.task].stage}.terrain.{key} must be finite and nonnegative")
+        half = min(terrain["rows"] * terrain["tile_size_m"][0], terrain["columns"] * terrain["tile_size_m"][1]) / 2
+        if terrain["boundary_margin_m"] >= half:
+            raise ValueError("terrain.boundary_margin_m must be smaller than half the tile grid")
     stage_keys = []
     if TASKS[cfg.task].policy == "p1" and cfg.stage["air_reset_probability"] > 0:
         stage_keys += [

@@ -24,13 +24,16 @@ from wheelleg.tensor_ops import (
     action_targets,
     clipped_component,
     five_bar_joint_angles,
+    ground_from_hits,
     motor_torque,
     observation_noise,
     observation_tensor,
+    outside_terrain,
     reference_pd_torque,
     rotate_xy,
     smooth_height,
     spring_force,
+    terrain_half_extent,
 )
 
 
@@ -91,6 +94,10 @@ class WheelLegEnv(DirectRLEnv):
         self.numerical_bad = torch.zeros(n, dtype=torch.bool, device=d)
         self.iteration_raw_action_max = torch.zeros((), device=d)
         self.iteration_numerical_terminations = torch.zeros((), dtype=torch.long, device=d)
+        # Generated terrain is a finite tile grid with nothing beyond its border; leaving it is a timeout.
+        self.bounded_terrain = self.cfg.terrain.terrain_type == "generator"
+        self.out_of_bounds = torch.zeros(n, dtype=torch.bool, device=d)
+        self.last_ground = self.terrain.env_origins[:, 2].clone()
         self.spawn_checked = False
         self.spawn_check_mask = torch.ones(n, dtype=torch.bool, device=d)
         self.action_ticks = torch.zeros(n, dtype=torch.long, device=d)
@@ -447,7 +454,9 @@ class WheelLegEnv(DirectRLEnv):
         ).reshape(-1, 2, 3)
         ground = self.terrain.env_origins[:, 2]
         if self.scanner is not None:
-            ground = self.scanner.data.ray_hits_w[:, :, 2].median(-1).values
+            ground = ground_from_hits(self.scanner.data.ray_hits_w[:, :, 2], self.last_ground)
+            # In-place: buffers reassigned under the rollout's inference_mode cannot be reset outside it.
+            self.last_ground.copy_(ground)
         base_height = data.root_pos_w[:, 2] - ground
         clearance = wheels_w[:, :, 2] - ground[:, None] - t.shared["wheel_radius_m"]
         force = self.contact_peaks[:, self.contact_wheels]
@@ -544,6 +553,15 @@ class WheelLegEnv(DirectRLEnv):
         timeout = self.episode_length_buf >= self.max_episode_length - 1
         if t.task == "p1-recovery":
             timeout |= self.recovery_episode & (self.episode_length_buf * dt >= t.stage["recovery_timeout_s"])
+        if self.bounded_terrain:
+            # Timeout, not termination: no penalty, and PPO bootstraps the value at the edge.
+            terrain = t.stage["terrain"]
+            self.out_of_bounds.copy_(
+                outside_terrain(
+                    self.robot.data.root_pos_w[:, :2], terrain_half_extent(terrain), terrain["boundary_margin_m"]
+                )
+            )
+            timeout |= self.out_of_bounds
         if self.jump is not None:
             stable = (s["roll"].abs() < t.stage["landing_tilt_rad"]) & (s["pitch"].abs() < t.stage["landing_tilt_rad"])
             stable &= (s["linear_error"].abs() < t.stage["landing_speed_error_m_s"]) & ~terminated
@@ -703,11 +721,13 @@ class WheelLegEnv(DirectRLEnv):
         t = self.training
         if t.task in ("p1-stairs", "p1-recovery"):
             hits = self.scanner.data.ray_hits_w
+            hit = torch.isfinite(hits).all(-1)
+            hits = torch.where(hit[..., None], hits, self.robot.data.root_pos_w[:, None])
             points_b = quat_apply_inverse(
                 self.robot.data.root_quat_w[:, None].expand(-1, hits.shape[1], -1).reshape(-1, 4),
                 (hits - self.robot.data.root_pos_w[:, None]).reshape(-1, 3),
             ).reshape(self.num_envs, -1, 3)
-            ahead = (points_b[:, :, 0] > 0) & (points_b[:, :, 0] < t.stage["stair_detection_distance_m"])
+            ahead = hit & (points_b[:, :, 0] > 0) & (points_b[:, :, 0] < t.stage["stair_detection_distance_m"])
             rise = hits[:, :, 2] - s["ground"][:, None]
             detected = (ahead & (rise >= t.stage["stair_detection_height_m"])).any(-1)
             if not self.cfg.evaluation:
@@ -715,7 +735,7 @@ class WheelLegEnv(DirectRLEnv):
                     detected & (torch.rand(self.num_envs, device=self.device) >= t.stage["stair_false_negative"])
                 ) | (torch.rand(self.num_envs, device=self.device) < t.stage["stair_false_positive"])
             self.stair_signal = detected.float()
-            close = (points_b[:, :, 0] > 0) & (points_b[:, :, 0] < t.stage["step_height_trigger_distance_m"])
+            close = hit & (points_b[:, :, 0] > 0) & (points_b[:, :, 0] < t.stage["step_height_trigger_distance_m"])
             trigger = (close & (rise >= t.stage["stair_detection_height_m"])).any(-1)
             self.height_boost_remaining = torch.where(
                 trigger, t.stage["step_height_hold_s"], (self.height_boost_remaining - self.step_dt).clamp_min(0)
@@ -782,7 +802,9 @@ class WheelLegEnv(DirectRLEnv):
             -1,
         )
         if self.scanner is not None:
-            scan = self.robot.data.root_pos_w[:, 2:3] - self.scanner.data.ray_hits_w[:, :, 2]
+            hit_z = self.scanner.data.ray_hits_w[:, :, 2]
+            hit_z = torch.where(torch.isfinite(hit_z), hit_z, s["ground"][:, None])
+            scan = self.robot.data.root_pos_w[:, 2:3] - hit_z
             critic = torch.cat((critic, component("height_scan", scan)), -1)
         return {"policy": actor, "critic": critic}
 
@@ -857,12 +879,15 @@ class WheelLegEnv(DirectRLEnv):
                 f"Episode_Reward/{k}": v[env_ids].mean() / self.max_episode_length_s
                 for k, v in self.reward_sums.items()
             }
+            if self.bounded_terrain:
+                self.extras["log"]["Episode_Termination/out_of_bounds"] = self.out_of_bounds[env_ids].float().mean()
             for value in self.reward_sums.values():
                 value[env_ids] = 0
         if t.task in ("p1-stairs", "p1-recovery") and not self.cfg.evaluation:
             distance = (self.robot.data.root_pos_w[env_ids] - self.initial_position[env_ids])[:, :2].norm(dim=-1)
             size = t.stage["terrain"]["tile_size_m"][0]
-            ran = self.episode_length_buf[env_ids] > 0
+            # Episodes cut at the grid edge keep their level: the distance reached there says nothing about the tile.
+            ran = (self.episode_length_buf[env_ids] > 0) & ~self.out_of_bounds[env_ids]
             self.terrain.update_env_origins(env_ids, (distance > size / 2) & ran, (distance < size / 4) & ran)
         super()._reset_idx(env_ids)
         n = len(env_ids)
@@ -963,6 +988,8 @@ class WheelLegEnv(DirectRLEnv):
         self.robot.write_root_velocity_to_sim(root[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(q, qd, env_ids=env_ids)
         self.initial_position[env_ids] = root[:, :3]
+        self.out_of_bounds[env_ids] = False
+        self.last_ground[env_ids] = self.terrain.env_origins[env_ids, 2]
         self.previous_position[env_ids] = root[:, :3]
         self.stuck_start[env_ids] = root[:, :3]
         self.recovery_start_height[env_ids] = root[:, 2] - self.terrain.env_origins[env_ids, 2]

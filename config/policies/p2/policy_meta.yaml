@@ -191,6 +191,10 @@ stages:
       rough_noise_step_m: 0.005
       rough_downsampled_scale_m: 0.2
       heightfield_border_width_m: 1.0
+      # Flat ring around the whole tile grid (IsaacLab border, top at ground level); nothing exists beyond it.
+      border_width_m: 5.0
+      # Leaving the grid shrunk by this margin ends the episode as a timeout (SCUT V14 default 0.5 m).
+      boundary_margin_m: 0.5
       # Our mild signed slopes, about +/-5.7 degrees; not a measured capability.
       slope_angle_range_rad: [-0.1, 0.1]
     translation_speed_range_m_s: null
