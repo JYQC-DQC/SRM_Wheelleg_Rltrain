@@ -60,6 +60,31 @@
 - 高度门控：landing 在腾空/缓冲段置 1，之后按实际高度误差计算，不再用旧 airborne 状态机的退出停留时间。
   旧状态机在 landing 中只保留两项功能：`air_joint_limits` 罚项和腾空倾角终止阈值（`airborne_tilt_rad`）。
 
+## 空中出生高度课程
+
+指令课程不看落地结果，所以另加一个只管出生高度的课程（`stages.landing.air_height_curriculum`，只对 p1-landing 训练）。
+
+- 出生高度偏移在 [0.12, 当前上限] 均匀采样，上限按 0.2 → 0.28 → 0.35 → 0.42 m 逐级放开；低处始终保留在分布里。
+- 只统计最新一档（上一级上限到当前上限）出生、已结算的事件。成功指奖励状态机的首次恢复，
+  分母是成功+失败，外生 timeout 不算；诊断模块按约定仍不影响训练。
+- 每满 1024 个事件为一个不重叠窗口，成功率 ≥ 0.8 则升一级，不降级。升级前出生、之后结算的事件落在旧档，不计入新窗口。
+- 4096 环境、空中出生概率 0.4 时每轮约 40 次空中出生，最高一档占 23–100%，一个窗口约 25–110 轮。数值是设计初值。
+- 评测、stairs、recovery 仍用完整的 0.12–0.42 m。课程状态存进 checkpoint；没有该状态的 landing checkpoint
+  不能 `--resume`，只能 `--initialize-from`。
+- 日志：`Curriculum/air_height_max_m`（当前上限）、`Curriculum/air_height_band_success_rate`（上一个窗口的成功率）。
+  `LandingReward/first_recovery_rate` 统计全部高度，会高于最新一档的成功率。
+
+## 指令课程的落地门槛
+
+指令越大，80% 的空中出生飞得越快，所以速度课程不能跑在落地前面（`stages.landing.command_curriculum_landing_gate`）。
+
+- p1-landing 训练中，指令课程的一个窗口（4096 个结束的回合）要同时满足：回合通过率 ≥ 0.8（原条件），
+  且同一窗口内结算的落地事件首次恢复率 ≥ 0.8、事件数 ≥ 256，才升级。落地事件包括全部高度，外生 timeout 不算。
+- 高度课程升级后新一档更难，落地率会先下降，指令课程随之暂停，等落地追上再继续；高度课程不反过来看速度，
+  因为抬高出生高度不会让平地跟踪变难。
+- flat/stairs/recovery 的指令课程不变，checkpoint 格式也不变。landing 的门槛计数存进 checkpoint。
+- 日志 `Curriculum/command_landing_gate_rate`：上一个指令窗口内的落地成功率。`Curriculum/pass_rate` 仍是速度那一侧。
+
 ## 日志
 
 两条成功率含义不同，不会自然相等：

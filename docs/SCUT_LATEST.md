@@ -1,5 +1,12 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+2026-11-12 landing 空中出生高度课程（只跑了 CPU 测试，未在 Isaac 中运行）：出生高度偏移上限从 0.2 m 起，
+按最新一档的首次恢复成功率（每 1024 个事件一个窗口，≥ 0.8）逐级放到 0.28/0.35/0.42 m。评测和 stairs/recovery 不变。
+课程状态存进 checkpoint，旧 landing checkpoint 只能 `--initialize-from`。需重新运行 `tools.prepare_scut`。
+同时给 landing 的指令课程加落地门槛：同一窗口内速度通过率 ≥ 0.8 且落地首次恢复率 ≥ 0.8（至少 256 个事件）才升级，
+避免速度升得太快变相让落地变难；flat 等阶段不变。landing 空中出生概率 0.3→0.4（stairs/recovery 仍 0.3）。
+详见 `LANDING_REWARD_DESIGN.md`「空中出生高度课程」「指令课程的落地门槛」。
+
 2026-11-12 平地“上下起伏换前向速度”的限制（只跑了 CPU 测试，未在 Isaac 中运行）：
 
 - 速度口径：跟踪误差、课程和评测的前向速度改为航向系（只含 yaw）世界水平速度。原来的机体系 vx·cos(俯仰)（同 SCUT）

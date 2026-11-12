@@ -32,6 +32,8 @@ class LandingRewards:
         self.age = self.supported.clone()
         self.progress = self.supported.clone()
         self.outcome = self.supported.clone()
+        self.resolved = self.active.clone()
+        self.succeeded = self.active.clone()
         self.stats = {}
 
     def _add(self, name: str, value: torch.Tensor) -> None:
@@ -153,6 +155,9 @@ class LandingRewards:
             self._add(f"failure/{name}", mask.sum())
         self._add("success_time_s/sum", torch.where(success, self.since_touch, 0.0).sum())
         self.active[success | failed | neutral] = False
+        # Read by the air-height curriculum: events resolved this step, exogenous timeouts excluded.
+        self.resolved = success | failed
+        self.succeeded = success
         # Same end as the diagnostic window: a failed event (e.g. a collision) keeps the commands frozen so the
         # diagnostic recovery that follows is not mixed with responses to new commands.
         self.hold &= ~(done | expired | missing)

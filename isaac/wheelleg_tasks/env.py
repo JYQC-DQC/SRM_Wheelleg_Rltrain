@@ -14,7 +14,7 @@ from isaaclab.utils.buffers import DelayBuffer
 from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inverse, quat_from_euler_xyz, wrap_to_pi
 
 from wheelleg.commands import Commands, uniform
-from wheelleg.curriculum import CommandCurriculum, JumpCurriculum
+from wheelleg.curriculum import AirHeightCurriculum, CommandCurriculum, JumpCurriculum
 from wheelleg.history import HistoryBuffer
 from wheelleg.jump import JumpEvent, tunnel_landing
 from wheelleg.landing import FirstLanding
@@ -112,7 +112,12 @@ class WheelLegEnv(DirectRLEnv):
         self.reward_weights = dict(t.settings["rewards"])
         if self.family == "p1":
             self.reward_weights.update(t.stage["reward_overrides"])
-        self.command_curriculum = CommandCurriculum(t.settings["command_curriculum"]) if self.family == "p1" else None
+        landing_gate = (
+            t.stage["command_curriculum_landing_gate"] if t.task == "p1-landing" and not cfg.evaluation else None
+        )
+        self.command_curriculum = (
+            CommandCurriculum(t.settings["command_curriculum"], landing_gate) if self.family == "p1" else None
+        )
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         levels = (
             tuple(h + t.stage["tunnel"]["clearance_margin_m"] for h in t.stage["tunnel"]["height_curriculum_m"])
@@ -146,6 +151,13 @@ class WheelLegEnv(DirectRLEnv):
             if t.task == "p1-landing" and not cfg.evaluation
             else None
         )
+        # Evaluation keeps the full air_height_offset_m range.
+        self.air_height_curriculum = (
+            AirHeightCurriculum(t.stage["air_height_offset_m"][0], t.stage["air_height_curriculum"])
+            if self.landing_reward is not None
+            else None
+        )
+        self.air_height_offset = torch.zeros(n, device=d)  # sampled air-birth height offset, m; 0 for ground births
         self.commands_fixed = False
         self.fixed_command = None
         self.fixed_jump_height = None
@@ -670,6 +682,9 @@ class WheelLegEnv(DirectRLEnv):
                 timeout,
                 self.numerical_bad | self.bad_action,
             )
+            resolved = self.landing_reward.resolved
+            self.air_height_curriculum.record(self.air_height_offset[resolved], self.landing_reward.succeeded[resolved])
+            self.command_curriculum.record_landing(self.landing_reward.succeeded[resolved])
         s["terminated"] = terminated
         self.state = s
         return terminated, timeout
@@ -1107,8 +1122,14 @@ class WheelLegEnv(DirectRLEnv):
             height = (t.shared["wheel_radius_m"] + t.shared["spawn_clearance_m"] - wheel_z.amin(-1)).clamp_min(
                 r["min_root_height_m"]
             )
+            self.air_height_offset[env_ids] = 0
             if air.any():
-                height = height + uniform(stage["air_height_offset_m"], (n,), self.device) * air
+                bounds = stage["air_height_offset_m"]
+                if self.air_height_curriculum is not None:
+                    bounds = (bounds[0], self.air_height_curriculum.upper)
+                offset = uniform(bounds, (n,), self.device) * air
+                self.air_height_offset[env_ids] = offset
+                height = height + offset
                 velocity_b = torch.zeros(n, 3, device=self.device)  # 航向系（只含 yaw）线速度 m/s
                 velocity_b[:, 0] = uniform(stage["air_vx_range_m_s"], (n,), self.device)
                 if t.task == "p1-landing":

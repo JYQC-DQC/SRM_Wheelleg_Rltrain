@@ -42,6 +42,14 @@ class WheelLegRunner(OnPolicyRunner):
         self.writer.add_scalar("Safety/numerical_terminations", env.iteration_numerical_terminations.item(), iteration)
         # 指令范围课程进度（0-1）；不写出来就看不出课程是否卡住。
         self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
+        if env.command_curriculum is not None and env.command_curriculum.last_landing_rate is not None:
+            rate = env.command_curriculum.last_landing_rate
+            self.writer.add_scalar("Curriculum/command_landing_gate_rate", rate, iteration)
+        if env.air_height_curriculum is not None:
+            curriculum = env.air_height_curriculum
+            self.writer.add_scalar("Curriculum/air_height_max_m", curriculum.upper, iteration)
+            if curriculum.last_rate is not None:
+                self.writer.add_scalar("Curriculum/air_height_band_success_rate", curriculum.last_rate, iteration)
         if env.first_landing is not None:
             self.writer.add_scalar("Landing/height_wide_weight", env.reward_weights["track_height_wide"], iteration)
             for name, value in env.first_landing.take_log().items():
@@ -62,6 +70,8 @@ class WheelLegRunner(OnPolicyRunner):
             extra["command_curriculum"] = env.command_curriculum.state_dict()
         if env.jump_curriculum is not None:
             extra["jump_curriculum"] = env.jump_curriculum.state_dict()
+        if env.air_height_curriculum is not None:
+            extra["air_height_curriculum"] = env.air_height_curriculum.state_dict()
         if hasattr(self.alg, "estimator_optimizer"):
             extra["estimator_optimizer"] = self.alg.estimator_optimizer.state_dict()
         super().save(path, extra)
@@ -73,6 +83,11 @@ class WheelLegRunner(OnPolicyRunner):
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"
             )
+        if self.env.unwrapped.air_height_curriculum is not None and "air_height_curriculum" not in infos:
+            raise ValueError("Checkpoint has no landing air-height curriculum state: use --initialize-from")
+        gate = self.env.unwrapped.command_curriculum
+        if gate is not None and gate.landing_gate is not None and "landing_events" not in infos["command_curriculum"]:
+            raise ValueError("Checkpoint has no landing-gated command curriculum state: use --initialize-from")
         infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
         env = self.env.unwrapped
         env.commands.command_fraction = infos["command_fraction"]
@@ -80,6 +95,8 @@ class WheelLegRunner(OnPolicyRunner):
             env.command_curriculum.load_state_dict(infos["command_curriculum"])
         if env.jump_curriculum is not None:
             env.jump_curriculum.load_state_dict(infos["jump_curriculum"])
+        if env.air_height_curriculum is not None:
+            env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"])
         if load_optimizer and hasattr(self.alg, "estimator_optimizer"):
             self.alg.estimator_optimizer.load_state_dict(infos["estimator_optimizer"])
         return infos

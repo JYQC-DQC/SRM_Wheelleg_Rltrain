@@ -268,7 +268,8 @@ stages:
       angular_xy_rad_s: 0.5
       vertical_velocity_m_s: 0.2
       height_error_m: 0.05
-    air_reset_probability: 0.3
+    # 落地阶段略高于 SCUT 的 0.3；stairs/recovery 仍为 0.3。
+    air_reset_probability: 0.4
     air_height_offset_m: &id001
     - 0.12
     - 0.42
@@ -290,6 +291,15 @@ stages:
     # Actor 没有机身速度观测，独立采样时触地前无法预知地速。设计初值。
     air_vx_command_probability: 0.8
     air_vx_command_noise_m_s: 0.3
+    # 空中出生高度课程，含义见 config/reference/scut_p1.yaml 同名块。
+    air_height_curriculum:
+      levels_m: [0.2, 0.28, 0.35, 0.42]
+      min_events: 1024
+      success_rate: 0.8
+    # 指令课程的落地门槛，含义见 config/reference/scut_p1.yaml 同名块。
+    command_curriculum_landing_gate:
+      min_events: 256
+      success_rate: 0.8
     recovery_probability: 0.0
     disturbance_phase: 1
     # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，

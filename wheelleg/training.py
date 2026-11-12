@@ -271,6 +271,41 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError(f"stages.landing.{key} must be finite and nonnegative")
         if cfg.stage["air_vx_command_probability"] > 1:
             raise ValueError("stages.landing.air_vx_command_probability must be within [0, 1]")
+        if "air_height_curriculum" not in cfg.stage:
+            raise ValueError(f"{cfg.policy_path}: missing stages.landing.air_height_curriculum")
+        height = cfg.stage["air_height_curriculum"]
+        for key in ("levels_m", "min_events", "success_rate"):
+            if key not in height:
+                raise ValueError(f"{cfg.policy_path}: missing stages.landing.air_height_curriculum.{key}")
+        low, high = cfg.stage["air_height_offset_m"]
+        levels = list(height["levels_m"])
+        if (
+            not levels
+            or any(type(v) not in (int, float) or not isfinite(v) for v in levels)
+            or levels[0] <= low
+            or any(b <= a for a, b in zip(levels, levels[1:]))
+            or levels[-1] != high
+        ):
+            raise ValueError(
+                "air_height_curriculum.levels_m must increase strictly from above air_height_offset_m[0] "
+                "and end at air_height_offset_m[1]"
+            )
+        if type(height["min_events"]) is not int or height["min_events"] <= 0:
+            raise ValueError("air_height_curriculum.min_events must be a positive integer")
+        rate = height["success_rate"]
+        if type(rate) not in (int, float) or not 0 < rate <= 1:
+            raise ValueError("air_height_curriculum.success_rate must be within (0, 1]")
+        if "command_curriculum_landing_gate" not in cfg.stage:
+            raise ValueError(f"{cfg.policy_path}: missing stages.landing.command_curriculum_landing_gate")
+        gate = cfg.stage["command_curriculum_landing_gate"]
+        for key in ("min_events", "success_rate"):
+            if key not in gate:
+                raise ValueError(f"{cfg.policy_path}: missing stages.landing.command_curriculum_landing_gate.{key}")
+        if type(gate["min_events"]) is not int or gate["min_events"] <= 0:
+            raise ValueError("command_curriculum_landing_gate.min_events must be a positive integer")
+        rate = gate["success_rate"]
+        if type(rate) not in (int, float) or not 0 < rate <= 1:
+            raise ValueError("command_curriculum_landing_gate.success_rate must be within (0, 1]")
         diagnostics = cfg.stage["landing_diagnostics"]
         for key in (
             "first_contact_force_n",
