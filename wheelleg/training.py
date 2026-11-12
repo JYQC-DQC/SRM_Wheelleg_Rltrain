@@ -248,12 +248,38 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "wheel_center_sigma",
             "wheel_speed_weight",
             "wheel_speed_sigma",
+            "contact_multiplier",
+            "guide_hard_speed_m_s",
+            "guide_speed_cost",
+            "leg_extension_weight",
+            "leg_extension_target_m",
+            "leg_extension_scale_m",
         ):
             if key not in reward:
                 raise ValueError(f"{cfg.policy_path}: missing stages.landing.landing_reward.{key}")
             value = reward[key]
+            if value is None and key == "leg_extension_target_m":
+                continue  # robot geometry still unknown: reported by missing() and blocked by require_ready()
             if type(value) not in (int, float) or not isfinite(value) or value <= 0:
                 raise ValueError(f"landing_reward.{key} must be finite and positive")
+        if type(reward.get("guide_body_regex")) is not str:
+            raise ValueError(
+                f"{cfg.policy_path}: stages.landing.landing_reward.guide_body_regex must be a regex string"
+            )
+        if reward["contact_multiplier"] < 1:
+            raise ValueError("landing_reward.contact_multiplier must not weaken the contact penalty")
+        if "guide_brush_cost" in reward:
+            raise ValueError("landing_reward.guide_brush_cost was removed: guide contacts cost guide_speed_cost each")
+        # Per contact only: long guide support is charged by contact_multiplier and may exceed a failed landing.
+        if reward["guide_speed_cost"] >= reward["failure_cost"]:
+            raise ValueError("A single cushioned guide contact must cost less than a failed landing")
+        reach = cfg.stage.get("air_leg_length_range_m")
+        if (
+            reward["leg_extension_target_m"] is not None
+            and reach is not None
+            and reward["leg_extension_target_m"] > reach[1]
+        ):
+            raise ValueError("landing_reward.leg_extension_target_m must be within air_leg_length_range_m")
         if reward["progress_budget"] + reward["success_bonus"] >= -cfg.settings["rewards"]["termination"]:
             raise ValueError("Total first-landing positive budget must stay below the termination cost")
         if (

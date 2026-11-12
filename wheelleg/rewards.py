@@ -274,6 +274,7 @@ EVENT_TERMS = frozenset(
         # Paid by wheelleg/landing_rewards.py as per-event totals.
         "landing_progress",
         "landing_outcome",
+        "landing_guide_contact",
     )
 )
 

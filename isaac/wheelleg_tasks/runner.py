@@ -106,7 +106,9 @@ class WheelLegRunner(OnPolicyRunner):
         if env.jump_curriculum is not None:
             env.jump_curriculum.load_state_dict(infos["jump_curriculum"])
         if env.air_height_curriculum is not None and "air_height_curriculum" in infos:
-            env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"])
+            if not env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"]):
+                # Saved gate counts belong to an older band definition (or counted every height).
+                env.command_curriculum.discard_landing()
         if load_optimizer and hasattr(self.alg, "estimator_optimizer"):
             self.alg.estimator_optimizer.load_state_dict(infos["estimator_optimizer"])
         return infos

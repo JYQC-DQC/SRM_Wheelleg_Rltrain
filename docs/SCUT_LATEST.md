@@ -1,5 +1,13 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+2026-11-12 landing 导轮分级与引导加强（只跑了 CPU 测试，未在 Isaac 中运行，未部署）：每次新的导轮接触按该导轮
+接触前 2 ms 的下落速度分级：≥ 1 m/s 算失败，否则扣 0.5 × 速度不算失败；落地窗口内非轮触地 ×8；空中轮速对准 2→8；
+新增空中伸腿引导；速度课程的落地门槛改为只看最高一档出生高度；诊断记录每个非轮刚体的触地次数，
+新增严格对照 `first_recovery_no_guide_rate`。critic 合同不变，可 `--resume`。详见 `LANDING_REWARD_DESIGN.md`。
+同批：高度分档细化为 0.20/0.24/0.28/0.32/0.36/0.42 m，checkpoint 按上限高度恢复；高度升级时清空速度门槛里的旧档计数；
+导轮速度非有限记为数值异常、reset 后没有前一样本的导轮接触按硬撞；新增 `train.py --restart-air-height`。
+续训用 `--command-fraction 0.4 --restart-air-height`，从 0.4 速度、最低高度重新推进。
+
 2026-11-12 landing 空中出生高度课程（只跑了 CPU 测试，未在 Isaac 中运行）：出生高度偏移上限从 0.2 m 起，
 按最新一档的首次恢复成功率（每 1024 个事件一个窗口，≥ 0.8）逐级放到 0.28/0.35/0.42 m。评测和 stairs/recovery 不变。
 课程状态存进 checkpoint，旧 landing checkpoint 只能 `--initialize-from`。需重新运行 `tools.prepare_scut`。

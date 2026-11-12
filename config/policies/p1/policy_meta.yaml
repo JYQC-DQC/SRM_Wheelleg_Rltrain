@@ -253,8 +253,17 @@ stages:
       # 轮速对准航向系真实前向地速（触地不打滑的目标）；Actor 只看到指令，多数出生中二者一致。
       wheel_center_weight: 4.0
       wheel_center_sigma: 0.02
-      wheel_speed_weight: 2.0
+      wheel_speed_weight: 8.0
       wheel_speed_sigma: 1.0
+      # 落地窗口内非轮触地倍率、导轮分级、伸腿引导，含义见 config/reference/scut_p1.yaml 同名键。
+      contact_multiplier: 8.0
+      guide_body_regex: .*_guide_link
+      guide_hard_speed_m_s: 1.0
+      guide_speed_cost: 0.5
+      leg_extension_weight: 4.0
+      # 本车腿长可达范围未测（air_leg_length_range_m 也是 null），不照搬 SCUT 的 0.28 m。
+      leg_extension_target_m: null
+      leg_extension_scale_m: 0.1
     # Training-only first air-reset landing diagnostics, independent of rewards and the airborne state machine.
     # Engineering diagnostic thresholds; contact force peaks are not certified structural safety limits.
     landing_diagnostics:
@@ -293,7 +302,7 @@ stages:
     air_vx_command_noise_m_s: 0.3
     # 空中出生高度课程，含义见 config/reference/scut_p1.yaml 同名块。
     air_height_curriculum:
-      levels_m: [0.2, 0.28, 0.35, 0.42]
+      levels_m: [0.2, 0.24, 0.28, 0.32, 0.36, 0.42]
       min_events: 1024
       success_rate: 0.8
     # 指令课程的落地门槛，含义见 config/reference/scut_p1.yaml 同名块。

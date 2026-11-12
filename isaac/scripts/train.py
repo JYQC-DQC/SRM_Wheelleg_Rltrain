@@ -26,9 +26,16 @@ def main() -> None:
         type=float,
         help="With --resume: restart the P1 command curriculum at this fraction (open window discarded)",
     )
+    parser.add_argument(
+        "--restart-air-height",
+        action="store_true",
+        help="With --resume on p1-landing: restart the air-birth height curriculum at its first level",
+    )
     args, _ = parser.parse_known_args()
     if args.command_fraction is not None and (not args.resume or not 0 < args.command_fraction <= 1):
         parser.error("--command-fraction needs --resume and a value in (0, 1]")
+    if args.restart_air_height and (not args.resume or args.task != "p1-landing"):
+        parser.error("--restart-air-height needs --resume and --task p1-landing")
     path = args.policy or Path(f"config/policies/{TASKS[args.task].policy}/policy_meta.yaml")
     cfg = load_training(args.task, args.robot, path)
     if args.check_only:
@@ -108,6 +115,11 @@ def main() -> None:
                     env.command_curriculum.restart(args.command_fraction)
                     env.commands.command_fraction = args.command_fraction
                     print(f"COMMAND_FRACTION_RESET {args.command_fraction}")
+                if args.restart_air_height:
+                    env.air_height_curriculum.restart()
+                    # Gate counts were taken in the old newest band; refill them from the first one.
+                    env.command_curriculum.discard_landing()
+                    print(f"AIR_HEIGHT_RESET {env.air_height_curriculum.upper}")
             elif args.initialize_from:
                 initialize_actor(runner, args.initialize_from)
             runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)

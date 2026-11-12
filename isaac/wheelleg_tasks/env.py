@@ -4,6 +4,8 @@ The 500 Hz spring/delay/control ordering follows SCUT wheelbipe25_v3,
 but all robot parameters and joint mappings come from this project's YAML.
 """
 
+import re
+
 import isaaclab.sim as sim_utils
 import numpy as np
 import torch
@@ -141,15 +143,24 @@ class WheelLegEnv(DirectRLEnv):
         self.obstacle_hit = self.airborne.clone()
         self.obstacle_top_hit = self.airborne.clone()
         self.contact_peaks = torch.zeros(n, len(self.contact.body_names), device=d)
+        landing = t.task == "p1-landing" and not cfg.evaluation
+        bodies = list(self.contact.body_names)
+        guides = (
+            [i for i, name in enumerate(bodies) if re.fullmatch(t.stage["landing_reward"]["guide_body_regex"], name)]
+            if landing
+            else []
+        )
         self.first_landing = (
-            FirstLanding(n, list(self.contact.body_names), self.contact_wheels, t.stage["landing_diagnostics"], d)
-            if t.task == "p1-landing" and not cfg.evaluation
-            else None
+            FirstLanding(n, bodies, self.contact_wheels, guides, t.stage["landing_diagnostics"], d) if landing else None
         )
         self.landing_reward = (
-            LandingRewards(n, self.contact_wheels, len(self.contact.body_names), t.stage["landing_reward"], d)
-            if t.task == "p1-landing" and not cfg.evaluation
+            LandingRewards(n, self.contact_wheels, guides, len(bodies), t.stage["landing_reward"], d)
+            if landing
             else None
+        )
+        # Articulation body ids of the guide wheels, in the contact sensor's order, for their pre-contact speed.
+        self.guide_robot_ids = (
+            self.robot.find_bodies([bodies[i] for i in guides], preserve_order=True)[0] if guides else []
         )
         # Evaluation keeps the full air_height_offset_m range.
         self.air_height_curriculum = (
@@ -478,7 +489,8 @@ class WheelLegEnv(DirectRLEnv):
         if self.first_landing is not None:
             self.first_landing.sample_contacts(tick, self.physics_dt, current, self.torque[:, self.legs])
         if self.landing_reward is not None:
-            self.landing_reward.sample(tick, self.physics_dt, current)
+            guide_down = -self.robot.data.body_lin_vel_w[:, self.guide_robot_ids, 2]
+            self.landing_reward.sample(tick, self.physics_dt, current, guide_down)
         if self.training.task != "p3-tunnel":
             return
         threshold = self.training.shared["termination"]["contact_force_n"]
@@ -683,8 +695,14 @@ class WheelLegEnv(DirectRLEnv):
                 self.numerical_bad | self.bad_action,
             )
             resolved = self.landing_reward.resolved
-            self.air_height_curriculum.record(self.air_height_offset[resolved], self.landing_reward.succeeded[resolved])
-            self.command_curriculum.record_landing(self.landing_reward.succeeded[resolved])
+            offsets, succeeded = self.air_height_offset[resolved], self.landing_reward.succeeded[resolved]
+            # The command gate counts the newest height band only, so speed cannot outrun the hardest landings.
+            # The band is read before the height curriculum may promote on this same batch; after a promotion the
+            # gate's open window held the old band only, so it is discarded and refilled from the new band.
+            newest = offsets >= self.air_height_curriculum.band_floor
+            self.command_curriculum.record_landing(succeeded[newest])
+            if self.air_height_curriculum.record(offsets, succeeded):
+                self.command_curriculum.discard_landing()
         s["terminated"] = terminated
         self.state = s
         return terminated, timeout
@@ -749,8 +767,13 @@ class WheelLegEnv(DirectRLEnv):
             s["tracking_mask"] = torch.where(self.jump.active, 1.0, t.stage["non_event_tracking_scale"])
             s["guidance_scale"] = self.guidance_scale
         if t.task == "p1-landing":
-            # Stable penalty scales cannot depend on an airborne-classifier dwell timer.
-            s["contact_multiplier"] = one
+            # Stable penalty scales cannot depend on an airborne-classifier dwell timer: the heavier contact cost is
+            # gated by the landing window (birth to first contact + window_s), where the cushioning collisions occur.
+            s["contact_multiplier"] = (
+                torch.where(self.landing_reward.hold, t.stage["landing_reward"]["contact_multiplier"], 1.0)
+                if self.landing_reward is not None
+                else one
+            )
             s["termination_multiplier"] = one
         if self.landing_reward is not None:
             # Flight and the one-shot cushion after first touch relax tracking/height targets; attitude rewards stay on.

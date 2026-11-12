@@ -7,16 +7,24 @@ import torch
 
 
 class FirstLanding:
-    def __init__(self, count: int, body_names: list[str], wheels: list[int], settings: dict, device: str):
+    def __init__(
+        self, count: int, body_names: list[str], wheels: list[int], guides: list[int], settings: dict, device: str
+    ):
         self.settings, self.body_names, self.wheels = settings, body_names, wheels
         self.nonwheel = torch.ones(len(body_names), dtype=torch.bool, device=device)
         self.nonwheel[wheels] = False
+        self.nonwheel_ids = [i for i in range(len(body_names)) if i not in wheels]
+        self.hard = self.nonwheel.clone()
+        self.hard[guides] = False
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.start_tick = torch.zeros(count, dtype=torch.long, device=device)
         self.last_tick = torch.full_like(self.start_tick, -1)
         self.first_time = torch.full((count,), -1.0, device=device)
         self.wheel_time = torch.full((count, 2), -1.0, device=device)
         self.first_bodies = torch.zeros(count, len(body_names), dtype=torch.bool, device=device)
+        # Non-wheel bodies over 3 N at any sample of the event, and those of the first non-wheel contact sample.
+        self.touched_bodies = self.first_bodies.clone()
+        self.first_nonwheel = self.first_bodies.clone()
         self.collided = self.active.clone()
         self.invalid = self.active.clone()
         self.latest_wheels = torch.zeros(count, 2, dtype=torch.bool, device=device)
@@ -48,6 +56,8 @@ class FirstLanding:
             value[ids] = -1
         for value in (
             self.first_bodies,
+            self.touched_bodies,
+            self.first_nonwheel,
             self.collided,
             self.invalid,
             self.latest_wheels,
@@ -82,6 +92,9 @@ class FirstLanding:
         new_wheel = selected[:, None] & wheel_touch & (self.wheel_time < 0)
         self.wheel_time = torch.where(new_wheel, age[:, None], self.wheel_time)
         bad = contact[:, self.nonwheel].any(-1)
+        first_bad = selected & bad & ~self.collided
+        self.first_nonwheel[first_bad] = (contact & self.nonwheel)[first_bad]
+        self.touched_bodies |= selected[:, None] & contact & self.nonwheel
         self.collided |= selected & bad
         self.step_nonwheel |= selected & bad
         wheels = forces[:, self.wheels] > self.settings["support_force_n"]
@@ -166,6 +179,14 @@ class FirstLanding:
         self._add("first_contact_events", (mask & contacted).sum())
         for i, name in enumerate(self.body_names):
             self._add(f"first_body/{name}", (mask & self.first_bodies[:, i]).sum())
+        # Per resolved event: which non-wheel bodies touched at all, and which made the first non-wheel contact.
+        hard = self.touched_bodies[:, self.hard].any(-1)
+        self._add("guide_only_contact", (mask & self.collided & ~hard).sum())
+        self._add("hard_contact", (mask & hard).sum())
+        for i in self.nonwheel_ids:
+            name = self.body_names[i]
+            self._add(f"touched/{name}", (mask & self.touched_bodies[:, i]).sum())
+            self._add(f"first_nonwheel/{name}", (mask & self.first_nonwheel[:, i]).sum())
         for name, values, valid in (
             ("touchdown_difference_s", gap, both_touched),
             ("recovery_s", self.recovery_time, self.recovery_time >= 0),

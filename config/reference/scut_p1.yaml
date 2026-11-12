@@ -297,13 +297,31 @@ stages:
       angular_xy_rad_s: 0.5
       vertical_velocity_m_s: 0.2
       height_error_m: 0.05
-      # 两个腾空项只罚不奖，完全达标时为 0，自身不奖励推迟触地；姿态正奖励在空中仍生效，需观察 first_contact_s。
+      # 腾空项全部只罚不奖，完全达标时为 0，自身不奖励推迟触地；姿态正奖励在空中仍生效，需观察 first_contact_s。
       # 轮心居中改自 SCUT V14/env_cfg.py:1617-1623, 1657（航向系 x，sigma 0.02，权重 10），权重取 4 是设计值；
       # 轮速对准航向系真实前向地速（触地不打滑的目标）；Actor 只看到指令，多数出生中二者一致。
+      # 2→8：上一轮日志里这项平均只实现了最大罚分的约 69%，轮缘与地速差约 1 m/s（估算），引导太弱。
       wheel_center_weight: 4.0
       wheel_center_sigma: 0.02
-      wheel_speed_weight: 2.0
+      wheel_speed_weight: 8.0
       wheel_speed_sigma: 1.0
+      # 落地窗口内（出生到首次触地后 window_s）非轮触地惩罚的倍率：-4/s × 8 = -32/s。
+      # SCUT 在 airborne 状态（含触地后 0.3 s）用 ×25，约 -50/s；这里用自己的落地窗口门控，不依赖 airborne 分类器。
+      contact_multiplier: 8.0
+      # 导轮分级：事件未结束时，每次新的导轮接触都取该导轮刚体接触前一个物理子步（2 ms）的下落速度（含机身俯仰）。
+      # ≥ guide_hard_speed_m_s（几乎没缓冲就撞上）按落地失败；否则不算失败，每次扣 guide_speed_cost × 速度/阈值（< 失败代价）。
+      # 另有上面 ×8 的持续触地罚分（按策略步，每步至少 0.32）：短暂蹭地可以恢复成功，压着导轮支撑 0.1 s 就约 -3.2，
+      # 会超过失败代价；导轮仍在物理终止名单里，累计 0.4 s 会终止。下落 0.13-0.29 m 时触地速度约 1.6-2.4 m/s。
+      # 阈值是设计初值，看 LandingReward/guide_impact_speed_m_s/mean 再调。
+      guide_body_regex: .*_guide_link
+      guide_hard_speed_m_s: 1.0
+      guide_speed_cost: 0.5
+      # 伸腿引导：腾空时每条腿各自计算低于目标的缺口再取平均（一条长腿不能补偿另一条），
+      # 缺口/scale 封顶为 1，即最多 -4/s。只管触地前，任一轮接触后关闭，不约束接触后的压缩过程。
+      # 目标 0.28 m：空中出生腿长上限 0.35 m，留余量避开闭链奇异位置；SCUT 写过类似项但未启用。实验初值。
+      leg_extension_weight: 4.0
+      leg_extension_target_m: 0.28
+      leg_extension_scale_m: 0.1
     # Training-only first air-reset landing diagnostics, independent of rewards and the airborne state machine.
     # Engineering diagnostic thresholds; contact force peaks are not certified structural safety limits.
     landing_diagnostics:
@@ -343,15 +361,16 @@ stages:
     # 空中出生高度课程（只对 p1-landing 训练；评测和 stairs/recovery 仍用完整 air_height_offset_m）。
     # 出生高度偏移在 [air_height_offset_m[0], 当前上限] 均匀采样，上限按 levels_m 逐级放开，最后一级必须等于 air_height_offset_m[1]。
     # 只统计最新一档（上一级上限到当前上限）出生、已结算的事件（外生 timeout 不算），成功指奖励状态机的首次恢复；
-    # 一个窗口满 min_events 个事件时，成功率 ≥ success_rate 则升一级。设计初值：4096 环境下每轮约 40 次空中出生，
-    # 最高一档只占 23-100%，窗口约需 25-110 轮。
+    # 一个窗口满 min_events 个事件时，成功率 ≥ success_rate 则升一级。每档只加 4 cm（最后一档 6 cm），新一档和上一档难度差小。
+    # 4096 环境下每轮约 40 次空中出生，最高一档占 20-100%，窗口约需 25-130 轮。checkpoint 按上限高度恢复，
+    # 改分档后续训不会降高度；旧 checkpoint 按旧分档 [0.2, 0.28, 0.35, 0.42] 换算。设计初值。
     air_height_curriculum:
-      levels_m: [0.2, 0.28, 0.35, 0.42]
+      levels_m: [0.2, 0.24, 0.28, 0.32, 0.36, 0.42]
       min_events: 1024
       success_rate: 0.8
     # 只对 p1-landing：指令课程的一个窗口（4096 个结束的回合）内，除速度通过率 ≥ success_fraction 外，
-    # 同一窗口里结算的落地事件（全部高度，外生 timeout 不算）首次恢复率也要 ≥ success_rate 才升级。
-    # 指令越大空中出生越快，速度课程不能跑在落地前面。窗口内约有 1600 个落地事件，少于 min_events 不升级。
+    # 同一窗口里结算的、出生在当前最高一档高度的落地事件（外生 timeout 不算）首次恢复率也要 ≥ success_rate。
+    # 用最高一档而不是全部高度：否则低处容易的落地会让速度跑在高度课程前面。窗口内最高一档约 400-1600 个事件。
     command_curriculum_landing_gate:
       min_events: 256
       success_rate: 0.8

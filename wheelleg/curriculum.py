@@ -25,6 +25,11 @@ class CommandCurriculum:
         self.landing_events += successful.numel()
         self.landing_successes += int(successful.sum())
 
+    def discard_landing(self) -> None:
+        """Drop the landing counts of the open window, e.g. when they belong to a height band no longer newest."""
+        self.landing_events = self.landing_successes = 0
+        self.last_landing_rate = None  # the logged rate also belonged to the old band
+
     def restart(self, fraction: float) -> None:
         """Resume at a given fraction; the open window is discarded so no old successes carry over."""
         self.fraction = fraction
@@ -88,23 +93,52 @@ class AirHeightCurriculum:
     def band_floor(self) -> float:
         return self.levels[self.level - 1] if self.level else self.low
 
-    def record(self, offsets: torch.Tensor, successful: torch.Tensor) -> None:
+    def restart(self) -> None:
+        """Back to the first level with a fresh window, e.g. to resume a run from the easiest heights."""
+        self.level = self.events = self.successes = 0
+        self.last_rate = None
+
+    def record(self, offsets: torch.Tensor, successful: torch.Tensor) -> bool:
+        """Returns True when this batch promoted the upper bound to the next level."""
         top = offsets >= self.band_floor
         self.events += int(top.sum())
         self.successes += int((successful & top).sum())
+        promoted = False
         if self.events >= self.settings["min_events"]:
             self.last_rate = self.successes / self.events
             if self.last_rate >= self.settings["success_rate"] and self.level < len(self.levels) - 1:
                 self.level += 1
+                promoted = True
             self.events = 0
             self.successes = 0
+        return promoted
 
     def state_dict(self) -> dict:
-        return dict(level=self.level, events=self.events, successes=self.successes, last_rate=self.last_rate)
+        # upper_m keeps the reached height when levels_m is refined between runs; level alone would shift it.
+        # lower_m identifies the band the open window was counted in.
+        return dict(
+            level=self.level,
+            upper_m=self.upper,
+            lower_m=self.band_floor,
+            events=self.events,
+            successes=self.successes,
+            last_rate=self.last_rate,
+        )
 
-    def load_state_dict(self, state: dict) -> None:
-        self.level, self.events, self.successes = state["level"], state["events"], state["successes"]
+    def load_state_dict(self, state: dict) -> bool:
+        """Returns False when the saved open window no longer matches the band and was discarded."""
+        # Checkpoints before upper_m used levels_m [0.2, 0.28, 0.35, 0.42].
+        upper = state["upper_m"] if "upper_m" in state else (0.2, 0.28, 0.35, 0.42)[state["level"]]
+        reached = [i for i, level in enumerate(self.levels) if level <= upper + 1e-9]
+        self.level = reached[-1] if reached else 0
         self.last_rate = state["last_rate"]
+        same_band = "lower_m" in state and abs(self.band_floor - state["lower_m"]) < 1e-9
+        if same_band and abs(self.upper - upper) < 1e-9:
+            self.events, self.successes = state["events"], state["successes"]
+            return True
+        # The open window was counted in a band that no longer matches; start a fresh one.
+        self.events = self.successes = 0
+        return False
 
 
 class JumpCurriculum:
