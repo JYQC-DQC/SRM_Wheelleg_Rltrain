@@ -24,6 +24,8 @@ class WheelLegEnvCfg(DirectRLEnvCfg):
     state_space = 81
     training: TrainingConfig = None
     evaluation: bool = False
+    evaluation_random_reset: bool = False
+    evaluation_delay_capacity: tuple[int, int] = (0, 0)
     robot: ArticulationCfg = None
     terrain: TerrainImporterCfg = None
     contact_sensor: ContactSensorCfg = None

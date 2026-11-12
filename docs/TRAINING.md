@@ -119,6 +119,7 @@ P2 当前采用固定世界航向作为“虚拟云台”参考。模式位 33/3
 旧 P2 critic 为81维，新版158维，因此用 `--initialize-from` 提取 Actor，禁止用旧 P2 `--resume`。
 重跑 `tools.prepare_scut` 生成 `policy_p2.yaml` 后启动；SRM P2 同步地形设计参数，真实资产/PD缺参仍留空。
 P2 评测也使用混合地形，JSON按出生地块给出 `spawn_terrain_groups`；移动时可能跨地块，不能当成全程地形标签。
+历史估计器及华南虎/复旦算法对比见 [FLAT_EVALUATION.md](FLAT_EVALUATION.md)。
 本批未运行测试、Isaac/GPU训练或评测，比例和范围尚无收敛证据。
 
 ### 2026-11-12：地形边界与射线兜底
@@ -158,13 +159,34 @@ PPO 梯度不进入估计器（`isaac/wheelleg_tasks/history_policy.py`）。重
 
 ## 评测、录像与导出
 
+### 2026-11-12：flat 选模评测
+
+`p1-flat` 默认使用精细评测；其他任务保持原评测，`--suite legacy` 可复现旧 flat 16 用例。
+新协议、指标解释、选模步骤及 SCUT 方法对照见 [FLAT_EVALUATION.md](FLAT_EVALUATION.md)。
+支持一次比较多个 `--checkpoint`，共同使用同一份机器人/策略合同和评测条件。
+旧 run 快照缺少 `evaluation.flat_suite` 时，用 `--evaluation-policy` 从新的 policy YAML
+**只读取 training.evaluation**；不会替换原 run 的控制增益、动作尺度、训练奖励或指令上限。
+速度/转速/高度门槛与训练指令课程一致（`command_curriculum`），名义用例的延迟取训练范围中值；
+其余门槛是工程验收目标，不是已经通过验证的机器人能力。
+
 ```bash
-python -m isaac.scripts.evaluate --task p1-flat --robot runs/p1_flat/params/robot.yaml --policy runs/p1_flat/params/policy_meta.yaml --checkpoint runs/p1_flat/model_5000.pt --output runs/p1_flat/eval --video --headless
+python -m isaac.scripts.evaluate --task p1-flat \
+  --robot runs/<run>/params/robot.yaml --policy runs/<run>/params/policy_meta.yaml \
+  --evaluation-policy config/reference/scut_p1.yaml \
+  --checkpoint runs/<run>/model_5000.pt runs/<run>/model_6000.pt \
+  --output runs/<run>/flat_selection --headless
+```
+
+本次没有运行 pytest、Isaac/GPU 评测或训练；只进行源码检查、格式整理与静态检查。
+
+
+```bash
+python -m isaac.scripts.evaluate --task p1-flat --suite legacy --robot runs/p1_flat/params/robot.yaml --policy runs/p1_flat/params/policy_meta.yaml --checkpoint runs/p1_flat/model_5000.pt --output runs/p1_flat/eval --video --headless
 python -m pip install -e '.[export]'
 python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot runs/p1_flat/params/robot.yaml --policy runs/p1_flat/params/policy_meta.yaml --rollout runs/p1_flat/eval/rollout.npz --output runs/p1_flat/export
 ```
 
-- P1 固定 16 条指令；P2 双向旋转/平移组合；P3 包含不跳基线和五档跳高；具体指令等待本车能力确定。
+- P1 legacy 固定 16 条指令；flat 精细协议见上文；P2 双向旋转/平移组合；P3 包含不跳基线和五档跳高。
 - 评测关闭域随机化和噪声，固定种子；传感/动作延迟分别使用 policy 的 `evaluation.observation_delay_steps` / `action_delay_steps`（单位 2 ms，必填，不默认 0）。失败之后的自动重置不计入成功或误差。
 - 输出 `evaluation.json/md`、`rollout.npz`，可选录像；末尾有效状态输出 `transition_states.npz`。起身任务不再使用接管状态库（2026-11-12）。
 - 评测旧阶段时重新选择旧 `--task`，用新 checkpoint 回归旧任务，不能仅看新技能回报。

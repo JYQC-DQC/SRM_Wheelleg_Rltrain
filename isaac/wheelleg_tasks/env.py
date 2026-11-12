@@ -57,7 +57,7 @@ class WheelLegEnv(DirectRLEnv):
         self.termination_steps = torch.zeros(n, device=d)  # 累计的触地/倾倒步数，可为小数
         # 没有触地/倾倒的每一步，计数回落这么多：满计数要 release_s 才清空。
         self.termination_leak = t.shared["termination"]["duration_s"] / t.shared["termination"]["release_s"]
-        if not cfg.evaluation:  # 随机腿姿出生只在训练中使用，所有任务共用
+        if not cfg.evaluation or cfg.evaluation_random_reset:
             self.leg_reset_joints, _ = self.robot.find_joints(
                 list(t.shared["leg_reset"]["joint_names"]), preserve_order=True
             )
@@ -149,6 +149,9 @@ class WheelLegEnv(DirectRLEnv):
             t.settings["evaluation"]["observation_delay_steps"] if cfg.evaluation else r["observation_delay_steps"][1]
         )
         act_history = t.settings["evaluation"]["action_delay_steps"] if cfg.evaluation else r["action_delay_steps"][1]
+        if cfg.evaluation:
+            obs_history = max(obs_history, cfg.evaluation_delay_capacity[0])
+            act_history = max(act_history, cfg.evaluation_delay_capacity[1])
         self.obs_delay = DelayBuffer(obs_history, n, d)
         self.act_delay = DelayBuffer(act_history, n, d)
         self.history = None
@@ -719,6 +722,19 @@ class WheelLegEnv(DirectRLEnv):
             if self.jump is not None
             else torch.zeros_like(self.airborne),
         }
+        if self.cfg.evaluation and t.task == "p1-flat":
+            # DirectRLEnv.step resets before returning: capture diagnostics before that reset.
+            self.extras["evaluation"].update(
+                attitude=torch.stack((s["roll"], s["pitch"], s["yaw"]), -1).detach().clone(),
+                velocity=s["velocity"].detach().clone(),
+                angular_velocity=s["angular_velocity"].detach().clone(),
+                height=s["base_height"].detach().clone(),
+                contact_force=s["undesired_force"].amax(-1).detach().clone(),
+                wheel_force=s["wheel_force"].detach().clone(),
+                torque=self.torque.detach().clone(),
+                joint_velocity=self.robot.data.joint_vel[:, self.joints].detach().clone(),
+                numerical_failure=(self.numerical_bad | self.bad_action).detach().clone(),
+            )
         return torch.stack(list(terms.values())).sum(0)
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
@@ -910,7 +926,7 @@ class WheelLegEnv(DirectRLEnv):
         root[:, :3] += self.terrain.env_origins[env_ids]
         q, qd = self.robot.data.default_joint_pos[env_ids].clone(), self.robot.data.default_joint_vel[env_ids].clone()
         self.recovery_episode[env_ids] = False
-        if self.cfg.evaluation:
+        if self.cfg.evaluation and not self.cfg.evaluation_random_reset:
             # 评测保持默认零位出生；空中出生只给高度和前向速度，评测口径不变。
             if self.family == "p1" and t.stage["air_reset_probability"] > 0:
                 air = torch.rand(n, device=self.device) < t.stage["air_reset_probability"]

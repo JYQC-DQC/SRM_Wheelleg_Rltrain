@@ -1,9 +1,12 @@
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
+import yaml
+
 from wheelleg.tasks import TASKS
-from wheelleg.training import load_training
+from wheelleg.training import _freeze, load_training, mutable
 
 
 def main() -> None:
@@ -11,11 +14,25 @@ def main() -> None:
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--robot", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path, nargs="+", required=True)
+    parser.add_argument("--evaluation-policy", type=Path, help="Read only training.evaluation from this policy YAML")
+    parser.add_argument("--suite", choices=("auto", "legacy"), default="auto")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--video", action="store_true")
     args, _ = parser.parse_known_args()
     cfg = load_training(args.task, args.robot, args.policy)
+    detailed = args.task == "p1-flat" and args.suite == "auto"
+    if args.evaluation_policy:
+        override = yaml.safe_load(args.evaluation_policy.read_text(encoding="utf-8"))
+        settings = mutable(cfg.settings)
+        settings["evaluation"] = override["training"]["evaluation"]
+        cfg = replace(cfg, settings=_freeze(settings))
+    if detailed:
+        from wheelleg.flat_evaluation import validate_flat_suite
+
+        validate_flat_suite(cfg)
+    elif len(args.checkpoint) != 1:
+        parser.error("Multiple checkpoints are supported by the detailed p1-flat suite only")
     cfg.require_ready(evaluation=True)
     from isaaclab.app import AppLauncher
 
@@ -25,6 +42,11 @@ def main() -> None:
         args.enable_cameras = True
     app = AppLauncher(args).app
     try:
+        if detailed:
+            from isaac.scripts.flat_evaluate import run
+
+            run(args, cfg)
+            return
         import gymnasium as gym
         import numpy as np
         import torch
@@ -49,7 +71,7 @@ def main() -> None:
                 video_length=int(settings["duration_s"] / raw.step_dt),
             )
         try:
-            actor = load_policy_module(args.checkpoint, cfg.policy).to(args.device)
+            actor = load_policy_module(args.checkpoint[0], cfg.policy).to(args.device)
             report, observations, histories = [], [], []
             handover = {key: [] for key in ("root_state", "joint_position", "joint_velocity")}
             raw.commands_fixed = True

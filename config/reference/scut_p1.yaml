@@ -169,8 +169,32 @@ training:
     termination: -4.0
     leg_symmetry: 0.0
   evaluation:
-    observation_delay_steps: 0
-    action_delay_steps: 0
+    # Detailed flat checkpoint selection. Thresholds are engineering acceptance targets, not measured limits.
+    flat_suite:
+      height_samples: 3
+      speed_fractions: [0.25, 0.5, 1.0]
+      combined_fractions: [0.5, 1.0]
+      seeds: [123, 456]
+      startup_s: 2.0
+      hold_s: 20.0
+      stand_window_s: 10.0
+      transition_settling_s: 2.0
+      stable_hold_s: 0.5
+      recovery_deadline_s: 3.0
+      push_after_s: 4.0
+      push_velocity_m_s: 0.25
+      delay_command_fraction: 0.5
+      # Physics ticks (2 ms), covering training sensor/action delays; not measured SRM latency.
+      delay_pairs_steps: [[3, 3], [8, 5]]
+      trace_stride: 5
+      # Tracking MAE uses command_curriculum: floor + relative_error * mean |command|, height bound.
+      acceptance:
+        stand_drift_m: 0.2
+        tilt_p95_rad: 0.17453292519943295
+        contact_fraction: 0.01
+    # Mid-range of training randomization (obs 3-8, action 3-5 physics ticks); zero delay is never trained.
+    observation_delay_steps: 5
+    action_delay_steps: 4
     duration_s: 10.0
     settling_s: 1.0
     episodes_per_case: 16
