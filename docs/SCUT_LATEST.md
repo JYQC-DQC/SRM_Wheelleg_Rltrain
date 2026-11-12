@@ -1,5 +1,16 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+## 2026-11-12 当前补充：P2同任务混合地形与flat选模（未GPU验证）
+
+`p2-spin`直接混训50%平地、30%随机小起伏、20%缓坡，不新增 `p2-rough` 或单独rough训练。
+参考SCUT `terrains.py:672-699` 的旋转地形组合，采用其 `RANDOM_UNIFORM_FOR_RM` 噪声参数；
+比例和±0.1rad坡角为本项目设计值，不包含原版全部小台阶/阶梯坡。坡面出生，固定混合全部难度行，
+不使用P1距离课程。Actor仍35维，P2 critic增加扫描后158维，旧P2用 `--initialize-from`，不要 `--resume`。
+重新运行 `tools.prepare_scut` 生成 `policy_p2.yaml`。P2评测也走混合地形，按出生地块报告分组指标。
+flat精细选模、多检查点、轨迹输出和历史估计器/复旦对照见 `docs/FLAT_EVALUATION.md`。
+旧章节是历史修改记录，涉及“P2尚无配置”“P2只有平地”的描述不代表当前状态。
+本次没有运行pytest、Isaac/GPU或实车，不推送。
+
 分支 codex/scut-latest-adaptation 基于 54e467c。仅使用最新 P1/P2/P3 框架，当前适配并验证 P1-flat；
 没有合入旧 srm_scut_env、旧 PPO 适配器、教师权重或旧训练 checkpoint。
 
