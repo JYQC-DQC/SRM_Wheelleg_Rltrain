@@ -31,7 +31,7 @@ def main() -> None:
 
         from isaac.wheelleg_tasks.env import WheelLegEnv
         from isaac.wheelleg_tasks.env_cfg import make_env_cfg
-        from wheelleg.checkpoints import load_actor
+        from wheelleg.checkpoints import load_policy_module
         from wheelleg.evaluation import evaluation_cases, metrics
 
         settings = cfg.settings["evaluation"]
@@ -49,8 +49,8 @@ def main() -> None:
                 video_length=int(settings["duration_s"] / raw.step_dt),
             )
         try:
-            actor = load_actor(args.checkpoint, cfg.policy).to(args.device)
-            report, observations = [], []
+            actor = load_policy_module(args.checkpoint, cfg.policy).to(args.device)
+            report, observations, histories = [], [], []
             handover = {key: [] for key in ("root_state", "joint_position", "joint_velocity")}
             raw.commands_fixed = True
             for case in evaluation_cases(cfg):
@@ -74,9 +74,11 @@ def main() -> None:
                 start_position = raw.robot.data.root_pos_w.clone()
                 with torch.inference_mode():
                     for step in range(int(settings["duration_s"] / raw.step_dt)):
-                        actions = actor(obs["policy"])
+                        actions = actor(obs["policy"], obs.get("history"))
                         if len(observations) < 1000:
                             observations.extend(obs["policy"][alive].cpu().numpy())
+                            if "history" in obs:
+                                histories.extend(obs["history"][alive].cpu().numpy())
                         obs, _, terminated, timeout, extras = env.step(actions)
                         if step >= int(settings["duration_s"] / raw.step_dt) - 10:
                             keep = alive & ~(terminated | timeout)
@@ -119,7 +121,10 @@ def main() -> None:
                         lower = upper
                 report.append(result)
             (args.output / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            np.savez(args.output / "rollout.npz", observation=np.asarray(observations, dtype=np.float32))
+            rollout = dict(observation=np.asarray(observations, dtype=np.float32))
+            if histories:
+                rollout["history"] = np.asarray(histories, dtype=np.float32)
+            np.savez(args.output / "rollout.npz", **rollout)
             np.savez(
                 args.output / "transition_states.npz",
                 **{key: np.concatenate(values, axis=0) for key, values in handover.items()},

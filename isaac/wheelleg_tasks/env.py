@@ -15,7 +15,9 @@ from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inve
 
 from wheelleg.commands import Commands, uniform
 from wheelleg.curriculum import CommandCurriculum, JumpCurriculum
+from wheelleg.history import HistoryBuffer
 from wheelleg.jump import JumpEvent, tunnel_landing
+from wheelleg.observation import OBS_DIM
 from wheelleg.randomization import disturbance_progress, perturb_sensors
 from wheelleg.rewards import EVENT_TERMS, compute_rewards
 from wheelleg.safety import airborne_enabled, numerical_failure
@@ -149,6 +151,10 @@ class WheelLegEnv(DirectRLEnv):
         act_history = t.settings["evaluation"]["action_delay_steps"] if cfg.evaluation else r["action_delay_steps"][1]
         self.obs_delay = DelayBuffer(obs_history, n, d)
         self.act_delay = DelayBuffer(act_history, n, d)
+        self.history = None
+        if t.policy.history_frames:
+            self.history = HistoryBuffer(n, t.policy.history_frames, OBS_DIM, d)
+            self.history_tick = -1
         self.noise = observation_noise(t.robot, t.policy, t.shared["observation_noise"], d)
         self.delayed_sensor = torch.zeros(n, 18, device=d)
         self.sensor_counter = -1
@@ -806,7 +812,15 @@ class WheelLegEnv(DirectRLEnv):
             hit_z = torch.where(torch.isfinite(hit_z), hit_z, s["ground"][:, None])
             scan = self.robot.data.root_pos_w[:, 2:3] - hit_z
             critic = torch.cat((critic, component("height_scan", scan)), -1)
-        return {"policy": actor, "critic": critic}
+        observations = {"policy": actor, "critic": critic}
+        if self.history is not None:
+            # Evaluation re-reads observations within a policy step after rewriting commands; only a new step appends.
+            self.history.update(actor, new_step=self._sim_step_counter != self.history_tick)
+            self.history_tick = self._sim_step_counter
+            observations["history"] = self.history.flat()
+            # Training label only (simulator truth); never part of the deployed inputs.
+            observations["estimator_target"] = torch.cat((s["velocity"], s["wheel_contact"].float()), -1)
+        return observations
 
     def reset(self, seed: int | None = None, options: dict | None = None):
         # DirectRLEnv.reset (api_reference/direct_env.py:313-331) calls sim.forward before returning.
@@ -1018,6 +1032,8 @@ class WheelLegEnv(DirectRLEnv):
         self._randomize_controls(env_ids)
         self.obs_delay.reset(env_ids)
         self.act_delay.reset(env_ids)
+        if self.history is not None:
+            self.history.reset(env_ids)
         self.delayed_sensor[env_ids] = perturb_sensors(self._sensors(), self.zero_bias, self.imu_bias, self.legs)[
             env_ids
         ]

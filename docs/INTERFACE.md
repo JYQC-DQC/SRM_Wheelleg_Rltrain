@@ -27,7 +27,11 @@ Actor 仍为 35 维，顺序和缩放不变；固件必须与 Python 共用以�
 - 训练 sensor 延迟在 2 ms 物理步采样，命令、模式和上一原始动作不随传感延迟一起倒退。
 - Actor 35 维保持 obs_v2；新增 critic 信息不进入固件输入。
 - 2026-11-12：P2 混合地形训练增加77点特权扫描，critic从81变158维；部署Actor合同不变。
-  旧P2检查点只能提取Actor初始化，不能恢复旧critic/优化器。新增历史估计器尚未实施。
+  旧P2检查点只能提取Actor初始化，不能恢复旧critic/优化器。
+- 2026-11-12：obs_version 3 为可选历史合同（默认不启用，未训练、未部署）。ONNX 输入 `obs[1,35]` 与
+  `obs_history[1,frames×35]`，历史按时间从旧到新排列，每帧就是当拍的 35 维 Actor 观测；
+  每次策略切换或重置后用第一帧填满整段历史。`WL_HISTORY_FRAMES` 为 0 表示 obs_version 2 单输入。
+  速度/接触估计器在 ONNX 内部，固件不需要也不得提供仿真真值。
 
 `gen_c_config.py --interface-only` 仅导出 ABI、时序及已确认的减速比，明确标记 `WL_DEPLOYMENT_CONFIG_READY=0`。
 去掉该选项会在缺少参数时拒绝导出；它不生成或伪造神经网络代码。

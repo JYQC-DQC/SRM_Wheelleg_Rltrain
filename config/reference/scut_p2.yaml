@@ -60,6 +60,12 @@ torque_limit_nm:
 - 40
 - 40
 - 5
+# Guide section 7.2 history estimator, implemented but not trained or deployed. frames: 0 keeps the
+# single-frame obs_version 2 actor. Enabling it (frames 5, obs_version 3) changes the actor input to 40 and the
+# ONNX inputs to obs[1,35] + obs_history[1,frames*35]; see docs/TRAINING.md before turning it on.
+history_estimator:
+  frames: 0
+  hidden_dims: [128, 64]
 policy_family: p2
 training:
   seed: 42
@@ -70,6 +76,11 @@ training:
   episode_length_s: 40.0
   init_noise_std: 1.0
   reward_clip: 2.5
+  # Used only when history_estimator.frames > 0: separate Adam optimizer, velocity MSE + contact BCE.
+  history_estimator:
+    learning_rate: 0.001
+    velocity_loss_coef: 1.0
+    contact_loss_coef: 1.0
   ppo:
     value_loss_coef: 4.0
     use_clipped_value_loss: true

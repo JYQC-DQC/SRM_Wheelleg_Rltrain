@@ -59,6 +59,8 @@ def main() -> None:
     )
     a = p.parse_args()
     robot, policy = load_robot(a.robot), load_policy(a.policy)
+    if policy.history_frames:
+        raise SystemExit("The feedback check covers single-frame (obs_version 2) actors only")
     actor = load_actor(a.checkpoint, policy)
     with np.load(a.observations, allow_pickle=False) as data:
         observations = np.asarray(data["observation"], dtype=np.float32)

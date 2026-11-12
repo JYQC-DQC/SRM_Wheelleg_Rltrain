@@ -138,6 +138,24 @@ P2 评测也使用混合地形，JSON按出生地块给出 `spawn_terrain_groups
 新增配置字段为必填，旧 run 快照需用新的 policy YAML；字段本身不改变 Actor 或 critic 维度。
 出界比例、价值估计和课程速度的变化尚未在 GPU 训练中验证。
 
+### 2026-11-12：历史估计器（已实现，默认关闭，未训练）
+
+按指南 §7.2 实现：最近 `frames` 帧 Actor 观测（与部署一致，含延迟、噪声和限幅）→ 128 → 64 → 5，
+输出机体系线速度 3 维和左右轮接触 2 维（Sigmoid 概率）。估计值 `detach` 后接在 35 维观测之后，Actor 输入为 40。
+仿真真值只作监督标签：速度 MSE、接触 BCE，独立 Adam，在每次 PPO 更新之后用同一批 rollout 训练，
+PPO 梯度不进入估计器（`isaac/wheelleg_tasks/history_policy.py`）。重置后的第一帧填满整段历史。
+
+- 默认 `history_estimator.frames: 0`、`obs_version: 2`，训练、评测、导出与之前完全相同；
+  缺少该块的旧 run 快照按关闭处理。
+- 开启：policy YAML 设 `obs_version: 3`、`history_estimator.frames: 5`；训练参数在 `training.history_estimator`。
+  两者必须同时修改，否则加载即报错。
+- 从现有单帧模型开始：用 `--initialize-from`。35 输入的 Actor 会在新增 5 列补零，开始时动作与原模型完全一致；
+  估计器从头训练。不能 `--resume`（观测合同和 obs_version 都不同）。
+- 评测脚本把历史一并传给模型，`rollout.npz` 额外保存 `history`；导出生成双输入 ONNX。
+- 规模：估计器 31,109 参数，Actor 52,038 参数，合计 83,147。
+- 已做 CPU 检查：配置约束、缓冲区语义、补零迁移等价、rsl_rl 3.1.2 下 PPO 与估计器联合更新、
+  双输入 ONNX 与 PyTorch 一致。**没有 GPU 训练、没有收益证据，不部署。**
+
 ## 评测、录像与导出
 
 ```bash
@@ -150,7 +168,8 @@ python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot ru
 - 评测关闭域随机化和噪声，固定种子；传感/动作延迟分别使用 policy 的 `evaluation.observation_delay_steps` / `action_delay_steps`（单位 2 ms，必填，不默认 0）。失败之后的自动重置不计入成功或误差。
 - 输出 `evaluation.json/md`、`rollout.npz`，可选录像；末尾有效状态输出 `transition_states.npz`。起身任务不再使用接管状态库（2026-11-12）。
 - 评测旧阶段时重新选择旧 `--task`，用新 checkpoint 回归旧任务，不能仅看新技能回报。
-- 导出只接受至少 100 帧真实 rollout 观测；ONNX 输入固定 `[1,35]`，输出 `[1,6]`，与 PyTorch 最大误差须 `<1e-5`。
+- 导出只接受至少 100 帧真实 rollout 观测；ONNX 输入 `[1,35]`（obs_version 3 另加 `obs_history[1,frames×35]`），
+  输出 `[1,6]`，与 PyTorch 最大误差须 `<1e-5`。
 - 导出包含 ONNX、golden.npz/h、参数头、机器人和策略快照、manifest；未生成 CubeAI C 网络，不声明固件可用。
 
 跳隧道要求轮底越过后沿、所有刚体原点越过后沿、在后方地面稳定保持 1 s。
@@ -184,7 +203,7 @@ python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot ru
 
 - 已写训练、课程、评测和导出逻辑；真实 CAD→USD/MJCF 资产生成、五连杆 CAD 数值标定、
   MuJoCo 双引擎验收及手写恢复控制器 R 不在本次训练代码中伪造。起身任务从随机倒地姿态出生，不读取接管状态库。
-- 按回报重置采样和历史估计器按指南后置；当前使用均匀高度 bin 和成功率课程。
+- 按回报重置采样按指南后置；当前使用均匀高度 bin 和成功率课程。历史估计器已实现但默认关闭，未训练。
 - 尚未在目标 Isaac/GPU 上运行，训练收敛与 sim2real 未验证。
 - 用户要求先完成代码、暂停完整测试；最后只做静态检查及配置加载。先前中间版本的一轮 CPU 检查为 31 passed，
   该结果不覆盖其后的所有代码变动。

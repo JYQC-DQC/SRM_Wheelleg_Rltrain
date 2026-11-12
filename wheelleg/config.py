@@ -73,6 +73,9 @@ class PolicyConfig:
     kp: tuple[float | None, ...]
     kd: tuple[float | None, ...]
     torque_limit_nm: tuple[float | None, ...]
+    # Guide section 7.2 history estimator; 0 frames disables it (obs_version 2, single-frame actor).
+    history_frames: int = 0
+    estimator_hidden_dims: tuple[int, ...] = (128, 64)
 
 
 def _positive(value: object, field: str) -> None:
@@ -157,8 +160,18 @@ def load_policy(path: str | Path) -> PolicyConfig:
     if type(data) is not dict:
         raise ValueError(f"{path}: expected a YAML mapping")
     try:
-        if data["obs_version"] != 2:
-            raise ValueError(f"{path}: this implementation supports obs_version 2 only")
+        if data["obs_version"] not in (2, 3):
+            raise ValueError(f"{path}: this implementation supports obs_version 2 and 3 only")
+        # Optional block: run snapshots written before it existed load as disabled.
+        history = data.get("history_estimator") or {}
+        frames = history.get("frames", 0)
+        if type(frames) is not int or frames < 0:
+            raise ValueError(f"{path}: history_estimator.frames must be a nonnegative integer")
+        if (frames > 0) != (data["obs_version"] == 3):
+            raise ValueError(f"{path}: obs_version 3 is the history contract; it requires history_estimator.frames > 0")
+        estimator_dims = history.get("hidden_dims", [128, 64])
+        if not estimator_dims or any(type(n) is not int or n <= 0 for n in estimator_dims):
+            raise ValueError(f"{path}: history_estimator.hidden_dims must contain positive integers")
         dims = data["hidden_dims"]
         if not dims or any(type(n) is not int or n <= 0 for n in dims):
             raise ValueError(f"{path}: hidden_dims must contain positive integers")
@@ -192,6 +205,8 @@ def load_policy(path: str | Path) -> PolicyConfig:
             action_clip=data["action_clip"],
             **{f"{key}_scale": scales[key] for key in scalar_names},
             **vectors,
+            history_frames=frames,
+            estimator_hidden_dims=tuple(estimator_dims),
         )
     except KeyError as error:
         raise ValueError(f"{path}: missing required field {error.args[0]}") from error

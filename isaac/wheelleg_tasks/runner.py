@@ -9,11 +9,27 @@ class WheelLegRunner(OnPolicyRunner):
 
     def observation_contract(self) -> dict:
         cfg = self.env.unwrapped.training
-        return {
+        contract = {
             "revision": 1,
             "clip": mutable(cfg.shared["observation_clip"]),
             "critic_torque_scale": cfg.shared["critic_torque_scale"],
         }
+        if cfg.policy.history_frames:  # absent when disabled, so existing checkpoints keep resuming
+            contract["history_frames"] = cfg.policy.history_frames
+        return contract
+
+    def _construct_algorithm(self, obs):
+        if self.policy_cfg["class_name"] != "HistoryActorCritic":
+            return super()._construct_algorithm(obs)
+        # Upstream resolves class names with eval() inside rsl_rl; build the history classes here instead.
+        from isaac.wheelleg_tasks.history_policy import HistoryActorCritic, HistoryPPO
+
+        policy_cfg = {key: value for key, value in self.policy_cfg.items() if key != "class_name"}
+        alg_cfg = {key: value for key, value in self.alg_cfg.items() if key != "class_name"}
+        policy = HistoryActorCritic(obs, self.cfg["obs_groups"], self.env.num_actions, **policy_cfg).to(self.device)
+        alg = HistoryPPO(policy, device=self.device, **alg_cfg, multi_gpu_cfg=self.multi_gpu_cfg)
+        alg.init_storage("rl", self.env.num_envs, self.num_steps_per_env, obs, [self.env.num_actions])
+        return alg
 
     def log(self, locs: dict, width: int = 80, pad: int = 35) -> None:
         super().log(locs, width, pad)
@@ -36,6 +52,8 @@ class WheelLegRunner(OnPolicyRunner):
             extra["command_curriculum"] = env.command_curriculum.state_dict()
         if env.jump_curriculum is not None:
             extra["jump_curriculum"] = env.jump_curriculum.state_dict()
+        if hasattr(self.alg, "estimator_optimizer"):
+            extra["estimator_optimizer"] = self.alg.estimator_optimizer.state_dict()
         super().save(path, extra)
 
     def load(self, path: str, load_optimizer: bool = True, map_location=None) -> dict:
@@ -52,4 +70,6 @@ class WheelLegRunner(OnPolicyRunner):
             env.command_curriculum.load_state_dict(infos["command_curriculum"])
         if env.jump_curriculum is not None:
             env.jump_curriculum.load_state_dict(infos["jump_curriculum"])
+        if load_optimizer and hasattr(self.alg, "estimator_optimizer"):
+            self.alg.estimator_optimizer.load_state_dict(infos["estimator_optimizer"])
         return infos

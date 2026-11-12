@@ -20,6 +20,8 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         f"#define WL_POLICY_DECIMATION {robot.decimation}u",
         f"#define WL_OBS_VERSION {policy.obs_version}u",
         f"#define WL_OBS_DIM {OBS_DIM}u",
+        # 0 frames: single obs[35] input. Otherwise ONNX also takes obs_history[frames*35], oldest frame first.
+        f"#define WL_HISTORY_FRAMES {policy.history_frames}u",
         "#define WL_ACTION_DIM 6u",
         f"#define WL_DEPLOYMENT_CONFIG_READY {int(not interface_only)}",
         f"#define WL_WHEEL_REDUCTION_RATIO {float(robot.wheel_reduction_ratio)!r}f",

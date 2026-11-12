@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import yaml
 
-from wheelleg.checkpoints import load_actor
+from wheelleg.checkpoints import load_policy_module
 from wheelleg.config import load_policy, load_robot, missing_parameters
 
 
@@ -23,31 +23,46 @@ def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout
         raise ValueError("Cannot export a deployment policy; missing: " + ", ".join(missing))
     with np.load(rollout, allow_pickle=False) as data:
         obs = np.asarray(data["observation"], dtype=np.float32)
+        history = np.asarray(data["history"], dtype=np.float32) if "history" in data else None
     if obs.ndim != 2 or obs.shape[1] != 35 or len(obs) < 100 or not np.isfinite(obs).all():
         raise ValueError("rollout must contain at least 100 finite real observations with shape (N,35)")
-    sample = obs[np.linspace(0, len(obs) - 1, 100, dtype=int)]
-    actor = load_actor(checkpoint, policy)
+    index = np.linspace(0, len(obs) - 1, 100, dtype=int)
+    sample = obs[index]
+    inputs = {"obs": sample}
+    if policy.history_frames:
+        width = policy.history_frames * 35
+        if history is None or history.shape != (len(obs), width) or not np.isfinite(history).all():
+            raise ValueError(f"obs_version 3 rollout must also contain finite history with shape (N,{width})")
+        inputs["obs_history"] = history[index]
+    actor = load_policy_module(checkpoint, policy)
     output.mkdir(parents=True, exist_ok=False)
     onnx_path = output / "policy.onnx"
     torch.onnx.export(
         actor,
-        torch.from_numpy(sample[:1]),
+        tuple(torch.from_numpy(value[:1]) for value in inputs.values()),
         str(onnx_path),
-        input_names=["obs"],
+        input_names=list(inputs),
         output_names=["actions"],
         opset_version=17,
         dynamo=False,
     )
     with torch.inference_mode():
-        expected = actor(torch.from_numpy(sample)).numpy()
+        expected = actor(*(torch.from_numpy(value) for value in inputs.values())).numpy()
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-    actual = np.concatenate([session.run(["actions"], {"obs": row[None]})[0] for row in sample])
+    actual = np.concatenate(
+        [session.run(["actions"], {key: value[i : i + 1] for key, value in inputs.items()})[0] for i in range(100)]
+    )
     error = float(np.max(np.abs(actual - expected)))
     if not np.isfinite(actual).all() or error >= 1e-5:
         raise ValueError(f"ONNX validation failed: max abs error {error}")
-    np.savez(output / "golden.npz", observation=sample, actions=expected)
+    golden = dict(observation=sample, actions=expected)
+    arrays = [("kGoldenObs", sample)]
+    if policy.history_frames:
+        golden["history"] = inputs["obs_history"]
+        arrays.append(("kGoldenHistory", inputs["obs_history"]))
+    np.savez(output / "golden.npz", **golden)
     lines = ["// Generated from real rollout observations; do not edit.", "#pragma once"]
-    for name, values in (("kGoldenObs", sample), ("kGoldenActions", expected)):
+    for name, values in (*arrays, ("kGoldenActions", expected)):
         lines.append(f"static const float {name}[{len(values)}][{values.shape[1]}] = {{")
         for row in values:
             lines.append("    {" + ", ".join(f"{float(x):.9e}f" for x in row) + "},")
@@ -75,6 +90,7 @@ def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout
         checkpoint=str(checkpoint.resolve()),
         checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
         observation_version=policy.obs_version,
+        onnx_inputs=list(inputs),
         onnx_max_absolute_error=error,
         golden_count=100,
         cubeai_generated=False,

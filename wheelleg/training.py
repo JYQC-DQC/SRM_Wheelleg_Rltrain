@@ -399,6 +399,13 @@ def _validate_training(cfg: TrainingConfig) -> None:
             required_height = max(p["beam_height_m"], max(p["height_curriculum_m"]) + p["height_jitter_m"][1])
             if feasible is not None and required_height + p["clearance_margin_m"] > feasible:
                 raise ValueError("Tunnel beam plus clearance margin exceeds feasible_height_m")
+    if cfg.policy.history_frames:
+        if "history_estimator" not in cfg.settings:
+            raise ValueError(f"{cfg.policy_path}: history_estimator.frames > 0 requires training.history_estimator")
+        for key in ("learning_rate", "velocity_loss_coef", "contact_loss_coef"):
+            value = cfg.settings["history_estimator"][key]
+            if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                raise ValueError(f"training.history_estimator.{key} must be finite and positive")
     if cfg.stage["disturbance_phase"] not in (1, 2):
         raise ValueError("disturbance_phase must be 1 or 2")
     schedule = cfg.settings["disturbance"]
@@ -413,7 +420,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
 
 
 def runner_config(cfg: TrainingConfig) -> dict:
-    return {
+    config = {
         "seed": cfg.settings["seed"],
         "num_steps_per_env": cfg.settings["rollout_steps"],
         "save_interval": cfg.settings["save_interval"],
@@ -430,3 +437,17 @@ def runner_config(cfg: TrainingConfig) -> dict:
         },
         "algorithm": {"class_name": "PPO", **mutable(cfg.settings["ppo"])},
     }
+    if cfg.policy.history_frames:
+        estimator = cfg.settings["history_estimator"]
+        config["policy"].update(
+            class_name="HistoryActorCritic",
+            history_frames=cfg.policy.history_frames,
+            estimator_hidden_dims=list(cfg.policy.estimator_hidden_dims),
+        )
+        config["algorithm"].update(
+            class_name="HistoryPPO",
+            estimator_learning_rate=estimator["learning_rate"],
+            velocity_loss_coef=estimator["velocity_loss_coef"],
+            contact_loss_coef=estimator["contact_loss_coef"],
+        )
+    return config
