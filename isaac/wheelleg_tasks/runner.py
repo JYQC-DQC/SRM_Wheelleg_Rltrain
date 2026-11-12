@@ -1,6 +1,7 @@
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
+from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.training import mutable
 
 
@@ -16,6 +17,8 @@ class WheelLegRunner(OnPolicyRunner):
         }
         if cfg.policy.history_frames:  # absent when disabled, so existing checkpoints keep resuming
             contract["history_frames"] = cfg.policy.history_frames
+        if cfg.task == "p1-landing":  # critic gains the landing event state
+            contract["landing_event_features"] = LANDING_FEATURES
         return contract
 
     def _construct_algorithm(self, obs):
@@ -42,6 +45,9 @@ class WheelLegRunner(OnPolicyRunner):
         if env.first_landing is not None:
             self.writer.add_scalar("Landing/height_wide_weight", env.reward_weights["track_height_wide"], iteration)
             for name, value in env.first_landing.take_log().items():
+                self.writer.add_scalar(name, value, iteration)
+        if env.landing_reward is not None:
+            for name, value in env.landing_reward.take_log().items():
                 self.writer.add_scalar(name, value, iteration)
         # The rollout runs under torch.inference_mode(); its tensors cannot be zeroed in place here.
         env.iteration_raw_action_max = torch.zeros((), device=env.device)

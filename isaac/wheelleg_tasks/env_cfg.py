@@ -11,6 +11,7 @@ from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
 from isaaclab.terrains import HfRandomUniformTerrainCfg, TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
+from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
@@ -228,7 +229,7 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=0.0, track_air_time=True
         ),
         height_scanner=scanner,
-        state_space=158 if scanner else 81,
+        state_space=(158 if scanner else 81) + (LANDING_FEATURES if t.task == "p1-landing" else 0),
     )
     if t.task == "p3-tunnel":
         # contact_sensor_cfg.py:63-68: one sensing body per environment, not Robot/.*.

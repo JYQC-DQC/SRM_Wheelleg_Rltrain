@@ -15,5 +15,16 @@ def numerical_failure(
     return bad
 
 
+def nonfinite_pose(
+    root_position: torch.Tensor, root_quaternion: torch.Tensor, joint_position: torch.Tensor
+) -> torch.Tensor:
+    """Poses feed height, attitude and wheel-geometry rewards; finite velocities do not imply a finite pose."""
+    return ~(
+        torch.isfinite(root_position).all(-1)
+        & torch.isfinite(root_quaternion).all(-1)
+        & torch.isfinite(joint_position).all(-1)
+    )
+
+
 def airborne_enabled(task: str) -> bool:
     return task not in ("p1-flat", "p2-spin")

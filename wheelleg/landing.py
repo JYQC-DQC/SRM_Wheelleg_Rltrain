@@ -192,6 +192,12 @@ class FirstLanding:
         resolved = values.get("resolved", 0.0)
         if resolved:
             result["Landing/clean_success_rate"] = values["clean_success"] / resolved
+            # Stable through the end of the 3 s window without non-wheel contact, touchdown order not required.
+            # Not the reward's first_recovery_rate (first 0.5 s hold, timeouts excluded); interrupted events count here.
+            # clean_success additionally needs a symmetric touchdown and is a quality diagnostic, not a gate.
+            result["Landing/window_end_stable_rate"] = (
+                values["clean_success"] + values["asymmetric_recovered"]
+            ) / resolved
             result["Landing/failure_rate"] = 1 - values["clean_success"] / resolved
             result["Landing/nonwheel_contact_rate"] = values["nonwheel_contact"] / resolved
             result["Landing/collision_recovered_rate"] = values["collision_recovered"] / resolved

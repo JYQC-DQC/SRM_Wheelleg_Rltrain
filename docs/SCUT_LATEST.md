@@ -1,8 +1,13 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+2026-11-12 landing奖励第二版（只跑了 CPU 测试，未在 Isaac 中运行）：成功/失败改为发生时立即结算；
+首次触地后加一次性缓冲期；腾空时保留姿态正奖励，加只罚不奖的轮心居中和轮速对准（目标为真实地速）；
+80% 空中出生速度跟随指令、指令冻结到落地窗口结束；critic 加 9 维事件状态（landing state_space 90）。
+旧 landing checkpoint 只能 `--initialize-from`。详见 `LANDING_REWARD_DESIGN.md`。
+
 2026-11-12 landing训练更新：参考与通用P1的landing阶段宽核权重覆盖为1.5；
 新增首次空中出生落地诊断和 `Landing/*` TensorBoard日志，必须重新生成或同步实际训练配置。
-不修改评测、终止宽限期或落地奖励项。详见 `LANDING_TRAINING.md`，本批未运行Isaac/GPU。
+（该条写的“不修改落地奖励项”已被后续提交和上一条取代。）详见 `LANDING_TRAINING.md`，本批未运行Isaac/GPU。
 
 ## 2026-11-12 当前补充：P2同任务混合地形与flat选模（未GPU验证）
 

@@ -233,32 +233,44 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "progress_budget",
             "success_bonus",
             "failure_cost",
-            "flight_effort_rate",
-            "flight_effort_budget",
             "contact_force_n",
             "support_force_n",
             "contact_timeout_s",
+            "settle_support_s",
+            "cushion_max_s",
             "window_s",
             "stable_s",
             "tilt_rad",
             "angular_xy_rad_s",
             "vertical_velocity_m_s",
             "height_error_m",
+            "wheel_center_weight",
+            "wheel_center_sigma",
+            "wheel_speed_weight",
+            "wheel_speed_sigma",
         ):
+            if key not in reward:
+                raise ValueError(f"{cfg.policy_path}: missing stages.landing.landing_reward.{key}")
             value = reward[key]
             if type(value) not in (int, float) or not isfinite(value) or value <= 0:
                 raise ValueError(f"landing_reward.{key} must be finite and positive")
         if reward["progress_budget"] + reward["success_bonus"] >= -cfg.settings["rewards"]["termination"]:
             raise ValueError("Total first-landing positive budget must stay below the termination cost")
-        if reward["flight_effort_budget"] > reward["failure_cost"]:
-            raise ValueError("Flight effort budget must not encourage failure escape")
         if (
             reward["stable_s"] >= reward["window_s"]
+            or reward["cushion_max_s"] >= reward["window_s"]
+            or reward["settle_support_s"] > reward["stable_s"]
             or reward["contact_timeout_s"] + reward["window_s"] >= cfg.settings["episode_length_s"]
         ):
             raise ValueError("Landing event deadlines must fit within an episode")
         if reward["support_force_n"] < reward["contact_force_n"]:
             raise ValueError("Landing support threshold must exceed first-contact threshold")
+        for key in ("air_vx_command_probability", "air_vx_command_noise_m_s"):
+            value = cfg.stage.get(key)
+            if type(value) not in (int, float) or not isfinite(value) or value < 0:
+                raise ValueError(f"stages.landing.{key} must be finite and nonnegative")
+        if cfg.stage["air_vx_command_probability"] > 1:
+            raise ValueError("stages.landing.air_vx_command_probability must be within [0, 1]")
         diagnostics = cfg.stage["landing_diagnostics"]
         for key in (
             "first_contact_force_n",
@@ -284,6 +296,20 @@ def _validate_training(cfg: TrainingConfig) -> None:
         deadline = diagnostics["first_contact_timeout_s"] + diagnostics["observation_window_s"]
         if deadline >= cfg.settings["episode_length_s"]:
             raise ValueError("landing diagnostics deadlines must fit within a full training episode")
+        # The reward resolves at the first stable hold, the diagnostic at the window end; the bars must agree.
+        for reward_key, diagnostic_key in (
+            ("contact_force_n", "first_contact_force_n"),
+            ("support_force_n", "support_force_n"),
+            ("contact_timeout_s", "first_contact_timeout_s"),
+            ("window_s", "observation_window_s"),
+            ("stable_s", "stable_duration_s"),
+            ("tilt_rad", "tilt_rad"),
+            ("angular_xy_rad_s", "angular_xy_rad_s"),
+            ("vertical_velocity_m_s", "vertical_velocity_m_s"),
+            ("height_error_m", "height_error_m"),
+        ):
+            if reward[reward_key] != diagnostics[diagnostic_key]:
+                raise ValueError(f"landing_reward.{reward_key} must equal landing_diagnostics.{diagnostic_key}")
     if cfg.task == "p2-spin":
         if "terrain" not in cfg.stage:
             raise ValueError(f"{cfg.policy_path}: missing stages.spin.terrain; regenerate the P2 configuration")

@@ -3,9 +3,9 @@
 ## 范围
 
 仅 `p1-landing` 且非 evaluation 时创建 FirstLanding。评测分支、P3跳跃事件、P1其他阶段不改。
-唯一奖励修改：两份P1配置的 `stages.landing.reward_overrides.track_height_wide=1.5`。
-flat退火、stairs/recovery权重、空中轮速项、1秒物理终止宽限期及课程升级规则不改。
-此事件模块不输出奖励、不修改终止、不进入Actor/critic。
+本文只描述诊断模块：它不输出奖励、不修改终止、不进入Actor/critic。
+落地奖励是另一个模块（`wheelleg/landing_rewards.py`），当前设计见 `LANDING_REWARD_DESIGN.md`；
+本文第一版写的“唯一奖励修改是宽核 1.5、空中项和倍率不改”已不再成立。
 
 ## 生命周期
 
@@ -51,6 +51,9 @@ flat退火、stairs/recovery权重、空中轮速项、1秒物理终止宽限期
 `Landing/air_births`、`resolved` 是每轮新增/结算次数，`pending`是当前未完成事件数；
 正常运行时累计 births = 累计 resolved + pending。重启日志是新的诊断统计段，事件状态不随checkpoint恢复。
 `clean_success_rate`的分母是该轮resolved，包含中断事件；没有结算事件时不写成功率点，而不是写0。
+`window_end_stable_rate`=（clean_success+asymmetric_recovered）/resolved，即无非轮触地且窗口末仍稳定。
+它不等于奖励的 `LandingReward/first_recovery_rate`（首次稳定 0.5 s、分母不含外生 timeout），差别见 `LANDING_REWARD_DESIGN.md`；
+`clean_success_rate` 额外要求对称触地，只作质量诊断。
 长窗口应按成功数/结算数加权，不平均各轮成功率；`failure_rate=1-clean_success_rate`表示未满足完整诊断标准，
 包含“碰撞后恢复”及中断，不能解释成全是摔倒。
 `early_timeout`单独计数，避免init_at_random_ep_len造成的首批短回合被误读为落地动作退步。
@@ -71,7 +74,8 @@ flat退火、stairs/recovery权重、空中轮速项、1秒物理终止宽限期
 但若以后仅按不可观测的出生标签给相同碰撞不同惩罚，会引入隐藏上下文，增加学习/价值估计难度。
 更合适的是保留所有回合通用的接触/姿态约束，额外的落地项由实际离地→接触事件和局部窗口触发，
 而非终身按air-reset标签区别对待。应先看当前诊断，再批准新增奖励及对应事件范围。
-本次不新增落地扣分，地面出生和空中出生原有接触惩罚均保留；仅landing全体样本宽核高度权重统一为1.5。
+奖励侧现在按实际空中出生事件触发，并把事件状态放进 critic，见 `LANDING_REWARD_DESIGN.md`。
+地面出生和空中出生原有接触惩罚均保留；landing全体样本宽核高度权重统一为1.5。
 
 ## 运行与验证边界
 

@@ -232,17 +232,26 @@ stages:
       progress_budget: 0.75
       success_bonus: 1.5
       failure_cost: 1.0
-      flight_effort_rate: 0.1
-      flight_effort_budget: 0.1
       contact_force_n: 3.0
       support_force_n: 20.0
       contact_timeout_s: 2.0
+      # 首次触地后的一次性缓冲期：双轮连续支撑 settle_support_s 或触地后 cushion_max_s 先到者结束，
+      # 期间不罚速度/高度跟踪，姿态项照常。截止时间从首次触地算，弹跳不能延长。设计初值。
+      settle_support_s: 0.1
+      cushion_max_s: 0.5
       window_s: 3.0
       stable_s: 0.5
       tilt_rad: 0.17453292519943295
       angular_xy_rad_s: 0.5
       vertical_velocity_m_s: 0.2
       height_error_m: 0.05
+      # 两个腾空项只罚不奖，完全达标时为 0，自身不奖励推迟触地；姿态正奖励在空中仍生效，需观察 first_contact_s。
+      # 轮心居中改自 SCUT V14/env_cfg.py:1617-1623, 1657（航向系 x，sigma 0.02，权重 10），权重取 4 是设计值；
+      # 轮速对准航向系真实前向地速（触地不打滑的目标）；Actor 只看到指令，多数出生中二者一致。
+      wheel_center_weight: 4.0
+      wheel_center_sigma: 0.02
+      wheel_speed_weight: 2.0
+      wheel_speed_sigma: 1.0
     # Training-only first air-reset landing diagnostics, independent of rewards and the airborne state machine.
     # Engineering diagnostic thresholds; contact force peaks are not certified structural safety limits.
     landing_diagnostics:
@@ -274,6 +283,10 @@ stages:
     air_command_limit_s: 3.0
     air_command_vx_limit_m_s: 2.5
     air_command_wz_limit_rad_s: 1.5707963267948966
+    # 只对 landing：多数空中出生的前向速度=指令+噪声（像开下台阶），其余仍在 air_vx_range_m_s 内独立采样。
+    # Actor 没有机身速度观测，独立采样时触地前无法预知地速。设计初值。
+    air_vx_command_probability: 0.8
+    air_vx_command_noise_m_s: 0.3
     recovery_probability: 0.0
     disturbance_phase: 1
     # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，

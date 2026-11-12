@@ -260,6 +260,9 @@ EVENT_TERMS = frozenset(
         "jump_impact",
         "jump_asymmetric_landing",
         "tunnel_crossing",
+        # Paid by wheelleg/landing_rewards.py as per-event totals.
+        "landing_progress",
+        "landing_outcome",
     )
 )
 
