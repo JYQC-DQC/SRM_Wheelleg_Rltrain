@@ -76,26 +76,36 @@ class WheelLegRunner(OnPolicyRunner):
             extra["estimator_optimizer"] = self.alg.estimator_optimizer.state_dict()
         super().save(path, extra)
 
-    def load(self, path: str, load_optimizer: bool = True, map_location=None) -> dict:
+    def load(
+        self, path: str, load_optimizer: bool = True, map_location=None, restart_command_curriculum: bool = False
+    ) -> dict:
+        """restart_command_curriculum: the caller restarts the command curriculum, so its saved state is not needed,
+        and a landing air-height curriculum missing from an older checkpoint starts at its first level."""
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         infos = checkpoint["infos"]
         if not infos or infos.get("observation_contract") != self.observation_contract():
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"
             )
-        if self.env.unwrapped.air_height_curriculum is not None and "air_height_curriculum" not in infos:
-            raise ValueError("Checkpoint has no landing air-height curriculum state: use --initialize-from")
-        gate = self.env.unwrapped.command_curriculum
-        if gate is not None and gate.landing_gate is not None and "landing_events" not in infos["command_curriculum"]:
-            raise ValueError("Checkpoint has no landing-gated command curriculum state: use --initialize-from")
-        infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
         env = self.env.unwrapped
-        env.commands.command_fraction = infos["command_fraction"]
-        if env.command_curriculum is not None:
-            env.command_curriculum.load_state_dict(infos["command_curriculum"])
+        if not restart_command_curriculum:
+            if env.air_height_curriculum is not None and "air_height_curriculum" not in infos:
+                raise ValueError("Checkpoint has no landing air-height curriculum state: use --initialize-from")
+            gate = env.command_curriculum
+            if (
+                gate is not None
+                and gate.landing_gate is not None
+                and "landing_events" not in infos["command_curriculum"]
+            ):
+                raise ValueError("Checkpoint has no landing-gated command curriculum state: use --initialize-from")
+        infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
+        if not restart_command_curriculum:
+            env.commands.command_fraction = infos["command_fraction"]
+            if env.command_curriculum is not None:
+                env.command_curriculum.load_state_dict(infos["command_curriculum"])
         if env.jump_curriculum is not None:
             env.jump_curriculum.load_state_dict(infos["jump_curriculum"])
-        if env.air_height_curriculum is not None:
+        if env.air_height_curriculum is not None and "air_height_curriculum" in infos:
             env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"])
         if load_optimizer and hasattr(self.alg, "estimator_optimizer"):
             self.alg.estimator_optimizer.load_state_dict(infos["estimator_optimizer"])

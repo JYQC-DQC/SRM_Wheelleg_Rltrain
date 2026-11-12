@@ -97,7 +97,9 @@ def main() -> None:
                 old = json.loads((args.resume.parent / "params/run.json").read_text(encoding="utf-8"))
                 if old["task"] != args.task or old["obs_version"] != cfg.policy.obs_version:
                     raise ValueError("--resume requires the same task and observation contract; use --initialize-from")
-                runner.load(str(args.resume), load_optimizer=True)
+                runner.load(
+                    str(args.resume), load_optimizer=True, restart_command_curriculum=args.command_fraction is not None
+                )
                 runner.current_learning_iteration += 1
                 env.training_iteration_offset = runner.current_learning_iteration
                 if args.command_fraction is not None:
