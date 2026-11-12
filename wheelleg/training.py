@@ -228,10 +228,50 @@ def _validate_training(cfg: TrainingConfig) -> None:
     if cfg.task == "p1-landing":
         if "landing_diagnostics" not in cfg.stage:
             raise ValueError(f"{cfg.policy_path}: missing stages.landing.landing_diagnostics")
+        reward = cfg.stage["landing_reward"]
+        for key in (
+            "progress_budget",
+            "success_bonus",
+            "failure_cost",
+            "flight_effort_rate",
+            "flight_effort_budget",
+            "contact_force_n",
+            "support_force_n",
+            "contact_timeout_s",
+            "window_s",
+            "stable_s",
+            "tilt_rad",
+            "angular_xy_rad_s",
+            "vertical_velocity_m_s",
+            "height_error_m",
+        ):
+            value = reward[key]
+            if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                raise ValueError(f"landing_reward.{key} must be finite and positive")
+        if reward["progress_budget"] + reward["success_bonus"] >= -cfg.settings["rewards"]["termination"]:
+            raise ValueError("Total first-landing positive budget must stay below the termination cost")
+        if reward["flight_effort_budget"] > reward["failure_cost"]:
+            raise ValueError("Flight effort budget must not encourage failure escape")
+        if (
+            reward["stable_s"] >= reward["window_s"]
+            or reward["contact_timeout_s"] + reward["window_s"] >= cfg.settings["episode_length_s"]
+        ):
+            raise ValueError("Landing event deadlines must fit within an episode")
+        if reward["support_force_n"] < reward["contact_force_n"]:
+            raise ValueError("Landing support threshold must exceed first-contact threshold")
         diagnostics = cfg.stage["landing_diagnostics"]
-        for key in ("first_contact_force_n", "support_force_n", "first_contact_timeout_s",
-                    "observation_window_s", "stable_duration_s", "touchdown_difference_s", "tilt_rad",
-                    "angular_xy_rad_s", "vertical_velocity_m_s", "height_error_m"):
+        for key in (
+            "first_contact_force_n",
+            "support_force_n",
+            "first_contact_timeout_s",
+            "observation_window_s",
+            "stable_duration_s",
+            "touchdown_difference_s",
+            "tilt_rad",
+            "angular_xy_rad_s",
+            "vertical_velocity_m_s",
+            "height_error_m",
+        ):
             if key not in diagnostics:
                 raise ValueError(f"{cfg.policy_path}: missing stages.landing.landing_diagnostics.{key}")
             value = diagnostics[key]

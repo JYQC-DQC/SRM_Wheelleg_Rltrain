@@ -228,6 +228,21 @@ stages:
     disturbance_phase: 1
     reward_overrides: {}
   landing:
+    landing_reward:
+      progress_budget: 0.75
+      success_bonus: 1.5
+      failure_cost: 1.0
+      flight_effort_rate: 0.1
+      flight_effort_budget: 0.1
+      contact_force_n: 3.0
+      support_force_n: 20.0
+      contact_timeout_s: 2.0
+      window_s: 3.0
+      stable_s: 0.5
+      tilt_rad: 0.17453292519943295
+      angular_xy_rad_s: 0.5
+      vertical_velocity_m_s: 0.2
+      height_error_m: 0.05
     # Training-only first air-reset landing diagnostics, independent of rewards and the airborne state machine.
     # Engineering diagnostic thresholds; contact force peaks are not certified structural safety limits.
     landing_diagnostics:

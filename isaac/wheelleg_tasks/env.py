@@ -18,6 +18,7 @@ from wheelleg.curriculum import CommandCurriculum, JumpCurriculum
 from wheelleg.history import HistoryBuffer
 from wheelleg.jump import JumpEvent, tunnel_landing
 from wheelleg.landing import FirstLanding
+from wheelleg.landing_rewards import LandingRewards
 from wheelleg.observation import OBS_DIM
 from wheelleg.randomization import disturbance_progress, perturb_sensors
 from wheelleg.rewards import EVENT_TERMS, compute_rewards
@@ -135,7 +136,13 @@ class WheelLegEnv(DirectRLEnv):
         self.contact_peaks = torch.zeros(n, len(self.contact.body_names), device=d)
         self.first_landing = (
             FirstLanding(n, list(self.contact.body_names), self.contact_wheels, t.stage["landing_diagnostics"], d)
-            if t.task == "p1-landing" and not cfg.evaluation else None
+            if t.task == "p1-landing" and not cfg.evaluation
+            else None
+        )
+        self.landing_reward = (
+            LandingRewards(n, self.contact_wheels, len(self.contact.body_names), t.stage["landing_reward"], d)
+            if t.task == "p1-landing" and not cfg.evaluation
+            else None
         )
         self.commands_fixed = False
         self.fixed_command = None
@@ -285,6 +292,8 @@ class WheelLegEnv(DirectRLEnv):
         self.contact_peaks.zero_()
         if self.first_landing is not None:
             self.first_landing.begin_step()
+        if self.landing_reward is not None:
+            self.landing_reward.begin_step()
         self.obstacle_hit.zero_()
         self.obstacle_top_hit.zero_()
         age = self.episode_length_buf * self.step_dt
@@ -444,10 +453,13 @@ class WheelLegEnv(DirectRLEnv):
     def _record_contacts(self, tick: int) -> None:
         forces = torch.linalg.vector_norm(self.contact.data.net_forces_w_history, dim=-1).amax(1)
         self.contact_peaks = torch.maximum(self.contact_peaks, forces)
-        if self.first_landing is not None:
-            # contact_sensor_data.py:77-88: current net NORMAL force, not history maximum or friction.
+        if self.first_landing is not None or self.landing_reward is not None:
+            # Current normal force, independently shared by reward and diagnostic observers.
             current = self.contact.data.net_forces_w.norm(dim=-1)
+        if self.first_landing is not None:
             self.first_landing.sample_contacts(tick, self.physics_dt, current, self.torque[:, self.legs])
+        if self.landing_reward is not None:
+            self.landing_reward.sample(tick, self.physics_dt, current)
         if self.training.task != "p3-tunnel":
             return
         threshold = self.training.shared["termination"]["contact_force_n"]
@@ -565,7 +577,12 @@ class WheelLegEnv(DirectRLEnv):
         # 在约 40% 的时间里撑地也从不终止（standup2 的曲线）。
         physical = (tilt_fail | body_hit) & ~self.recovery_episode
         # 随机腿姿出生后先落地，起立窗口内不按倾倒/触地终止；触地惩罚照常累计。所有任务共用。
-        physical &= self.episode_length_buf * dt >= t.shared["leg_reset"]["settle_s"]
+        if self.landing_reward is not None:
+            # PPO randomizes the episode clock; landing grace uses real physics age instead.
+            birth_age = (self._sim_step_counter - self.landing_reward.born) * self.physics_dt
+            physical &= birth_age >= t.shared["leg_reset"]["settle_s"]
+        else:
+            physical &= self.episode_length_buf * dt >= t.shared["leg_reset"]["settle_s"]
         self.termination_steps = torch.where(
             physical, self.termination_steps + 1, (self.termination_steps - self.termination_leak).clamp_min(0)
         )
@@ -615,7 +632,22 @@ class WheelLegEnv(DirectRLEnv):
                 self.jump_curriculum.record(self.jump_bins[finished], self.jump.landing_pulse[finished], iteration)
         if self.first_landing is not None:
             self.first_landing.update(
-                self._sim_step_counter, self.physics_dt, dt, s, terminated, timeout,
+                self._sim_step_counter,
+                self.physics_dt,
+                dt,
+                s,
+                terminated,
+                timeout,
+                self.numerical_bad | self.bad_action,
+            )
+        if self.landing_reward is not None:
+            self.landing_reward.update(
+                self._sim_step_counter,
+                self.physics_dt,
+                dt,
+                s,
+                terminated,
+                timeout,
                 self.numerical_bad | self.bad_action,
             )
         s["terminated"] = terminated
@@ -669,6 +701,15 @@ class WheelLegEnv(DirectRLEnv):
             s["height_mask"] = (~self.jump.active).float()
             s["tracking_mask"] = torch.where(self.jump.active, 1.0, t.stage["non_event_tracking_scale"])
             s["guidance_scale"] = self.guidance_scale
+        if t.task == "p1-landing":
+            # Stable penalty scales cannot depend on an airborne-classifier dwell timer.
+            s["contact_multiplier"] = one
+            s["termination_multiplier"] = one
+        if self.landing_reward is not None:
+            flight = self.landing_reward.flight()
+            s["tracking_mask"] = (~flight).float()
+            s["height_mask"] = (~flight).float()
+            s["ground_mask"] = (~flight).float()
         weights = self.reward_weights
         if t.task == "p1-flat":
             # 宽核高度奖励在起立阶段提供梯度；站稳后它接近常数，按训练轮数线性退到 final_weight，
@@ -700,6 +741,20 @@ class WheelLegEnv(DirectRLEnv):
             terms["air_wheel_alignment"] = (
                 ar["wheel_speed_alignment"] * self.step_dt * wheel_speed_error.square().sum(-1) * self.airborne
             )
+        if t.task == "p1-landing":
+            # Remove the old +20/s and +10/s airborne bounties and unconstrained wheel-speed loss.
+            for key in ("air_wheel_torque", "air_wheel_center", "air_wheel_alignment"):
+                terms[key] = torch.zeros_like(one)
+            if self.landing_reward is not None:
+                for key in ("flat_roll", "flat_pitch", "stand_still"):
+                    terms[key] = torch.where(flight, 0.0, terms[key])
+                terms.update(
+                    self.landing_reward.terms(
+                        s["wheel_torque"],
+                        self.torque.new_tensor(t.policy.torque_limit_nm)[self.wheel_channels],
+                        self.step_dt,
+                    )
+                )
         if t.task in ("p1-stairs", "p1-recovery"):
             position = self.robot.data.root_pos_w
             delta_b = quat_apply_inverse(self.robot.data.root_quat_w, position - self.previous_position)
@@ -725,7 +780,13 @@ class WheelLegEnv(DirectRLEnv):
                 value if name in EVENT_TERMS else value.clamp(-t.settings["reward_clip"], t.settings["reward_clip"])
             )
             # SCUT wheelbipe25_v3/env.py:4007-4018: mask with where, never NaN * 0.
-            terms[name] = torch.where(self.numerical_bad, 0.0, terms[name])
+            if t.task == "p1-landing" and name == "termination":
+                # Numerical escape must still pay the existing, finite termination cost.
+                terms[name] = torch.where(self.numerical_bad, float(t.settings["rewards"]["termination"]), terms[name])
+            elif t.task == "p1-landing" and name == "landing_outcome":
+                pass  # The event module already emits a finite cost, once, only for active events.
+            else:
+                terms[name] = torch.where(self.numerical_bad, 0.0, terms[name])
             if name not in self.reward_sums:
                 self.reward_sums[name] = torch.zeros(n, device=self.device)
             self.reward_sums[name] += terms[name]
@@ -1028,6 +1089,8 @@ class WheelLegEnv(DirectRLEnv):
             air[selected] = False  # library states are not deliberately sampled air-reset events
         if self.first_landing is not None:
             self.first_landing.reset(env_ids, air, self._sim_step_counter)
+        if self.landing_reward is not None:
+            self.landing_reward.reset(env_ids, air, self._sim_step_counter)
         if self.jump is not None:
             self.jump.reset(env_ids)
         if t.task == "p3-tunnel":
