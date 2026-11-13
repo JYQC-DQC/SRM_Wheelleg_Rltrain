@@ -14,13 +14,24 @@ class EvaluationCase:
     translation: tuple[float, float] = (0.0, 0.0)
     jump_count: int = 0
     jump_height: float = 0.0
+    terrain_profile: str | None = None
 
 
 def evaluation_cases(cfg: TrainingConfig) -> list[EvaluationCase]:
     e = cfg.settings["evaluation"]
     family = TASKS[cfg.task].policy
     cases = []
-    if cfg.task == "p3-tunnel":
+    if cfg.task == "p1-stairs":
+        height = float(np.mean(cfg.stage["course"]["height_range_m"]))
+        for name, profile in cfg.stage["terrain"]["profiles"].items():
+            for speed in dict.fromkeys(profile["speed_range_m_s"]):
+                for sign in (1, -1):
+                    cases.append(
+                        EvaluationCase(
+                            f"{name}_vx_{sign * speed:.2f}", (sign * speed, 0.0, 0.0), height, terrain_profile=name
+                        )
+                    )
+    elif cfg.task == "p3-tunnel":
         tunnel = cfg.stage["tunnel"]
         for vx in np.linspace(*tunnel["vx_range_m_s"], 3):
             cases.append(

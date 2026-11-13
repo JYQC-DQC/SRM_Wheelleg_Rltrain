@@ -5,6 +5,8 @@ import trimesh
 from isaaclab.terrains import SubTerrainBaseCfg
 from isaaclab.utils import configclass
 
+from wheelleg.stairs import step_layout
+
 
 def steps_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     """Flat / single / double step, with ascent and descent on each patch."""
@@ -18,7 +20,11 @@ def steps_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         step = trimesh.creation.box((width, sy, height))
         step.apply_translation((sx / 2, sy / 2, (level + 0.5) * height))
         meshes.append(step)
-    return meshes, np.array((sx / 4, sy / 2, 0.0))
+    # Recovery still uses this legacy geometry. Spawn midway through its clear approach, never on a riser.
+    if cfg.step_count == 0:
+        return meshes, np.array((sx / 4, sy / 2, 0.0))
+    edge = sx / 2 - (2 * cfg.step_count + 1) * cfg.step_width / 2
+    return meshes, np.array((max(edge, 0.0) / 2, sy / 2, 0.0))
 
 
 @configclass
@@ -79,3 +85,75 @@ class BumpsCfg(SubTerrainBaseCfg):
     height_range: tuple[float, float] = MISSING
     spacing: float = MISSING
     width: float = MISSING
+
+
+def course_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
+    """One-way traversal tiles with flat spawn/exit pads; all coordinates are tile-local metres."""
+    p, profile = cfg.parameters, cfg.profile
+    sx, sy = cfg.size
+    meshes = []
+
+    def box(x0, x1, y0, y1, z0, z1):
+        mesh = trimesh.creation.box((x1 - x0, y1 - y0, z1 - z0))
+        mesh.apply_translation(((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2))
+        meshes.append(mesh)
+
+    kind = profile["kind"]
+    if kind in ("up", "down", "mixed"):
+        edges, heights = step_layout(p, profile, difficulty)
+        boundaries = [0.0, *edges, sx]
+        for start, end, height in zip(boundaries[:-1], boundaries[1:], heights, strict=True):
+            box(start, end, 0, sy, -p["ground_thickness_m"], height)
+        spawn_height = heights[0]
+    elif kind in ("slope", "rough"):
+        resolution = p["surface_resolution_m"]
+        xs = np.linspace(0, sx, round(sx / resolution) + 1)
+        ys = np.linspace(0, sy, round(sy / resolution) + 1)
+        z = np.zeros((len(xs), len(ys)))
+        inside = (xs >= p["entry_x_m"]) & (xs <= p["exit_x_m"])
+        if kind == "slope":
+            angle = p["slope_angle_range_rad"][0] + difficulty * np.ptp(p["slope_angle_range_rad"])
+            z[:] = (np.minimum(xs - p["entry_x_m"], p["exit_x_m"] - xs).clip(0) * np.tan(angle))[:, None]
+        else:
+            # Small uniform surface noise, clear approach and exit pads; no unsupported ray API needed.
+            rng = np.random.default_rng(np.random.SeedSequence([p["seed"], round(difficulty * 1000000)]))
+            amplitude = p["rough_noise_range_m"][0] + difficulty * np.ptp(p["rough_noise_range_m"])
+            z[inside] = rng.uniform(-amplitude, amplitude, (inside.sum(), len(ys)))
+        vertices = np.array([(x, y, z[i, j]) for i, x in enumerate(xs) for j, y in enumerate(ys)])
+        faces = []
+        for i in range(len(xs) - 1):
+            for j in range(len(ys) - 1):
+                a = i * len(ys) + j
+                faces.extend(((a, a + len(ys), a + 1), (a + 1, a + len(ys), a + len(ys) + 1)))
+        meshes.append(trimesh.Trimesh(vertices=vertices, faces=np.array(faces), process=False))
+        spawn_height = 0.0
+    else:
+        box(0, sx, 0, sy, -p["ground_thickness_m"], 0)
+        spawn_height = 0.0
+        if kind == "grid":
+            # Adapted from SCUT height_field.py:431-498: split bars at crossings to avoid overlapping tops.
+            rng = np.random.default_rng(np.random.SeedSequence([p["seed"], round(difficulty * 1000000)]))
+            grid = p["grid"]
+            width = rng.uniform(*grid["width_range_m"])
+            height = rng.uniform(*grid["height_range_m"])
+            spacing_x, spacing_y = rng.uniform(*grid["spacing_range_m"], size=2)
+            cx, cy = (p["entry_x_m"] + p["exit_x_m"]) / 2, sy / 2
+            vertical = [
+                (cx + sign * spacing_x / 2 - width / 2, cx + sign * spacing_x / 2 + width / 2) for sign in (-1, 1)
+            ]
+            for x0, x1 in vertical:
+                box(x0, x1, cy - grid["half_span_m"], cy + grid["half_span_m"], 0, height)
+            for y in (cy - spacing_y / 2, cy + spacing_y / 2):
+                start = p["entry_x_m"]
+                for x0, x1 in vertical:
+                    box(start, x0, y - width / 2, y + width / 2, 0, height)
+                    start = x1
+                box(start, p["exit_x_m"], y - width / 2, y + width / 2, 0, height)
+    return meshes, np.array((p["spawn_x_m"], sy / 2, spawn_height))
+
+
+@configclass
+class CourseTerrainCfg(SubTerrainBaseCfg):
+    function = course_terrain
+    parameters: dict = MISSING
+    profile: dict = MISSING

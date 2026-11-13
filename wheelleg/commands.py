@@ -30,6 +30,7 @@ class Commands:
             [self.settings["linear_slew_m_s2"], self.settings["linear_slew_m_s2"], self.settings["angular_slew_rad_s2"]]
         )
         self.command_fraction = cfg.settings["command_curriculum"]["initial_fraction"]
+        self.course = None  # Assigned by the stairs environment before the first reset.
 
     def reset(self, ids: torch.Tensor) -> None:
         self.value[ids] = 0
@@ -47,6 +48,17 @@ class Commands:
             return
         self.remaining[ids] = uniform(self.settings["segment_duration_s"], (n,), self.device)
         self.target[ids] = 0
+        if self.cfg.task == "p1-stairs":
+            course = self.course
+            self.remaining[ids] = uniform(self.cfg.stage["course"]["segment_duration_s"], (n,), self.device)
+            for k, name in enumerate(course.names):
+                selected = ids[course.group[ids] == k]
+                bounds = self.cfg.stage["terrain"]["profiles"][name]["speed_range_m_s"]
+                # SCUT cfg_utils.py:281-313: axis-aligned travel, slow/fast ranges, limited turning.
+                upper = torch.maximum(course.speed_fraction[k] * bounds[1], course.speed_fraction.new_tensor(bounds[0]))
+                speed = bounds[0] + torch.rand(len(selected), device=self.device) * (upper - bounds[0])
+                self.target[selected, 0] = speed * course.forward_sign[selected]
+            return
         if self.cfg.task == "p3-tunnel":
             self.target[ids, 0] = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
             return
@@ -80,6 +92,11 @@ class Commands:
         self.target[ids, 0] = torch.where(kinds == 5, reverse, self.target[ids, 0])
 
     def _resample_height(self, ids: torch.Tensor) -> None:
+        if self.cfg.task == "p1-stairs":
+            p = self.cfg.stage["course"]
+            self.target_height[ids, 0] = uniform(p["height_range_m"], (len(ids),), self.device)
+            self.height_remaining[ids] = uniform(p["height_duration_s"], (len(ids),), self.device)
+            return
         self.target_height[ids, 0] = uniform(self.settings["height_range_m"], (len(ids),), self.device)
         self.height_remaining[ids] = uniform(self.settings["height_duration_s"], (len(ids),), self.device)
 

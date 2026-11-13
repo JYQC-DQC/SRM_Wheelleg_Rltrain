@@ -58,6 +58,12 @@ def main() -> None:
 
         settings = cfg.settings["evaluation"]
         count = settings["episodes_per_case"]
+        stairs = cfg.task == "p1-stairs"
+        if stairs and count < cfg.stage["terrain"]["rows"]:
+            raise ValueError("Stairs evaluation needs at least one episode per terrain difficulty row")
+        duration = (
+            max(settings["duration_s"], cfg.stage["course"]["episode_length_s"]) if stairs else settings["duration_s"]
+        )
         env_cfg = make_env_cfg(cfg, count, args.device, evaluation=True)
         env_cfg.seed = settings["seed"]
         env = WheelLegEnv(env_cfg, render_mode="rgb_array" if args.video else None)
@@ -68,7 +74,7 @@ def main() -> None:
                 env,
                 video_folder=str(args.output / "videos"),
                 episode_trigger=lambda episode: True,
-                video_length=int(settings["duration_s"] / raw.step_dt),
+                video_length=int(duration / raw.step_dt),
             )
         try:
             actor = load_policy_module(args.checkpoint[0], cfg.policy).to(args.device)
@@ -78,6 +84,15 @@ def main() -> None:
             for case in evaluation_cases(cfg):
                 command = torch.tensor(case.command, device=args.device)
                 raw.fixed_command = (command, case.height)
+                if stairs:
+                    # terrain_importer.py:315-355: assign verified types/levels and origins before reset.
+                    group = raw.stair_course.names.index(case.terrain_profile)
+                    columns = (raw.stair_course.column_groups == group).nonzero().flatten()
+                    slots = torch.arange(count, device=args.device)
+                    rows = cfg.stage["terrain"]["rows"]
+                    raw.terrain.terrain_types.copy_(columns[(slots // rows) % len(columns)])
+                    raw.terrain.terrain_levels.copy_(slots % rows)
+                    raw.terrain.env_origins.copy_(raw.terrain.terrain_origins[slots % rows, raw.terrain.terrain_types])
                 obs, _ = env.reset(seed=settings["seed"])
                 raw.commands.translation[:] = torch.tensor(case.translation, device=args.device)
                 raw.commands.translation_target.copy_(raw.commands.translation)
@@ -92,17 +107,20 @@ def main() -> None:
                 alive = torch.ones(count, dtype=torch.bool, device=args.device)
                 failed = torch.zeros_like(alive)
                 succeeded = torch.zeros_like(alive)
+                escaped = torch.zeros_like(alive)
+                tracking = torch.zeros(count, device=args.device)
+                levels = raw.terrain.terrain_levels.cpu().numpy().copy() if stairs else None
                 errors, valid, displacement = [], [], []
                 start_position = raw.robot.data.root_pos_w.clone()
                 with torch.inference_mode():
-                    for step in range(int(settings["duration_s"] / raw.step_dt)):
+                    for step in range(int(duration / raw.step_dt)):
                         actions = actor(obs["policy"], obs.get("history"))
                         if len(observations) < 1000:
                             observations.extend(obs["policy"][alive].cpu().numpy())
                             if "history" in obs:
                                 histories.extend(obs["history"][alive].cpu().numpy())
                         obs, _, terminated, timeout, extras = env.step(actions)
-                        if step >= int(settings["duration_s"] / raw.step_dt) - 10:
+                        if not stairs and step >= int(duration / raw.step_dt) - 10:
                             keep = alive & ~(terminated | timeout)
                             root_state = raw.robot.data.root_state_w[keep].clone()
                             root_state[:, :3] -= raw.terrain.env_origins[keep]
@@ -111,19 +129,45 @@ def main() -> None:
                             handover["joint_velocity"].append(raw.robot.data.joint_vel[keep].cpu().numpy().copy())
                         info = extras["evaluation"]
                         failed |= alive & info["failed"]
-                        succeeded |= alive & info["jump_success"]
+                        succeeded |= alive & info["stair_success" if stairs else "jump_success"]
+                        if stairs:
+                            escaped |= alive & info["stair_escaped"]
+                            tracking.copy_(torch.where(alive, info["stair_tracking"], tracking))
+                            keep = alive & info["stair_success"] & ~terminated
+                            for key in handover:
+                                handover[key].append(info[key][keep].cpu().numpy().copy())
                         errors.append(info["errors"].cpu().numpy())
                         valid.append((alive & (step * raw.step_dt >= settings["settling_s"])).cpu().numpy())
                         displacement.append((info["position"] - start_position)[:, :2].norm(dim=-1).cpu().numpy())
                         alive &= ~(terminated | timeout)
+                        if stairs and not alive.any():
+                            break
                 result = metrics(np.stack(errors), np.stack(valid), failed.cpu().numpy())
                 result.update(
                     case=case.name,
                     jump_requested=case.jump_count,
-                    jump_successes=int(succeeded.sum()),
+                    jump_successes=0 if stairs else int(succeeded.sum()),
                     completed_duration=int(alive.sum()),
                     maximum_displacement_m=float(np.max(displacement)),
                 )
+                if stairs:
+                    success_array = succeeded.cpu().numpy()
+                    result.update(
+                        terrain_profile=case.terrain_profile,
+                        traversal_successes=int(succeeded.sum()),
+                        traversal_success_rate=float(succeeded.float().mean()),
+                        escaped=int(escaped.sum()),
+                        mean_tracking_return=float(tracking.mean()),
+                        difficulty_rows={},
+                    )
+                    for level in range(cfg.stage["terrain"]["rows"]):
+                        selected = levels == level
+                        result["difficulty_rows"][str(level)] = dict(
+                            episodes=int(selected.sum()),
+                            traversal_successes=int(success_array[selected].sum()),
+                            traversal_success_rate=float(success_array[selected].mean()),
+                            failures=int(failed.cpu().numpy()[selected].sum()),
+                        )
                 if cfg.task == "p2-spin":
                     # terrain_importer.py:348 assigns environments to terrain columns.
                     # Groups describe the spawn patch; translating robots can cross patch boundaries.
@@ -153,14 +197,15 @@ def main() -> None:
                 joint_names=np.asarray(raw.robot.joint_names),
             )
             lines = [
-                "| Case | Episodes | Failures | |e_v| | |e_w| | |e_h| | Jump successes |",
+                "| Case | Episodes | Failures | e_v | e_w | e_h | Successful traversals / jumps |",
                 "|---|---:|---:|---:|---:|---:|---:|",
             ]
             for row in report:
+                successes = row["traversal_successes"] if stairs else row["jump_successes"]
                 lines.append(
                     f"| {row['case']} | {row['episodes']} | {row['failures']} | "
                     f"{row['mean_abs_velocity_error']} | {row['mean_abs_yaw_rate_error']} | "
-                    f"{row['mean_abs_height_error']} | {row['jump_successes']} |"
+                    f"{row['mean_abs_height_error']} | {successes} |"
                 )
             (args.output / "evaluation.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
             print(json.dumps(report, indent=2))

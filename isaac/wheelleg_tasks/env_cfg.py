@@ -12,10 +12,11 @@ from isaaclab.terrains import HfRandomUniformTerrainCfg, TerrainGeneratorCfg, Te
 from isaaclab.utils import configclass
 
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
+from wheelleg.stairs import FEATURES as STAIR_FEATURES
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
-from .terrain import BumpsCfg, SlopeCfg, SpinSlopeCfg, StepsCfg
+from .terrain import BumpsCfg, CourseTerrainCfg, SlopeCfg, SpinSlopeCfg, StepsCfg
 
 
 @configclass
@@ -120,7 +121,22 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
     )
     terrain.max_init_terrain_level = 0 if not evaluation else None
     scanner = None
-    if t.task in ("p1-stairs", "p1-recovery"):
+    if t.task == "p1-stairs":
+        s = t.stage["terrain"]
+        terrain.terrain_type = "generator"
+        terrain.terrain_generator = TerrainGeneratorCfg(
+            seed=t.settings["seed"],
+            size=tuple(s["tile_size_m"]),
+            num_rows=s["rows"],
+            num_cols=s["columns"],
+            border_width=s["border_width_m"],
+            curriculum=True,
+            sub_terrains={
+                name: CourseTerrainCfg(proportion=p["proportion"], parameters=mutable(s), profile=mutable(p))
+                for name, p in s["profiles"].items()
+            },
+        )
+    if t.task == "p1-recovery":
         s = t.stage["terrain"]
         terrain.terrain_type = "generator"
         step_proportion = (
@@ -202,11 +218,16 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             },
         )
     if t.task in ("p1-stairs", "p1-recovery", "p2-spin"):
+        scan_size = (1.0, 0.6)
+        scan_resolution = 0.1
+        if t.task == "p1-stairs":
+            scan_size = (2 * t.stage["course"]["scan_half_length_m"], 2 * t.stage["course"]["scan_half_width_m"])
+            scan_resolution = t.stage["course"]["scan_resolution_m"]
         scanner = RayCasterCfg(
             prim_path=f"/World/envs/env_.*/Robot/{asset['base_body_name']}",
             offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
             ray_alignment="yaw",
-            pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=(1.0, 0.6)),
+            pattern_cfg=patterns.GridPatternCfg(resolution=scan_resolution, size=scan_size),
             mesh_prim_paths=["/World/ground"],
             debug_vis=False,
         )
@@ -215,7 +236,9 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
         evaluation=evaluation,
         seed=t.settings["seed"],
         decimation=t.robot.decimation,
-        episode_length_s=t.settings["episode_length_s"],
+        episode_length_s=t.stage["course"]["episode_length_s"]
+        if t.task == "p1-stairs"
+        else t.settings["episode_length_s"],
         sim=sim_utils.SimulationCfg(
             dt=1 / t.robot.control_hz,
             render_interval=t.robot.decimation,
@@ -229,7 +252,13 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=0.0, track_air_time=True
         ),
         height_scanner=scanner,
-        state_space=(158 if scanner else 81) + (LANDING_FEATURES if t.task == "p1-landing" else 0),
+        state_space=(
+            (81 + round(scan_size[0] / scan_resolution + 1) * round(scan_size[1] / scan_resolution + 1))
+            if scanner
+            else 81
+        )
+        + (LANDING_FEATURES if t.task == "p1-landing" else 0)
+        + (STAIR_FEATURES if t.task == "p1-stairs" else 0),
     )
     if t.task == "p3-tunnel":
         # contact_sensor_cfg.py:63-68: one sensing body per environment, not Robot/.*.

@@ -26,6 +26,7 @@ from wheelleg.observation import OBS_DIM
 from wheelleg.randomization import disturbance_progress, perturb_sensors
 from wheelleg.rewards import EVENT_TERMS, compute_rewards
 from wheelleg.safety import airborne_enabled, nonfinite_pose, numerical_failure
+from wheelleg.stairs import StairCourse, scan_course
 from wheelleg.tasks import TASKS
 from wheelleg.tensor_ops import (
     action_targets,
@@ -57,6 +58,11 @@ class WheelLegEnv(DirectRLEnv):
         self.base, _ = self.robot.find_bodies(t.asset["base_body_name"])
         self.contact_wheels, _ = self.contact.find_bodies(list(t.asset["wheel_body_names"]), preserve_order=True)
         self.contact_bad, _ = self.contact.find_bodies(list(t.asset["undesired_contact_body_names"]))
+        if t.task == "p1-stairs":
+            guide_pattern = t.stage["course"]["guide_body_regex"]
+            self.stair_non_guide_contacts = [
+                i for i in self.contact_bad if not re.fullmatch(guide_pattern, self.contact.body_names[i])
+            ]
         # 改自 SCUT wheelbipe_V14/env.py:134-145: 平地终止名单含机身、云台和导轮，不只是机身。
         self.contact_terminal, _ = self.contact.find_bodies(list(t.asset["termination_contact_body_names"]))
         self.termination_duration_steps = round(t.shared["termination"]["duration_s"] / self.step_dt)
@@ -110,6 +116,8 @@ class WheelLegEnv(DirectRLEnv):
         self.spawn_check_mask = torch.ones(n, dtype=torch.bool, device=d)
         self.action_ticks = torch.zeros(n, dtype=torch.long, device=d)
         self.commands = Commands(t, n, d)
+        self.stair_course = StairCourse(n, t.stage, d) if t.task == "p1-stairs" else None
+        self.commands.course = self.stair_course
         # 改自 SCUT V14/env_cfg.py:1662-1668: 落地及之后的阶段把平滑惩罚降到约 1/5，给落地缓冲留出动作空间。
         self.reward_weights = dict(t.settings["rewards"])
         if self.family == "p1":
@@ -118,7 +126,9 @@ class WheelLegEnv(DirectRLEnv):
             t.stage["command_curriculum_landing_gate"] if t.task == "p1-landing" and not cfg.evaluation else None
         )
         self.command_curriculum = (
-            CommandCurriculum(t.settings["command_curriculum"], landing_gate) if self.family == "p1" else None
+            CommandCurriculum(t.settings["command_curriculum"], landing_gate)
+            if self.family == "p1" and self.stair_course is None
+            else None
         )
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         levels = (
@@ -139,6 +149,10 @@ class WheelLegEnv(DirectRLEnv):
         self.recovery_start_height = torch.zeros(n, device=d)
         self.stair_signal = torch.zeros(n, device=d)
         self.height_boost_remaining = torch.zeros(n, device=d)
+        self.stair_detection_remaining = torch.zeros(n, device=d)
+        self.stair_scan_tick = -1
+        self.stair_up_distance = torch.full((n,), float("inf"), device=d)
+        self.stair_down_distance = self.stair_up_distance.clone()
         self.command_limit_remaining = torch.zeros(n, device=d)  # 空中出生后指令限幅的剩余时间, s
         self.obstacle_hit = self.airborne.clone()
         self.obstacle_top_hit = self.airborne.clone()
@@ -316,6 +330,8 @@ class WheelLegEnv(DirectRLEnv):
         self.bad_action = ~torch.isfinite(actions).all(-1)
         self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
         self.contact_peaks.zero_()
+        if self.stair_course is not None:
+            self.stair_course.begin_step()
         if self.first_landing is not None:
             self.first_landing.begin_step()
         if self.landing_reward is not None:
@@ -357,6 +373,24 @@ class WheelLegEnv(DirectRLEnv):
             frozen = frozen | self.landing_reward.hold
         if not self.commands_fixed:
             self.commands.step(self.step_dt, frozen)
+            if self.stair_course is not None:
+                p = t.stage["course"]
+                yaw = euler_xyz_from_quat(self.robot.data.root_quat_w)[2]
+                target = torch.where(self.stair_course.forward_sign > 0, 0.0, torch.pi)
+                self.commands.value[:, 2] = (p["heading_kp"] * wrap_to_pi(target - yaw)).clamp(
+                    -p["yaw_rate_limit_rad_s"], p["yaw_rate_limit_rad_s"]
+                )
+                self.commands.value[self.stair_course.arrived] = 0.0
+        if self.stair_course is not None:
+            # A bounded stopping approach stays inside the exit pad, including fixed-command evaluation.
+            if self.commands_fixed:
+                self.commands.value[:, 0] = self.fixed_command[0][0]
+            rear_x = self.robot.data.body_pos_w[:, self.wheels, 0].amin(-1) - self.terrain.env_origins[:, 0]
+            goal = t.stage["terrain"]["finish_x_m"] - t.stage["terrain"]["spawn_x_m"]
+            distance = (goal + t.stage["course"]["edge_clearance_m"] - rear_x).clamp_min(0)
+            limit = torch.sqrt(2 * t.settings["commands"]["linear_slew_m_s2"] * distance)
+            self.commands.value[:, 0] = self.commands.value[:, 0].clamp(-limit, limit)
+            self.commands.value[self.stair_course.arrived] = 0.0
         if self.family == "p1" and t.stage["air_reset_probability"] > 0:
             # 改自 SCUT V14/env_cfg.py:1510-1516 (predefined_reset_air command_limits)：空中出生后的一段时间内
             # 限制前向速度和转向指令，落地过程中不要求高速转向。
@@ -483,7 +517,7 @@ class WheelLegEnv(DirectRLEnv):
     def _record_contacts(self, tick: int) -> None:
         forces = torch.linalg.vector_norm(self.contact.data.net_forces_w_history, dim=-1).amax(1)
         self.contact_peaks = torch.maximum(self.contact_peaks, forces)
-        if self.first_landing is not None or self.landing_reward is not None:
+        if self.first_landing is not None or self.landing_reward is not None or self.stair_course is not None:
             # Current normal force, independently shared by reward and diagnostic observers.
             current = self.contact.data.net_forces_w.norm(dim=-1)
         if self.first_landing is not None:
@@ -491,6 +525,14 @@ class WheelLegEnv(DirectRLEnv):
         if self.landing_reward is not None:
             guide_down = -self.robot.data.body_lin_vel_w[:, self.guide_robot_ids, 2]
             self.landing_reward.sample(tick, self.physics_dt, current, guide_down)
+        if self.stair_course is not None:
+            self.stair_course.sample(
+                tick,
+                self.physics_dt,
+                self.contact.data.net_forces_w[:, self.contact_wheels, 2],
+                self.robot.data.body_pos_w[:, self.wheels, 2],
+                self.robot.data.body_lin_vel_w[:, self.wheels, 2],
+            )
         if self.training.task != "p3-tunnel":
             return
         threshold = self.training.shared["termination"]["contact_force_n"]
@@ -516,7 +558,20 @@ class WheelLegEnv(DirectRLEnv):
             q[:, None].expand(-1, 2, -1).reshape(-1, 4), data.body_lin_vel_w[:, self.wheels].reshape(-1, 3)
         ).reshape(-1, 2, 3)
         ground = self.terrain.env_origins[:, 2]
-        if self.scanner is not None:
+        if self.stair_course is not None:
+            ground, up, down = scan_course(
+                self.scanner.data.ray_hits_w,
+                data.root_pos_w,
+                yaw,
+                wheels_w,
+                self.stair_course.forward_sign,
+                self.last_ground,
+                t.stage["course"],
+            )
+            self.stair_up_distance.copy_(up)
+            self.stair_down_distance.copy_(down)
+            self.last_ground.copy_(ground)
+        elif self.scanner is not None:
             ground = ground_from_hits(self.scanner.data.ray_hits_w[:, :, 2], self.last_ground)
             # In-place: buffers reassigned under the rollout's inference_mode cannot be reset outside it.
             self.last_ground.copy_(ground)
@@ -529,7 +584,12 @@ class WheelLegEnv(DirectRLEnv):
         height_rate = self.commands.height_rate
         if t.task in ("p1-stairs", "p1-recovery"):
             height_target = height_target + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)
-            height_target = height_target.clamp(max=t.settings["commands"]["height_range_m"][1])
+            height_upper = (
+                t.stage["course"]["height_range_m"][1]
+                if self.stair_course is not None
+                else t.settings["commands"]["height_range_m"][1]
+            )
+            height_target = height_target.clamp(max=height_upper)
         age = self.episode_length_buf * self.step_dt
         if t.task == "p1-recovery":
             rise = smooth_height(self.recovery_start_height, height_target, age, t.stage["rise_duration_s"])
@@ -598,6 +658,14 @@ class WheelLegEnv(DirectRLEnv):
         self._record_contacts(self._sim_step_counter)
         s = self._measure()
         t, dt = self.training, self.step_dt
+        if self.family == "p1":
+            # Preserve the phase before transitions: the last cushioning interval must remain unpenalized.
+            if self.stair_course is not None:
+                s["hip_acceleration_relaxed"] = self.stair_course.flying | (self.stair_course.cushion > 0)
+            elif self.landing_reward is not None:
+                s["hip_acceleration_relaxed"] = self.landing_reward.flight() | self.landing_reward.cushion()
+            else:
+                s["hip_acceleration_relaxed"] = self.airborne.clone()
         if airborne_enabled(t.task):
             air = t.shared["airborne"]
             candidate = ~s["wheel_contact"].any(-1) & (s["clearance"].amin(-1) > air["wheel_clearance_m"])
@@ -607,6 +675,9 @@ class WheelLegEnv(DirectRLEnv):
             self.airborne |= self.air_enter >= air["enter_duration_s"]
             self.air_elapsed = torch.where(self.airborne, self.air_elapsed + dt, 0)
             self.airborne &= (self.air_exit < air["exit_duration_s"]) & (self.air_elapsed < air["max_duration_s"])
+            if self.landing_reward is not None:
+                # Later real flights remain exempt, but the airborne exit dwell cannot prolong ground cushioning.
+                s["hip_acceleration_relaxed"] |= self.airborne & candidate
             tilt_limit = torch.where(
                 self.airborne, t.shared["termination"]["airborne_tilt_rad"], t.shared["termination"]["tilt_rad"]
             )
@@ -626,7 +697,8 @@ class WheelLegEnv(DirectRLEnv):
             birth_age = (self._sim_step_counter - self.landing_reward.born) * self.physics_dt
             physical &= birth_age >= t.shared["leg_reset"]["settle_s"]
         else:
-            physical &= self.episode_length_buf * dt >= t.shared["leg_reset"]["settle_s"]
+            birth_age = self.stair_course.age if self.stair_course is not None else self.episode_length_buf * dt
+            physical &= birth_age >= t.shared["leg_reset"]["settle_s"]
         self.termination_steps = torch.where(
             physical, self.termination_steps + 1, (self.termination_steps - self.termination_leak).clamp_min(0)
         )
@@ -643,6 +715,13 @@ class WheelLegEnv(DirectRLEnv):
                 )
             )
             timeout |= self.out_of_bounds
+        if self.stair_course is not None:
+            self.stair_course.update(s, self.terrain.env_origins, dt, terminated, t.settings["reward_parameters"])
+            # PPO may randomize episode_length_buf; a course must still receive its full traversal time.
+            timeout = (
+                (self.stair_course.age >= self.max_episode_length_s) | self.out_of_bounds | self.stair_course.finished
+            )
+            terminated |= self.stair_course.escaped
         if self.jump is not None:
             stable = (s["roll"].abs() < t.stage["landing_tilt_rad"]) & (s["pitch"].abs() < t.stage["landing_tilt_rad"])
             stable &= (s["linear_error"].abs() < t.stage["landing_speed_error_m_s"]) & ~terminated
@@ -715,6 +794,8 @@ class WheelLegEnv(DirectRLEnv):
         if self.landing_reward is not None:
             flight = self.landing_reward.flight()
             relaxed = flight | self.landing_reward.cushion()
+        if self.stair_course is not None:
+            relaxed = self.stair_course.flying | (self.stair_course.cushion > 0)
         # The command curriculum grades driving under commands; flight and cushion steps, where the tracking
         # rewards are off, are left out of its averages.
         counted = ~relaxed[:, None]
@@ -722,8 +803,8 @@ class WheelLegEnv(DirectRLEnv):
         self.command_error_sum += torch.where(counted, errors, 0.0)
         self.command_abs_sum += torch.where(counted, s["tracked_command"].abs(), 0.0)
         self.command_sample_count += (~relaxed).long()
-        # Hip acceleration by policy-step differencing (100 Hz): physics-rate joint_acc is dominated by contact and
-        # PD jitter at 500 Hz, while leg bobbing sits at a few Hz. Read once per step here, never in _measure.
+        # Policy-step differencing (100 Hz). Always update history, including masked flight/cushion steps,
+        # so resuming the penalty never accumulates a velocity change across the entire disabled interval.
         s["hip_acceleration"] = (s["hip_velocity"] - self.previous_hip_velocity) / self.step_dt
         self.previous_hip_velocity.copy_(s["hip_velocity"])
         s.update(
@@ -746,7 +827,7 @@ class WheelLegEnv(DirectRLEnv):
             band = p["height_gate_zero_error_m"] - p["height_gate_full_error_m"]
             gate = ((p["height_gate_zero_error_m"] - s["height_error"].abs()) / band).clamp(0, 1)
             # Landing uses its own flight/cushion phases, not the airborne classifier's exit dwell.
-            free = relaxed if self.landing_reward is not None else self.airborne
+            free = relaxed if self.landing_reward is not None or self.stair_course is not None else self.airborne
             s["height_gate"] = torch.where(free, 1.0, gate)
         if self.family == "p2":
             actual = rotate_xy(s["velocity_w"][:, :2], -self.commands.reference_yaw)
@@ -782,6 +863,17 @@ class WheelLegEnv(DirectRLEnv):
             s["tracking_mask"] = (~relaxed).float()
             s["height_mask"] = (~relaxed).float()
             s["ground_mask"] = (~flight).float()
+        if self.stair_course is not None:
+            s["tracking_mask"] = (~relaxed).float()
+            s["height_mask"] = (~relaxed).float()
+            s["ground_mask"] = (~self.stair_course.flying).float()
+            # Guide-only support costs less; any simultaneous body/link contact keeps the full binary cost.
+            other_hit = (
+                self.contact_peaks[:, self.stair_non_guide_contacts]
+                > t.settings["reward_parameters"]["contact_force_n"]
+            ).any(-1)
+            s["contact_multiplier"] = torch.where(other_hit, 1.0, t.stage["course"]["guide_contact_scale"])
+            s["termination_multiplier"] = one
         weights = self.reward_weights
         if t.task == "p1-flat":
             # 宽核高度奖励在起立阶段提供梯度；站稳后它接近常数，按训练轮数线性退到 final_weight，
@@ -792,7 +884,12 @@ class WheelLegEnv(DirectRLEnv):
             initial = weights["track_height_wide"]
             weights = {**weights, "track_height_wide": initial + progress * (anneal["final_weight"] - initial)}
         terms = compute_rewards(s, t.settings["reward_parameters"], weights, self.step_dt, t.settings["reward_clip"])
-        if t.task in ("p1-landing", "p1-stairs", "p1-recovery", "p3-jump", "p3-tunnel"):
+        if self.family == "p1" and "leg_joint_acc" in terms:
+            disabled = s["hip_acceleration_relaxed"] | relaxed
+            if self.landing_reward is None and self.stair_course is None:
+                disabled |= self.airborne
+            terms["leg_joint_acc"] = torch.where(disabled, 0.0, terms["leg_joint_acc"])
+        if t.task in ("p1-landing", "p1-recovery", "p3-jump", "p3-tunnel"):
             ar = t.settings["air_rewards"]
             terms["air_wheel_torque"] = (
                 ar["wheel_torque"]
@@ -820,7 +917,35 @@ class WheelLegEnv(DirectRLEnv):
             if self.landing_reward is not None:
                 terms["stand_still"] = torch.where(relaxed, 0.0, terms["stand_still"])
                 terms.update(self.landing_reward.terms(s, t.shared["wheel_radius_m"], self.step_dt))
-        if t.task in ("p1-stairs", "p1-recovery"):
+        if self.stair_course is not None:
+            p = t.stage["course"]
+            terms["progress"] = t.stage["progress_weight"] * self.stair_course.progress
+            terms["stair_impact"] = p["impact_weight"] * self.stair_course.impact
+            # No survival bounty in flight: bounded wheel-speed matching, disabled as soon as wheels touch.
+            error = s["wheel_velocity"] * t.shared["wheel_radius_m"] - s["heading_velocity"][:, 0:1]
+            terms["stair_air_wheel_speed"] = torch.where(
+                self.stair_course.flying,
+                -p["air_wheel_speed_weight"]
+                * self.step_dt
+                * (1 - torch.exp(-error.square().mean(-1) / p["air_wheel_speed_sigma"])),
+                0.0,
+            )
+            excess = (self.lower[self.legs] - self.robot.data.joint_pos[:, self.joints][:, self.legs]).clamp_min(0)
+            excess += (self.robot.data.joint_pos[:, self.joints][:, self.legs] - self.upper[self.legs]).clamp_min(0)
+            terms["air_joint_limits"] = (
+                t.settings["air_rewards"]["joint_limit"] * self.step_dt * excess.sum(-1) * self.stair_course.flying
+            )
+            terms["stand_still"] = torch.where(relaxed, 0.0, terms["stand_still"])
+            self.stuck_time += self.step_dt
+            ready = self.stuck_time >= t.stage["stuck_window_s"]
+            moved = self.robot.data.root_pos_w[:, 0] - self.stuck_start[:, 0]
+            expected = self.commands.value[:, 0].abs() > t.stage["course"]["finish_speed_m_s"]
+            self.stuck.copy_(torch.where(ready, (moved < t.stage["stuck_distance_m"]) & expected, self.stuck))
+            self.stuck &= ~self.stair_course.arrived & ~relaxed & expected
+            self.stuck_start[ready] = self.robot.data.root_pos_w[ready]
+            self.stuck_time[ready] = 0
+            terms["stuck"] = t.stage["stuck_weight"] * self.step_dt * self.stuck
+        if t.task == "p1-recovery":
             position = self.robot.data.root_pos_w
             delta_b = quat_apply_inverse(self.robot.data.root_quat_w, position - self.previous_position)
             terms["progress"] = t.stage["progress_weight"] * delta_b[:, 0] * self.commands.value[:, 0].sign()
@@ -841,9 +966,8 @@ class WheelLegEnv(DirectRLEnv):
             terms["obstacle_top_contact"] = p["top_contact_weight"] * self.step_dt * self.obstacle_top_hit
         self.previous_position.copy_(self.robot.data.root_pos_w)
         for name, value in terms.items():
-            terms[name] = (
-                value if name in EVENT_TERMS else value.clamp(-t.settings["reward_clip"], t.settings["reward_clip"])
-            )
+            event = name in EVENT_TERMS and (name != "stair_impact" or self.stair_course is not None)
+            terms[name] = value if event else value.clamp(-t.settings["reward_clip"], t.settings["reward_clip"])
             # SCUT wheelbipe25_v3/env.py:4007-4018: mask with where, never NaN * 0.
             if t.task == "p1-landing" and name == "termination":
                 # Numerical escape must still pay the existing, finite termination cost.
@@ -864,6 +988,18 @@ class WheelLegEnv(DirectRLEnv):
             if self.jump is not None
             else torch.zeros_like(self.airborne),
         }
+        if self.stair_course is not None:
+            self.extras["evaluation"]["stair_success"] = self.stair_course.success.detach().clone()
+            self.extras["evaluation"]["stair_escaped"] = self.stair_course.escaped.detach().clone()
+            if self.cfg.evaluation:
+                root = self.robot.data.root_state_w.clone()
+                root[:, :3] -= self.terrain.env_origins
+                self.extras["evaluation"].update(
+                    root_state=root,
+                    joint_position=self.robot.data.joint_pos.clone(),
+                    joint_velocity=self.robot.data.joint_vel.clone(),
+                    stair_tracking=(self.stair_course.track_sum / self.stair_course.track_count.clamp_min(1)).clone(),
+                )
         if self.cfg.evaluation and t.task == "p1-flat":
             # DirectRLEnv.step resets before returning: capture diagnostics before that reset.
             self.extras["evaluation"].update(
@@ -883,7 +1019,23 @@ class WheelLegEnv(DirectRLEnv):
         self._sample_sensors(self._sim_step_counter)
         s = self._measure()
         t = self.training
-        if t.task in ("p1-stairs", "p1-recovery"):
+        if self.stair_course is not None and self.stair_scan_tick != self._sim_step_counter:
+            self.stair_scan_tick = self._sim_step_counter
+            p = t.stage["course"]
+            detected = torch.isfinite(self.stair_up_distance) | torch.isfinite(self.stair_down_distance)
+            self.stair_detection_remaining.copy_(
+                torch.where(
+                    detected, p["detection_hold_s"], (self.stair_detection_remaining - self.step_dt).clamp_min(0)
+                )
+            )
+            self.stair_signal.copy_((self.stair_detection_remaining > 0).float())
+            trigger = self.stair_up_distance <= p["trigger_distance_m"]
+            self.height_boost_remaining.copy_(
+                torch.where(
+                    trigger, t.stage["step_height_hold_s"], (self.height_boost_remaining - self.step_dt).clamp_min(0)
+                )
+            )
+        if t.task == "p1-recovery":
             hits = self.scanner.data.ray_hits_w
             hit = torch.isfinite(hits).all(-1)
             hits = torch.where(hit[..., None], hits, self.robot.data.root_pos_w[:, None])
@@ -916,8 +1068,13 @@ class WheelLegEnv(DirectRLEnv):
         def make_fields(values):
             height = self.commands.height
             if t.task in ("p1-stairs", "p1-recovery"):
+                upper = (
+                    t.stage["course"]["height_range_m"][1]
+                    if self.stair_course is not None
+                    else t.settings["commands"]["height_range_m"][1]
+                )
                 height = (height + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)[:, None]).clamp(
-                    max=t.settings["commands"]["height_range_m"][1]
+                    max=upper
                 )
             return dict(
                 command=self.commands.value,
@@ -970,6 +1127,8 @@ class WheelLegEnv(DirectRLEnv):
             hit_z = torch.where(torch.isfinite(hit_z), hit_z, s["ground"][:, None])
             scan = self.robot.data.root_pos_w[:, 2:3] - hit_z
             critic = torch.cat((critic, component("height_scan", scan)), -1)
+        if self.stair_course is not None:
+            critic = torch.cat((critic, self.stair_course.features(s, self.terrain.env_origins)), -1)
         if t.task == "p1-landing":
             # Landing payouts depend on event history; evaluation has no event and keeps the same width with zeros.
             event = (
@@ -1011,7 +1170,7 @@ class WheelLegEnv(DirectRLEnv):
     def _reset_idx(self, env_ids: torch.Tensor) -> None:
         t = self.training
         curriculum_log = {}
-        if self.family == "p1" and not self.cfg.evaluation:
+        if self.command_curriculum is not None and not self.cfg.evaluation:
             ran = self.command_sample_count[env_ids] > 0
             completed = env_ids[ran]
             if len(completed):
@@ -1063,13 +1222,35 @@ class WheelLegEnv(DirectRLEnv):
                 self.extras["log"]["Episode_Termination/out_of_bounds"] = self.out_of_bounds[env_ids].float().mean()
             for value in self.reward_sums.values():
                 value[env_ids] = 0
-        if t.task in ("p1-stairs", "p1-recovery") and not self.cfg.evaluation:
+        if self.stair_course is not None and not self.cfg.evaluation:
+            up, down = self.stair_course.curriculum(
+                env_ids, self.reset_terminated[env_ids], self.out_of_bounds[env_ids]
+            )
+            if "log" not in self.extras:
+                self.extras["log"] = {}
+            self.extras["log"]["Stairs/traversal_success"] = up.float().mean()
+            self.extras["log"]["Stairs/escaped"] = self.stair_course.escaped[env_ids].float().mean()
+            self.extras["log"]["Stairs/tracking_return"] = (
+                self.stair_course.track_sum[env_ids] / self.stair_course.track_count[env_ids].clamp_min(1)
+            ).mean()
+            self.extras["log"]["Stairs/terrain_level"] = self.terrain.terrain_levels[env_ids].float().mean()
+            self.terrain.update_env_origins(env_ids, up, down)
+        if t.task == "p1-recovery" and not self.cfg.evaluation:
             distance = (self.robot.data.root_pos_w[env_ids] - self.initial_position[env_ids])[:, :2].norm(dim=-1)
             size = t.stage["terrain"]["tile_size_m"][0]
             # Episodes cut at the grid edge keep their level: the distance reached there says nothing about the tile.
             ran = (self.episode_length_buf[env_ids] > 0) & ~self.out_of_bounds[env_ids]
             self.terrain.update_env_origins(env_ids, (distance > size / 2) & ran, (distance < size / 4) & ran)
         super()._reset_idx(env_ids)
+        if self.stair_course is not None:
+            self.stair_course.reset(
+                env_ids, self.terrain.terrain_types[env_ids], self.terrain.env_origins[env_ids], self._sim_step_counter
+            )
+            self.stair_scan_tick = -1
+            self.stair_signal[env_ids] = 0
+            if self.commands_fixed:
+                sign = 1.0 if float(self.fixed_command[0][0]) >= 0 else -1.0
+                self.stair_course.forward_sign[env_ids] = sign
         # Before spawn sampling: landing air births take their forward speed from the new command.
         self.commands.reset(env_ids)
         n = len(env_ids)
@@ -1134,6 +1315,10 @@ class WheelLegEnv(DirectRLEnv):
                 length, angle, r["link_lengths_m"], r["angle_offsets_rad"]
             )
             yaw = uniform((-torch.pi, torch.pi), (n,), self.device)
+            if self.stair_course is not None:
+                p = t.stage["course"]
+                yaw = torch.where(self.stair_course.forward_sign[env_ids] > 0, 0.0, torch.pi)
+                yaw += uniform((-p["yaw_jitter_rad"], p["yaw_jitter_rad"]), (n,), self.device)
             root[:, 3:7] = quat_from_euler_xyz(tilt[:, 0], tilt[:, 1], yaw)
             wheel_b = root.new_tensor(t.shared["hip_pivot_positions_b_m"]).expand(n, 2, 3).clone()
             wheel_b[:, :, 0] -= length * angle.sin()
@@ -1176,6 +1361,9 @@ class WheelLegEnv(DirectRLEnv):
             root[:, 2] = self.terrain.env_origins[env_ids, 2] + height
             self.recovery_episode[env_ids] = recover
             self.spawn_check_mask[env_ids] = False
+        if self.stair_course is not None and self.cfg.evaluation and not self.cfg.evaluation_random_reset:
+            yaw = torch.where(self.stair_course.forward_sign[env_ids] > 0, 0.0, torch.pi)
+            root[:, 3:7] = quat_from_euler_xyz(torch.zeros_like(yaw), torch.zeros_like(yaw), yaw)
         if self.transition_states is not None and not self.cfg.evaluation:
             selected = torch.rand(n, device=self.device) < t.settings["transition_reset"]["probability"]
             rows = torch.randint(len(self.transition_states["root_state"]), (int(selected.sum()),), device=self.device)
@@ -1224,6 +1412,7 @@ class WheelLegEnv(DirectRLEnv):
             self.contact_peaks,
             self.action_ticks,
             self.height_boost_remaining,
+            self.stair_detection_remaining,
         ):
             value[env_ids] = 0
         self._randomize_controls(env_ids)

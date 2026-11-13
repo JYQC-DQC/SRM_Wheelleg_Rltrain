@@ -1,5 +1,28 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+2026-11-13/14 stairs修复（仅静态检查和配置加载）：详见 [STAIRS_TRAINING.md](STAIRS_TRAINING.md)。
+安全平台出生、上下/混合台阶、10%井字障碍；分地形定向速度和真实通过课程替代flat指令/位移升级。
+stairs空中出生概率改为0，删除旧空中正奖励，`stair_impact`只结算下台阶触地事件。
+stairs critic为368维，旧模型只提取Actor；baseline保持false、phase2保持null，不启动训练。
+以下带日期的旧记录保留当时状态；当前stairs以本条及专页为准。
+
+2026-11-13 P1 缓冲正则与引导回调（未运行测试或训练）：加速度权重统一降 10 倍，
+flat -2e-6，landing/stairs/recovery -4e-7；P1 腾空与 landing 首次缓冲期屏蔽加速度项，
+屏蔽期间持续更新关节速度历史，阶段退出边界步也不罚。腿速度及其他平滑项不变。
+landing 已收紧为事件自身的首次 flight/cushion，不叠加 airborne 的 0.3 s 着地退出延时；
+边界步后的地面步恢复惩罚，后续真实腾空需同时满足 airborne 与当前无接触/离地高度条件。
+landing 空中轮速对准 8→6，伸腿引导 4→3（仍只罚不奖，目标腿长 0.28 m/缺口尺度 0.1 m 不变）。
+需重新运行 `tools.prepare_scut` 生成配置；奖励变化建议 `--initialize-from`，已有 viewer/checkpoint 不会自动改变。
+
+2026-11-13 P1 静止与高速俯仰（仅静态检查，未运行测试或训练）：stand_still -1→-2；
+俯仰速度系数改为 `(exp(-vx²/4)+3)²`，用连续指数衰减替代上一版硬下限。
+必填 `training.reward_parameters.pitch_velocity_amplitude/sigma/offset` 分别为 1/4/3。
+同一倾角下 ±2 m/s 保留零速强度的 70.9%，±3 m/s 保留 60.3%。P1 各阶段共用，
+stairs/recovery 的俯仰权重仍为 -2，flat/landing 仍为 -3；landing 原有腾空/缓冲屏蔽保留。
+P2/P3 填 2/3/2 以保留原曲线。腿速度项保留，加速度和 landing 引导按本页开头回调；
+具体比较及 SCUT 加速度更新窗口待确认事项见 TRAINING.md。需重跑 `tools.prepare_scut`；奖励变化建议 `--initialize-from`。
+详见 TRAINING.md「P1 静止与高速俯仰」。
+
 2026-11-12 landing 导轮分级与引导加强（只跑了 CPU 测试，未在 Isaac 中运行，未部署）：每次新的导轮接触按该导轮
 接触前 2 ms 的下落速度分级：≥ 1 m/s 算失败，否则扣 0.5 × 速度不算失败；落地窗口内非轮触地 ×8；空中轮速对准 2→8；
 新增空中伸腿引导；速度课程的落地门槛改为只看最高一档出生高度；诊断记录每个非轮刚体的触地次数，
@@ -22,12 +45,14 @@
 - 竖直速度：`vertical_velocity` 改为 (世界系 vz − 高度参考变化率)²。变化率取斜率限制后的高度指令，recovery 起身段取平滑起身曲线的导数，
   stairs 的台阶抬高是阶跃不计速率。P1 权重 -0.5→-4。
 - 姿态：`angular_xy` -0.05→-0.2（复旦 ang_vel_xy），`pitch_penalty` -2→-3；roll 不加强（高速转向要侧倾）。
-- 新增 `leg_joint_acc` -2e-5：髋关节加速度按 100 Hz 策略步差分，不是 SCUT 的物理步 joint_acc，权重不照搬 -5e-7。
+- 新增 `leg_joint_acc` -2e-5：髋关节加速度按 100 Hz 策略步差分，SCUT -5e-7 使用 joint_acc。
+  2026-11-13 核对：joint_acc 的实际更新窗口待确认；旧系数在相同平滑运动下约强 40 倍，
+  现按页首回调为 -2e-6（后续 P1 阶段 -4e-7），并屏蔽腾空/首次缓冲。
   它在约 2.5 Hz 与 leg_joint_vel 相等，主要压高频腿部抖动；本车 2 cm 起伏只对应约 0.07 rad 髋角，低频起伏主要靠竖直速度项。
 - 估算（高度正弦起伏）：2 cm/2 Hz 每秒合计约扣 0.35（原约 0.2），3 cm/3 Hz 约 1.1（原约 0.45）。
 - 阶段：flat/landing 用新权重；stairs/recovery 用 reward_overrides 保留旧的 pitch/竖直速度/角速度权重；
   landing/stairs/recovery 的 leg_joint_acc 按平滑项惯例取 ×0.2。P2/P3 权重未改，但共用的速度口径和竖直速度定义已变。
-- 未改：stairs/P3 的 air_wheel_alignment 仍用机体系 vx。
+- 未改：recovery/P3 的 air_wheel_alignment 仍用机体系 vx；stairs已在2026-11-13改为有界航向系实际地速匹配。
 - 观测和 critic 合同不变，可 `--resume`；奖励尺度变了，续训初期 critic 会重新适应。需重新运行 `tools.prepare_scut`。
 - 校准：看 `Episode_Reward/leg_joint_acc`，若早期超过约 -0.3/s，说明主要在罚探索噪声，应减小权重。
 
@@ -238,7 +263,7 @@ standup2_4096_2000 到第 301 轮仍停在机身约 0.18 m（`track_height_wide`
   `config/reference/scut_p2.yaml` 开头；P2 的高度门控参数在 SRM 的 P2 配置里也成为必填。
 - 指南升到 v2.2，新增 `docs/LESSONS.md`。
 - **启动 `p1-stairs` / `p1-recovery` 前要改两项**（`training.disturbance`）：`baseline_evaluation_passed: true`、
-  `phase2_start_iteration: 0`。不改的话训练会拒绝启动并列出这两项。
+  `phase2_start_iteration` 填实际计划的起始轮数。仅在基线真正验收通过后记录true，不是启动时照抄。当前仍false/null。
 
 ## 2026-11-12 课程停在 0.85 后的调整（只改代码，未部署、未在 Isaac 中运行）
 

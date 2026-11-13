@@ -2,6 +2,7 @@ import torch
 from rsl_rl.runners import OnPolicyRunner
 
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
+from wheelleg.stairs import FEATURES as STAIR_FEATURES
 from wheelleg.training import mutable
 
 
@@ -19,6 +20,13 @@ class WheelLegRunner(OnPolicyRunner):
             contract["history_frames"] = cfg.policy.history_frames
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
+        if cfg.task == "p1-stairs":
+            contract["stair_course_revision"] = 1
+            contract["stair_course_features"] = STAIR_FEATURES
+            contract["stair_scan"] = [
+                cfg.stage["course"][k] for k in ("scan_half_length_m", "scan_half_width_m", "scan_resolution_m")
+            ]
+            contract["stair_terrain"] = mutable(cfg.stage["terrain"])
         return contract
 
     def _construct_algorithm(self, obs):
@@ -41,7 +49,14 @@ class WheelLegRunner(OnPolicyRunner):
         self.writer.add_scalar("Safety/raw_action_abs_max", env.iteration_raw_action_max.item(), iteration)
         self.writer.add_scalar("Safety/numerical_terminations", env.iteration_numerical_terminations.item(), iteration)
         # 指令范围课程进度（0-1）；不写出来就看不出课程是否卡住。
-        self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
+        if env.stair_course is None:
+            self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
+        if env.stair_course is not None:
+            for k, name in enumerate(env.stair_course.names):
+                self.writer.add_scalar(
+                    f"Stairs/{name}/speed_fraction", env.stair_course.speed_fraction[k].item(), iteration
+                )
+                self.writer.add_scalar(f"Stairs/{name}/pass_rate", env.stair_course.latest_pass[k].item(), iteration)
         if env.command_curriculum is not None and env.command_curriculum.last_landing_rate is not None:
             rate = env.command_curriculum.last_landing_rate
             self.writer.add_scalar("Curriculum/command_landing_gate_rate", rate, iteration)
@@ -72,6 +87,11 @@ class WheelLegRunner(OnPolicyRunner):
             extra["jump_curriculum"] = env.jump_curriculum.state_dict()
         if env.air_height_curriculum is not None:
             extra["air_height_curriculum"] = env.air_height_curriculum.state_dict()
+        if env.stair_course is not None:
+            extra["stair_course"] = {
+                k: getattr(env.stair_course, k).cpu() for k in ("speed_fraction", "completed", "passed", "latest_pass")
+            }
+            extra["stair_terrain_levels"] = env.terrain.terrain_levels.cpu()
         if hasattr(self.alg, "estimator_optimizer"):
             extra["estimator_optimizer"] = self.alg.estimator_optimizer.state_dict()
         super().save(path, extra)
@@ -98,6 +118,11 @@ class WheelLegRunner(OnPolicyRunner):
                 and "landing_events" not in infos["command_curriculum"]
             ):
                 raise ValueError("Checkpoint has no landing-gated command curriculum state: use --initialize-from")
+        if env.stair_course is not None:
+            if restart_command_curriculum:
+                raise ValueError("Stairs uses per-terrain speed windows; --command-fraction is not applicable")
+            if infos["stair_terrain_levels"].shape != env.terrain.terrain_levels.shape:
+                raise ValueError("Stairs resume requires the same number of environments")
         infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
         if not restart_command_curriculum:
             env.commands.command_fraction = infos["command_fraction"]
@@ -111,4 +136,13 @@ class WheelLegRunner(OnPolicyRunner):
                 env.command_curriculum.discard_landing()
         if load_optimizer and hasattr(self.alg, "estimator_optimizer"):
             self.alg.estimator_optimizer.load_state_dict(infos["estimator_optimizer"])
+        if env.stair_course is not None:
+            for k in ("speed_fraction", "completed", "passed", "latest_pass"):
+                getattr(env.stair_course, k).copy_(infos["stair_course"][k].to(env.device))
+            saved = infos["stair_terrain_levels"].to(env.device)
+            env.terrain.terrain_levels.copy_(saved)
+            env.terrain.env_origins.copy_(env.terrain.terrain_origins[saved, env.terrain.terrain_types])
+            # Reset restores physics at the new origins; it must not grade the discarded pre-load episode.
+            env.stair_course.age.zero_()
+            env.reset()
         return infos

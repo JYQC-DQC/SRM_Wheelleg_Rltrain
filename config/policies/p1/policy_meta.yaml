@@ -112,6 +112,10 @@ training:
     height_gate_zero_error_m: 0.1
     roll_sigma: 0.01
     pitch_sigma: 0.02
+    # (amplitude*exp(-vx²/sigma)+offset)²：零速 16，2 m/s 保留 70.9%，3 m/s 保留 60.3%。
+    pitch_velocity_amplitude: 1.0
+    pitch_velocity_sigma: 4.0  # (m/s)^2；P1 各阶段共用，连续衰减，无硬下限裁剪。
+    pitch_velocity_offset: 3.0
     fork_deadzone_m: 0.05
     stand_deadzone: 0.1
     contact_force_n: 3.0
@@ -132,20 +136,22 @@ training:
     flat_pitch: 1.0
     roll_penalty: -2.0
     # 抑制平地“上下起伏换速度”（见 scut_p1.yaml 同处注释）：俯仰 -2→-3、竖直速度 -0.5→-4（世界系 vz 减高度指令变化率）、
-    # 俯仰/横滚角速度 -0.05→-0.2（复旦值）、新增髋关节加速度 -2e-5。stairs/recovery 覆盖回旧值。
+    # 俯仰/横滚角速度 -0.05→-0.2（复旦值）。stairs/recovery 保留旧姿态权重，共用新俯仰公式。
     pitch_penalty: -3.0
     vertical_velocity: -4.0
     angular_xy: -0.2
     no_fork: -1.0
     no_fork_square: -1.0
     undesired_contact: -2.0
-    stand_still: -1.0
+    # 同 scut_p1.yaml：P1 -1→-2，零指令慢速溜车温和加罚。
+    stand_still: -2.0
     joint_torque: -0.0001
     wheel_power: -0.0001
     action_rate: -0.01
     # SCUT V14/env_cfg.py:869-883 的权重。
     leg_joint_vel: -0.005
-    leg_joint_acc: -2.0e-05
+    # -2e-5→-2e-6；同 scut_p1.yaml，P1 腾空与 landing 首次缓冲期屏蔽。
+    leg_joint_acc: -2.0e-06
     wheel_vel: -0.00001
     action_smoothness_leg: -0.05
     action_smoothness_wheel: -0.01
@@ -209,7 +215,7 @@ training:
     min_completed_episodes: 4096
     initial_fraction: 0.25
     increment: 0.05
-    success_fraction: 0.8
+    success_fraction: 0.75
     # 允许的回合平均误差 = 底限 + relative_error × 平均指令幅值；另要求平均高度误差达标。
     velocity_error_threshold_m_s: null
     yaw_error_threshold_rad_s: null
@@ -253,14 +259,14 @@ stages:
       # 轮速对准航向系真实前向地速（触地不打滑的目标）；Actor 只看到指令，多数出生中二者一致。
       wheel_center_weight: 4.0
       wheel_center_sigma: 0.02
-      wheel_speed_weight: 8.0
+      wheel_speed_weight: 6.0
       wheel_speed_sigma: 1.0
       # 落地窗口内非轮触地倍率、导轮分级、伸腿引导，含义见 config/reference/scut_p1.yaml 同名键。
       contact_multiplier: 8.0
       guide_body_regex: .*_guide_link
       guide_hard_speed_m_s: 1.0
       guide_speed_cost: 0.5
-      leg_extension_weight: 4.0
+      leg_extension_weight: 3.0  # 最大惩罚与未饱和区斜率降低 25%，只罚不奖。
       # 本车腿长可达范围未测（air_leg_length_range_m 也是 null），不照搬 SCUT 的 0.28 m。
       leg_extension_target_m: null
       leg_extension_scale_m: 0.1
@@ -277,7 +283,7 @@ stages:
       angular_xy_rad_s: 0.5
       vertical_velocity_m_s: 0.2
       height_error_m: 0.05
-    # 落地阶段略高于 SCUT 的 0.3；stairs/recovery 仍为 0.3。
+    # 落地阶段略高于SCUT的0.3；stairs为0，recovery为0.3。
     air_reset_probability: 0.4
     air_height_offset_m: &id001
     - 0.12
@@ -308,77 +314,205 @@ stages:
     # 指令课程的落地门槛，含义见 config/reference/scut_p1.yaml 同名块。
     command_curriculum_landing_gate:
       min_events: 256
-      success_rate: 0.8
+      success_rate: 0.75
     recovery_probability: 0.0
     disturbance_phase: 1
     # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {track_height_wide: 1.5, action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06}
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-07, wheel_vel: -2.0e-06}
+  # SCUT cfg_utils.py:281-313 directional slow/fast stairs; geometry ranges are design settings.
   stairs:
-    air_reset_probability: 0.3
-    air_height_offset_m: *id001
-    air_vx_range_m_s: *id002
-    # 空中出生的倾角、横向速度、角速度上限照 SCUT V14/env_cfg.py:1488-1521；腿长和摆角范围按本车几何填写。
-    air_tilt_rad: [0.1, 0.2]
-    air_vy_range_m_s: [-0.5, 0.5]
-    air_angular_velocity_rad_s: [0.05, 0.1, 0.5]
+    air_reset_probability: 0.0
+    air_height_offset_m:
+    - 0.12
+    - 0.42
+    air_vx_range_m_s:
+    - -2.5
+    - 2.5
+    air_tilt_rad:
+    - 0.1
+    - 0.2
+    air_vy_range_m_s:
+    - -0.5
+    - 0.5
+    air_angular_velocity_rad_s:
+    - 0.05
+    - 0.1
+    - 0.5
     air_leg_length_range_m: null
     air_leg_angle_range_rad: null
-    # SCUT V14/env_cfg.py:1510-1516：空中出生后 3 s 内限制指令，落地过程中不要求高速转向。
-    # SCUT 还限制高度 0.18-0.43 m，包含了我们的高度指令范围，不起作用，没有实现。
     air_command_limit_s: 3.0
     air_command_vx_limit_m_s: 2.5
     air_command_wz_limit_rad_s: 1.5707963267948966
     recovery_probability: 0.0
     terrain:
-      tile_size_m: &id003
+      tile_size_m:
       - 8.0
       - 8.0
       rows: 8
-      columns: 10
-      flat_proportion: 0.3
+      columns: 20
       step_height_range_m: null
       step_width_m: null
-      slope_proportion: 0.1
-      bump_proportion: 0.1
       slope_angle_range_rad:
       - 0.0
       - 0.4363323129985824
-      bump_height_range_m: null
-      bump_spacing_m: null
-      bump_width_m: null
-      # 改自 SCUT manager/mdp/isaaclab/terrains.py:109-115 (RANDOM_UNIFORM_FOR_RM)：随机起伏地面，噪声 0-3 cm。
-      # SCUT 定义了波浪地形但各地形集都没有启用，这里也不加。
-      rough_proportion: 0.1
-      rough_noise_range_m: [0.0, 0.03]
+      rough_noise_range_m:
+      - 0.0
+      - 0.03
       rough_noise_step_m: 0.005
       rough_downsampled_scale_m: 0.2
       heightfield_border_width_m: 1.0
-      # Flat ring around the whole tile grid (IsaacLab border, top at ground level); nothing exists beyond it.
       border_width_m: 5.0
-      # Leaving the grid shrunk by this margin ends the episode as a timeout (SCUT V14 default 0.5 m).
       boundary_margin_m: 0.5
-    stair_detection_distance_m: 0.5
-    stair_detection_height_m: 0.05
-    stair_false_positive: 0.1
-    stair_false_negative: 0.1
+      spawn_x_m: 0.8
+      entry_x_m: 2.4
+      exit_x_m: 5.6
+      finish_x_m: 6.6
+      ground_thickness_m: 0.1
+      seed: 42
+      surface_resolution_m: 0.2
+      grid:
+        width_range_m:
+        - 0.08
+        - 0.12
+        height_range_m:
+        - 0.025
+        - 0.045
+        spacing_range_m:
+        - 0.65
+        - 0.85
+        half_span_m: 1.4
+      profiles:
+        flat:
+          proportion: 0.3
+          kind: flat
+          step_count: 0
+          speed_range_m_s: null
+        up_one:
+          proportion: 0.1
+          kind: up
+          step_count: 1
+          speed_range_m_s: null
+        down_one:
+          proportion: 0.1
+          kind: down
+          step_count: 1
+          speed_range_m_s: null
+        mixed_one:
+          proportion: 0.05
+          kind: mixed
+          step_count: 1
+          speed_range_m_s: null
+        mixed_fast:
+          proportion: 0.05
+          kind: mixed
+          step_count: 1
+          speed_range_m_s: null
+        up_two:
+          proportion: 0.05
+          kind: up
+          step_count: 2
+          speed_range_m_s: null
+        down_two:
+          proportion: 0.05
+          kind: down
+          step_count: 2
+          speed_range_m_s: null
+        mixed_two:
+          proportion: 0.1
+          kind: mixed
+          step_count: 2
+          speed_range_m_s: null
+        grid:
+          proportion: 0.1
+          kind: grid
+          step_count: 0
+          speed_range_m_s: null
+        slope:
+          proportion: 0.05
+          kind: slope
+          step_count: 0
+          speed_range_m_s: null
+        rough:
+          proportion: 0.05
+          kind: rough
+          step_count: 0
+          speed_range_m_s: null
+      rough_proportion: 0.05
     progress_weight: 1.0
     stuck_weight: -1.0
-    impact_weight: -0.001
     stuck_window_s: 1.0
     stuck_distance_m: 0.05
     disturbance_phase: 2
-    # 落地及之后的阶段把平滑惩罚降到平地权重的 1/5，给落地缓冲留出动作空间（SCUT Flat-v1 的做法，
-    # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
-    # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
-    reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06,
-      pitch_penalty: -2.0, vertical_velocity: -0.5, angular_xy: -0.05}
-    step_height_boost_m: 0.16
-    step_height_hold_s: 2.0
-    step_height_trigger_distance_m: 0.14
+    reward_overrides:
+      action_rate: -0.002
+      action_smoothness_leg: -0.01
+      action_smoothness_wheel: -0.002
+      leg_joint_vel: -0.001
+      leg_joint_acc: -4.0e-07
+      wheel_vel: -2.0e-06
+      pitch_penalty: -2.0
+      vertical_velocity: -0.5
+      angular_xy: -0.05
+    step_height_boost_m: 0.12
+    step_height_hold_s: 0.6
+    course:
+      # 路线课程设计初值；SRM速度/高度/几何未知项仍为null，详见docs/STAIRS_TRAINING.md。
+      episode_length_s: 30.0
+      initial_speed_fraction: 0.4
+      minimum_speed_fraction: 0.3
+      speed_increment: 0.05
+      speed_window_episodes: 256
+      speed_promote_rate: 0.75
+      speed_demote_rate: 0.4
+      tracking_sigma: 0.5
+      tracking_promote: 0.8
+      tracking_demote: 0.4
+      minimum_episode_s: 2.0
+      tracking_warmup_s: 1.0
+      reverse_probability: 0.25
+      yaw_jitter_rad: 0.05
+      yaw_rate_limit_rad_s: 0.1
+      heading_kp: 1.0
+      height_range_m: null
+      segment_duration_s:
+      - 3.0
+      - 7.0
+      height_duration_s:
+      - 3.0
+      - 7.0
+      lane_half_width_m: 1.0
+      backtrack_limit_m: 0.4
+      edge_clearance_m: 0.15
+      finish_hold_s: 0.4
+      finish_tilt_rad: 0.25
+      finish_angular_rad_s: 0.5
+      finish_speed_m_s: 0.15
+      scan_resolution_m: 0.1
+      scan_half_length_m: 1.0
+      scan_half_width_m: 0.6
+      scan_lane_half_width_m: 0.15
+      scan_min_rays: 2
+      edge_height_m: 0.04
+      edge_gradient_excess_m: 0.025
+      detection_distance_m: 0.6
+      trigger_distance_m: 0.3
+      detection_hold_s: 0.15
+      contact_force_n: 20.0
+      # 仅stairs导轮接触扣分减半；机身/连杆接触和接触终止判据不变，实际刚体名需与资产核对。
+      guide_body_regex: .*_guide_link
+      guide_contact_scale: 0.5
+      min_flight_s: 0.02
+      min_drop_m: 0.04
+      impact_free_speed_m_s: 0.3
+      impact_speed_scale_m_s: 1.0
+      impact_clip: 4.0
+      cushion_s: 0.15
+      impact_weight: -0.5
+      air_wheel_speed_weight: 2.0
+      air_wheel_speed_sigma: 1.0
   recovery:
     air_reset_probability: 0.3
     air_height_offset_m: *id001
@@ -409,10 +543,10 @@ stages:
     # V14/env_cfg.py:1662-1668）。没有照抄 SCUT 的数值：它在 50 Hz 下把两个动作二阶差分降到 1/10，
     # 我们 100 Hz 下同样平滑的动作二阶差分本来就只有 1/16，统一按本项目平地权重 ×0.2 取值。
     reward_overrides: {action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
-      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-06, wheel_vel: -2.0e-06,
+      leg_joint_vel: -0.001, leg_joint_acc: -4.0e-07, wheel_vel: -2.0e-06,
       pitch_penalty: -2.0, vertical_velocity: -0.5, angular_xy: -0.05}
     terrain:
-      tile_size_m: *id003
+      tile_size_m: [8.0, 8.0]
       rows: 8
       columns: 10
       flat_proportion: 0.3

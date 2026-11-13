@@ -48,9 +48,12 @@ def roll_penalty(s, p):
 
 def pitch_penalty(s, p):
     # ground_mask: 腾空时不罚，SCUT V14/env_cfg.py:1551 (flat_orientation_y_v → 0)。
-    return ((2 * torch.exp(-s["heading_velocity"][:, 0].square() / 3) + 2) * s["gravity"][:, 0]).square() * s[
-        "ground_mask"
-    ]
+    # 保留原来的指数衰减形式；P1 系数 1/4/3 使 3 m/s 时平方后的强度约为零速的 60%。
+    factor = (
+        p["pitch_velocity_amplitude"] * torch.exp(-s["heading_velocity"][:, 0].square() / p["pitch_velocity_sigma"])
+        + p["pitch_velocity_offset"]
+    )
+    return (factor * s["gravity"][:, 0]).square() * s["ground_mask"]
 
 
 def vertical_velocity(s, p):
@@ -108,7 +111,7 @@ def leg_joint_vel(s, p):
 
 
 def leg_joint_acc(s, p):
-    # 改自 SCUT wheelbipe25_v3/env.py:3508 (V14 权重 -5e-7)，但加速度按 100 Hz 策略步差分而非物理步，权重另定。
+    # 改自 SCUT wheelbipe25_v3/env.py:3508 (V14 权重 -5e-7)；本项目按策略步差分，SCUT 读取 joint_acc。
     return s["hip_acceleration"].square().sum(-1)  # (N,), (rad/s^2)^2
 
 
@@ -271,6 +274,7 @@ EVENT_TERMS = frozenset(
         "jump_impact",
         "jump_asymmetric_landing",
         "tunnel_crossing",
+        "stair_impact",
         # Paid by wheelleg/landing_rewards.py as per-event totals.
         "landing_progress",
         "landing_outcome",

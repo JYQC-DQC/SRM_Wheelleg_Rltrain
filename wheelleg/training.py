@@ -66,14 +66,14 @@ class TrainingConfig:
             settings.pop("evaluation")
         if self.task in ("p1-flat", "p2-spin"):
             settings.pop("air_rewards")
-        if TASKS[self.task].policy != "p1" or evaluation:
+        if TASKS[self.task].policy != "p1" or self.task == "p1-stairs" or evaluation:
             settings.pop("command_curriculum")
         if self.settings["transition_reset"]["probability"] == 0 or evaluation:
             settings.pop("transition_reset")
         if self.stage["disturbance_phase"] == 1 or evaluation:
             settings["disturbance"] = dict(settings["disturbance"])
             settings["disturbance"].pop("phase2_start_iteration")
-        if TASKS[self.task].policy == "p2" or self.task == "p3-tunnel":
+        if TASKS[self.task].policy == "p2" or self.task in ("p3-tunnel", "p1-stairs"):
             settings["commands"] = dict(settings["commands"])
             for key in ("vx_range_m_s", "wz_range_rad_s", "dash_range_m_s"):
                 settings["commands"].pop(key)
@@ -81,9 +81,15 @@ class TrainingConfig:
                 settings["evaluation"] = dict(settings["evaluation"])
                 for key in ("vx_values_m_s", "wz_values_rad_s", "combined_commands"):
                     settings["evaluation"].pop(key)
-                if self.task == "p3-tunnel":
+                if self.task in ("p3-tunnel", "p1-stairs"):
                     settings["evaluation"].pop("jump_velocity_m_s")
+                if self.task == "p1-stairs":
+                    settings["evaluation"].pop("height_m")
         stage = dict(self.stage)
+        if self.task == "p1-stairs":
+            for key in tuple(stage):
+                if key.startswith("air_") and key != "air_reset_probability":
+                    stage.pop(key)
         if self.task == "p3-tunnel":
             stage.pop("height_range_m")
         if self.task != "p3-tunnel":
@@ -212,8 +218,14 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError(f"{cfg.policy_path}: missing training.height_wide_anneal.{key}")
         if cfg.settings["height_wide_anneal"]["ramp_iterations"] <= 0:
             raise ValueError("training.height_wide_anneal.ramp_iterations must be positive")
+    parameters = cfg.settings["reward_parameters"]
+    for key in ("pitch_velocity_amplitude", "pitch_velocity_sigma", "pitch_velocity_offset"):
+        if key not in parameters:
+            raise ValueError(f"{cfg.policy_path}: missing training.reward_parameters.{key}")
+        value = parameters[key]
+        if type(value) not in (float, int) or not isfinite(value) or value <= 0:
+            raise ValueError(f"{cfg.policy_path}: training.reward_parameters.{key} must be finite and positive")
     if TASKS[cfg.task].policy in ("p1", "p2"):
-        parameters = cfg.settings["reward_parameters"]
         for key in ("height_gate_full_error_m", "height_gate_zero_error_m"):
             if key not in parameters:
                 raise ValueError(f"{cfg.policy_path}: missing training.reward_parameters.{key}")
@@ -414,6 +426,183 @@ def _validate_training(cfg: TrainingConfig) -> None:
         for key in ("rough_noise_step_m", "rough_downsampled_scale_m", "heightfield_border_width_m"):
             if not isfinite(terrain[key]) or terrain[key] <= 0:
                 raise ValueError(f"stages.spin.terrain.{key} must be finite and positive")
+    if cfg.task == "p1-stairs":
+        prefix = f"{cfg.policy_path}: stages.stairs"
+        for key in ("course", "terrain"):
+            if key not in cfg.stage:
+                raise ValueError(f"{prefix}.{key} is required; regenerate stairs configuration")
+        course, terrain = cfg.stage["course"], cfg.stage["terrain"]
+        if "guide_body_regex" not in course or type(course["guide_body_regex"]) is not str:
+            raise ValueError(f"{prefix}.course.guide_body_regex: required body-name regular expression")
+        required = (
+            "episode_length_s",
+            "initial_speed_fraction",
+            "minimum_speed_fraction",
+            "speed_increment",
+            "speed_window_episodes",
+            "speed_promote_rate",
+            "speed_demote_rate",
+            "tracking_sigma",
+            "tracking_promote",
+            "tracking_demote",
+            "minimum_episode_s",
+            "tracking_warmup_s",
+            "reverse_probability",
+            "yaw_jitter_rad",
+            "yaw_rate_limit_rad_s",
+            "heading_kp",
+            "height_range_m",
+            "segment_duration_s",
+            "height_duration_s",
+            "lane_half_width_m",
+            "backtrack_limit_m",
+            "edge_clearance_m",
+            "finish_hold_s",
+            "finish_tilt_rad",
+            "finish_angular_rad_s",
+            "finish_speed_m_s",
+            "scan_resolution_m",
+            "scan_half_length_m",
+            "scan_half_width_m",
+            "scan_lane_half_width_m",
+            "scan_min_rays",
+            "edge_height_m",
+            "edge_gradient_excess_m",
+            "detection_distance_m",
+            "trigger_distance_m",
+            "detection_hold_s",
+            "contact_force_n",
+            "guide_contact_scale",
+            "min_flight_s",
+            "min_drop_m",
+            "impact_free_speed_m_s",
+            "impact_speed_scale_m_s",
+            "impact_clip",
+            "cushion_s",
+            "impact_weight",
+            "air_wheel_speed_weight",
+            "air_wheel_speed_sigma",
+        )
+        for key in required:
+            if key not in course:
+                raise ValueError(f"{prefix}.course.{key} is required")
+            value = course[key]
+            if key in ("height_range_m", "segment_duration_s", "height_duration_s"):
+                if value is None:
+                    continue  # Unknown SRM values are reported by require_ready().
+                if (
+                    len(value) != 2
+                    or any(type(v) not in (int, float) or not isfinite(v) for v in value)
+                    or not 0 < value[0] <= value[1]
+                ):
+                    raise ValueError(f"{prefix}.course.{key}: expected positive ordered pair")
+            else:
+                if type(value) not in (int, float) or not isfinite(value):
+                    raise ValueError(f"{prefix}.course.{key}: expected finite number")
+                if key == "impact_weight":
+                    invalid = value >= 0
+                elif key in ("reverse_probability", "yaw_jitter_rad", "speed_demote_rate", "tracking_demote"):
+                    invalid = value < 0
+                else:
+                    invalid = value <= 0
+                if invalid:
+                    raise ValueError(f"{prefix}.course.{key}: invalid sign or zero")
+        if not 0 < course["minimum_speed_fraction"] <= course["initial_speed_fraction"] <= 1:
+            raise ValueError(f"{prefix}.course: invalid speed fractions")
+        for a, b in (("speed_demote_rate", "speed_promote_rate"), ("tracking_demote", "tracking_promote")):
+            if not 0 <= course[a] < course[b] <= 1:
+                raise ValueError(f"{prefix}.course: expected 0 <= {a} < {b} <= 1")
+        if not 0 <= course["reverse_probability"] <= 1:
+            raise ValueError(f"{prefix}.course.reverse_probability must be in [0,1]")
+        if not 0 < course["guide_contact_scale"] <= 1:
+            raise ValueError(f"{prefix}.course.guide_contact_scale must be in (0,1]")
+        for key in ("speed_window_episodes", "scan_min_rays"):
+            if type(course[key]) is not int:
+                raise ValueError(f"{prefix}.course.{key} must be an integer")
+        for key in ("rows", "columns"):
+            if type(terrain[key]) is not int or terrain[key] <= 0:
+                raise ValueError(f"{prefix}.terrain.{key} must be a positive integer")
+        for key in (
+            "profiles",
+            "spawn_x_m",
+            "entry_x_m",
+            "exit_x_m",
+            "finish_x_m",
+            "ground_thickness_m",
+            "surface_resolution_m",
+            "seed",
+            "grid",
+        ):
+            if key not in terrain:
+                raise ValueError(f"{prefix}.terrain.{key} is required")
+        if (
+            not 0
+            < terrain["spawn_x_m"]
+            < terrain["entry_x_m"]
+            < terrain["exit_x_m"]
+            < terrain["finish_x_m"]
+            < terrain["tile_size_m"][0]
+        ):
+            raise ValueError(f"{prefix}.terrain: require spawn < entry < exit < finish inside tile")
+        for key in ("ground_thickness_m", "surface_resolution_m"):
+            if not isfinite(terrain[key]) or terrain[key] <= 0:
+                raise ValueError(f"{prefix}.terrain.{key} must be finite and positive")
+        if type(terrain["seed"]) is not int or terrain["seed"] < 0:
+            raise ValueError(f"{prefix}.terrain.seed must be a nonnegative integer")
+        proportions = [v["proportion"] for v in terrain["profiles"].values()]
+        if (
+            any(
+                not isfinite(v) or v <= 0 or abs(v * terrain["columns"] - round(v * terrain["columns"])) > 1e-6
+                for v in proportions
+            )
+            or abs(sum(proportions) - 1) > 1e-6
+        ):
+            raise ValueError(f"{prefix}.terrain.profiles: positive proportions must sum to 1 and occupy whole columns")
+        for name, profile in terrain["profiles"].items():
+            if profile["kind"] not in ("up", "down", "mixed", "flat", "grid", "slope", "rough"):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: unknown kind")
+            if profile["step_count"] not in (0, 1, 2):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: unsupported step_count")
+            bounds = profile["speed_range_m_s"]
+            if bounds is not None and (len(bounds) != 2 or not 0 < bounds[0] <= bounds[1]):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: invalid speed range")
+        for key in ("width_range_m", "height_range_m", "spacing_range_m"):
+            bounds = terrain["grid"][key]
+            if len(bounds) != 2 or not 0 < bounds[0] <= bounds[1]:
+                raise ValueError(f"{prefix}.terrain.grid.{key}: invalid positive range")
+        sx, sy = terrain["tile_size_m"]
+        if not 0 < course["trigger_distance_m"] <= course["detection_distance_m"] < course["scan_half_length_m"]:
+            raise ValueError(f"{prefix}.course: trigger <= detection < scan half length is required")
+        for key in ("scan_half_length_m", "scan_half_width_m"):
+            cells = 2 * course[key] / course["scan_resolution_m"]
+            if abs(cells - round(cells)) > 1e-6:
+                raise ValueError(f"{prefix}.course.{key}: scan extent must be divisible by resolution")
+        if not course["lane_half_width_m"] < terrain["grid"]["half_span_m"] < sy / 2:
+            raise ValueError(f"{prefix}.terrain.grid.half_span_m must cover the route and stay inside tile")
+        if terrain["grid"]["width_range_m"][1] >= terrain["grid"]["spacing_range_m"][0]:
+            raise ValueError(f"{prefix}.terrain.grid: bars must be narrower than their separation")
+        grid_span = sum((terrain["grid"]["spacing_range_m"][1], terrain["grid"]["width_range_m"][1]))
+        if grid_span >= terrain["exit_x_m"] - terrain["entry_x_m"]:
+            raise ValueError(f"{prefix}.terrain.grid: bars must fit between entry and exit")
+        if course["edge_clearance_m"] * 2 >= sx - terrain["finish_x_m"]:
+            raise ValueError(f"{prefix}.terrain: leave a braking margin after finish")
+        width = terrain["step_width_m"]
+        if width is not None:
+            for name, profile in terrain["profiles"].items():
+                count = profile["step_count"]
+                if profile["kind"] in ("up", "down", "mixed") and count == 0:
+                    raise ValueError(f"{prefix}.terrain.profiles.{name}: stairs require at least one step")
+                if width <= 0 or 2 * max(count - 1, 0) * width >= terrain["exit_x_m"] - terrain["entry_x_m"]:
+                    raise ValueError(f"{prefix}.terrain.step_width_m: steps overlap or exceed obstacle region")
+        for name, profile in terrain["profiles"].items():
+            bounds = profile["speed_range_m_s"]
+            if bounds is not None:
+                required_time = (terrain["finish_x_m"] - terrain["spawn_x_m"]) / bounds[0]
+                required_time += course["finish_hold_s"] + cfg.shared["leg_reset"]["settle_s"]
+                if course["episode_length_s"] <= required_time:
+                    raise ValueError(f"{prefix}.course.episode_length_s too short for {name} at minimum speed")
+        if cfg.stage["air_reset_probability"] != 0 or cfg.settings["transition_reset"]["probability"] != 0:
+            raise ValueError(f"{prefix}: traversal starts on a support pad; random air/library resets must be disabled")
     if "terrain" in cfg.stage:
         for key in (
             "rough_proportion",
