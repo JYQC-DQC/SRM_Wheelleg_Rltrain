@@ -12,6 +12,10 @@ export/
 *.onnx
 *.mp4
 
+# Local checkpoints, logs, downloads, analysis output and cloud launch records.
+# Previously tracked reference assets under runs/ remain version-controlled.
+/runs/
+
 # Tests stay local (including existing tests)
 [Tt]est/
 [Tt]ests/
