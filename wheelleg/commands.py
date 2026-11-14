@@ -53,11 +53,44 @@ class Commands:
             self.remaining[ids] = uniform(self.cfg.stage["course"]["segment_duration_s"], (n,), self.device)
             for k, name in enumerate(course.names):
                 selected = ids[course.group[ids] == k]
-                bounds = self.cfg.stage["terrain"]["profiles"][name]["speed_range_m_s"]
+                profile = self.cfg.stage["terrain"]["profiles"][name]
+                bounds = profile["speed_range_m_s"]
                 # SCUT cfg_utils.py:281-313: axis-aligned travel, slow/fast ranges, limited turning.
-                upper = torch.maximum(course.speed_fraction[k] * bounds[1], course.speed_fraction.new_tensor(bounds[0]))
-                speed = bounds[0] + torch.rand(len(selected), device=self.device) * (upper - bounds[0])
-                self.target[selected, 0] = speed * course.forward_sign[selected]
+                if profile["command_mode"] == "motion":
+                    kinds = (
+                        torch.multinomial(
+                            self.value.new_tensor(course.p["motion_segment_probabilities"]),
+                            len(selected),
+                            replacement=True,
+                        )
+                        if len(selected)
+                        else selected
+                    )
+                    speed = uniform((-bounds[1], bounds[1]), (len(selected),), self.device)
+                    yaw = uniform(profile["yaw_range_rad_s"], (len(selected),), self.device)
+                    small = uniform(course.p["small_turn_range_rad_s"], (len(selected),), self.device)
+                    small *= torch.where(torch.rand(len(selected), device=self.device) < 0.5, -1.0, 1.0)
+                    yaw = torch.where(
+                        torch.rand(len(selected), device=self.device) < course.p["small_turn_probability"], small, yaw
+                    )
+                    self.target[selected, 0] = torch.where((kinds == 1) | (kinds == 3), speed, 0.0)
+                    self.target[selected, 2] = torch.where((kinds == 2) | (kinds == 3), yaw, 0.0)
+                    self.target[selected, 2] = torch.where(
+                        kinds == 3,
+                        self.target[selected, 2].clamp(
+                            -self.settings["combined_wz_limit_rad_s"], self.settings["combined_wz_limit_rad_s"]
+                        ),
+                        self.target[selected, 2],
+                    )
+                else:
+                    fraction = (course.episode_speed_fraction[selected] - course.p["minimum_speed_fraction"]) / (
+                        1 - course.p["minimum_speed_fraction"]
+                    )
+                    start = self.value.new_tensor(profile["start_speed_range_m_s"])
+                    scaled = start + fraction[:, None] * (self.value.new_tensor(bounds) - start)
+                    speed = scaled[:, 0] + torch.rand(len(selected), device=self.device) * (scaled[:, 1] - scaled[:, 0])
+                    self.target[selected, 0] = speed * course.forward_sign[selected]
+                    self.target[selected, 2] = uniform(profile["yaw_range_rad_s"], (len(selected),), self.device)
             return
         if self.cfg.task == "p3-tunnel":
             self.target[ids, 0] = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
@@ -94,7 +127,10 @@ class Commands:
     def _resample_height(self, ids: torch.Tensor) -> None:
         if self.cfg.task == "p1-stairs":
             p = self.cfg.stage["course"]
-            self.target_height[ids, 0] = uniform(p["height_range_m"], (len(ids),), self.device)
+            for k, name in enumerate(self.course.names):
+                selected = ids[self.course.group[ids] == k]
+                bounds = self.cfg.stage["terrain"]["profiles"][name]["height_range_m"]
+                self.target_height[selected, 0] = uniform(bounds, (len(selected),), self.device)
             self.height_remaining[ids] = uniform(p["height_duration_s"], (len(ids),), self.device)
             return
         self.target_height[ids, 0] = uniform(self.settings["height_range_m"], (len(ids),), self.device)

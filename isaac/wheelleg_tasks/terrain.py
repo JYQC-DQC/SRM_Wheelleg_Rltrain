@@ -135,7 +135,8 @@ def course_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
             rng = np.random.default_rng(np.random.SeedSequence([p["seed"], round(difficulty * 1000000)]))
             grid = p["grid"]
             width = rng.uniform(*grid["width_range_m"])
-            height = rng.uniform(*grid["height_range_m"])
+            # Height follows the row; only narrow width/spacing variation remains random.
+            height = grid["height_range_m"][0] + difficulty * np.ptp(grid["height_range_m"])
             spacing_x, spacing_y = rng.uniform(*grid["spacing_range_m"], size=2)
             cx, cy = (p["entry_x_m"] + p["exit_x_m"]) / 2, sy / 2
             vertical = [
@@ -149,7 +150,8 @@ def course_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
                     box(start, x0, y - width / 2, y + width / 2, 0, height)
                     start = x1
                 box(start, p["exit_x_m"], y - width / 2, y + width / 2, 0, height)
-    return meshes, np.array((p["spawn_x_m"], sy / 2, spawn_height))
+    spawn_x = sx / 2 if profile["command_mode"] == "motion" else p["spawn_x_m"]
+    return meshes, np.array((spawn_x, sy / 2, spawn_height))
 
 
 @configclass

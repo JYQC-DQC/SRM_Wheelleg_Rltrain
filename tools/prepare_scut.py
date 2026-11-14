@@ -4,11 +4,13 @@ import argparse
 import hashlib
 import json
 import re
+from math import acos, radians
 from pathlib import Path
 
+import numpy as np
 import yaml
 
-from wheelleg.spawn import scut_spawn_height
+from wheelleg.spawn import scut_spawn_height, spring_extension_height
 
 
 def main() -> None:
@@ -89,6 +91,87 @@ def main() -> None:
         if min(spans) <= 0 or abs(spans[0] - spans[1]) > 1e-6:
             raise ValueError("Unexpected spring stroke")
         robot["spring_stroke_m"] = spans[0]
+        # USD attributes/frames follow supermimic_wheelbipe/tools/usd2mjcf.py:181-216.
+        # Use actual spring endpoints and slide limits, not the spring's nominal force or stroke alone.
+        extension_heights = []
+        passive_limits = {}
+        for side, spring_name in zip(("left", "right"), asset["spring_joint_names"], strict=True):
+            rear1, rear2 = f"{side}_rear1_link", f"{side}_rear2_link"
+            spring2 = joints[spring_name].GetRelationship("physics:body1").GetTargets()[0].name
+            closures = [
+                p
+                for p in joints.values()
+                if {q.name for key in ("physics:body0", "physics:body1") for q in p.GetRelationship(key).GetTargets()}
+                == {rear2, spring2}
+            ]
+            if len(closures) != 1:
+                raise ValueError(f"{side}: expected one spring-to-rear2 closure joint")
+            closure = closures[0]
+            pin = {}
+            for index in (0, 1):
+                body = closure.GetRelationship(f"physics:body{index}").GetTargets()[0].name
+                pin[body] = np.asarray(closure.GetAttribute(f"physics:localPos{index}").Get(), dtype=float)
+            matrices = {
+                name: np.asarray(transform_cache.GetLocalToWorldTransform(body_prims[name]), dtype=float)
+                for name in (
+                    asset["base_body_name"],
+                    rear1,
+                    rear2,
+                    spring2,
+                    f"{side}_spring1_link",
+                    f"{side}_wheel_link",
+                )
+            }
+            rear_frame = np.linalg.inv(matrices[rear1])
+            base_frame = np.linalg.inv(matrices[asset["base_body_name"]])
+            if not np.allclose((matrices[rear2] @ rear_frame)[:3, :3], np.eye(3), atol=1e-5) or not np.allclose(
+                (matrices[rear1] @ base_frame)[:3, :3], np.eye(3), atol=1e-5
+            ):
+                raise ValueError(f"{side}: spring height solver requires aligned zero-pose rear-link frames")
+            slider = joints[spring_name]
+            parent = slider.GetRelationship("physics:body0").GetTargets()[0].name
+            quat = slider.GetAttribute("physics:localRot0").Get()
+            w, v = float(quat.GetReal()), np.asarray(quat.GetImaginary(), dtype=float)
+            axis = np.eye(3)["XYZ".index(str(slider.GetAttribute("physics:axis").Get()))]
+            axis = axis + 2 * (w * np.cross(v, axis) + np.cross(v, np.cross(v, axis)))
+            axis = np.r_[axis, 0.0] @ matrices[parent] @ rear_frame
+            hinge = joints[f"{side}_spring1_joint"]
+            pivot = np.asarray(hinge.GetAttribute("physics:localPos0").Get(), dtype=float)
+            if hinge.GetRelationship("physics:body0").GetTargets()[0].name != rear1:
+                raise ValueError(f"{side}: spring hinge parent must be rear1")
+            tip = np.r_[pin[spring2], 1.0] @ matrices[spring2] @ rear_frame
+            maximum = tip[:3] + float(slider.GetAttribute("physics:upperLimit").Get()) * axis[:3] - pivot
+            lr = robot["training"]["leg_reset"]
+            height, leg_length = spring_extension_height(
+                lr["link_lengths_m"],
+                lr["angle_offsets_rad"],
+                float((matrices[rear1] @ base_frame)[3, 2]),
+                (matrices[rear2] @ rear_frame)[3, :3],
+                pivot,
+                pin[rear2],
+                (matrices[f"{side}_wheel_link"] @ np.linalg.inv(matrices[rear2]))[3, :3],
+                float(np.linalg.norm(maximum[[0, 2]])),
+                robot["training"]["wheel_radius_m"],
+            )
+            extension_heights.append(height)
+            l0, l1, l2 = lr["link_lengths_m"]
+            knee = acos((l0**2 + l1**2 - l0**2 * leg_length**2 / l2**2) / (2 * l0 * l1))
+            # Only widen the passive hinges that otherwise stop extension before the gas spring.
+            # User authorization is simulation-only; never edit source USD or real SRM limits.
+            for part, angle in (
+                ("front2", lr["angle_offsets_rad"][2] - knee),
+                ("front4", lr["angle_offsets_rad"][4] - knee),
+                ("rear2", knee - lr["angle_offsets_rad"][5]),
+            ):
+                name = f"{side}_{part}_joint"
+                lower = radians(float(joints[name].GetAttribute("physics:lowerLimit").Get()))
+                upper = radians(float(joints[name].GetAttribute("physics:upperLimit").Get()))
+                if angle < lower or angle > upper:
+                    passive_limits[name] = [min(lower, angle), max(upper, angle)]
+        if abs(extension_heights[0] - extension_heights[1]) > 0.001:
+            raise ValueError(f"Spring-limited standing heights differ by >1 mm: {extension_heights}")
+        robot["training"]["spring_extension_height_m"] = min(extension_heights)
+        robot["training"]["stairs_passive_joint_limits_rad"] = passive_limits
         robot["training"]["hip_pivot_positions_b_m"] = pivots
         asset.update(usd_path=str(usd), reference_package=str(package), collision_body_names=bodies)
         report = {
@@ -99,6 +182,8 @@ def main() -> None:
             "termination_contact_body_names": asset["termination_contact_body_names"],
             "unmatched_contact_patterns": unmatched_contact_patterns,
             "spring_stroke_m": spans,
+            "spring_extension_height_m": extension_heights,
+            "stairs_passive_joint_limits_rad": passive_limits,
             "hip_pivots_b_m": pivots,
             "zero_pose_base_position_w_m": base_position,
             "zero_pose_wheel_positions_w_m": wheel_positions,

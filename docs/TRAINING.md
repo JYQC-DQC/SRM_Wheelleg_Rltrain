@@ -1,5 +1,19 @@
 # 多策略训练代码（2026-11-10）
 
+## 2026-11-14 stairs生效逻辑修订
+
+当前以 [STAIRS_REVISION_20261114.md](STAIRS_REVISION_20261114.md) 为准，下面11月13日段落为历史记录。
+平地30%恢复站立/直行/纯转向/组合，角速度死区独立0.02；辅助上限取气弹簧最大伸长站姿高度减0.01m。
+参考模型硬上限约0.4389m；revision 4按最近台阶高度+[0.19,0.27]m和常规指令构造区间并随机采样一次，
+不再对矮台阶固定伸到最长。评测取区间中点；检测持续时续持、消失后0.3s结束，导轮支撑取消辅助。SRM高度待CAD确认。
+仅SCUT参考stairs仿真按授权扩展左右front2/rear2被动限位至弹簧极限对应角；SRM及原USD不改。
+当前双轮必须仍在末级边缘之后并恢复支撑；课程跟踪不再重复乘高度门控。
+速度按地形类型×高度行分别统计，256回合窗口≥60%升速、<30%降速；单纯超时不降地形。
+删除额外0.6s导轮豁免，所有原终止接触使用已有0.4s累计机制。按用户指示baseline=true，
+stairs启用阶段2调度：phase2_start_iteration=4000，前4000轮弱扰动，之后3000轮渐增，起点前不施加碰撞。
+该标记是用户授权，不代表本轮新产生评测通过报告；P1共用计划也影响阶段2的recovery，flat/landing仍为阶段1。
+Actor不变，critic373维、course revision=4，旧stairs只能--initialize-from。仅静态/配置和几何核算，未运行训练。
+
 ## 2026-11-13 stairs 评审修复
 
 当前实现以 [STAIRS_TRAINING.md](STAIRS_TRAINING.md) 为准：安全平台出生；独立上、下、上下混合台阶；
@@ -68,7 +82,7 @@ python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --rob
 | `p3-tunnel` | P3 | 横梁/护栏、横梁高度课程、后方地面落地 | p3-jump |
 
 以上是 3 个策略、7 个训练阶段，P1 的各阶段通常依次续训成为同一策略。
-Actor 均为 35→256→128→64→6；flat critic为81维，landing为90维，recovery/P2为158维，stairs为368维。
+Actor 均为 35→256→128→64→6；flat critic为81维，landing为90维，recovery/P2为158维，stairs为373维（11月14日revision 4）。
 跨阶段用 `--initialize-from` 严格加载 Actor，不裁切/补零网络输入；critic 和优化器重新初始化。
 相同任务用 `--resume` 恢复 Actor、critic、优化器、迭代和课程状态。
 
@@ -259,6 +273,10 @@ PPO 梯度不进入估计器（`isaac/wheelleg_tasks/history_policy.py`）。重
   双输入 ONNX 与 PyTorch 一致。**没有 GPU 训练、没有收益证据，不部署。**
 
 ## 评测、录像与导出
+
+stairs键鼠MuJoCo试驾入口为`python -m tools.play_stairs`，地图取该run配置，
+有单/双上下台阶、井字小凸起、坡/起伏及难度选择。见 [MUJOCO_STAIRS.md](MUJOCO_STAIRS.md)。
+沿用现有sim2sim的简化机器人，缺少独立导轮，不能代替导轮支撑动作验收或正式Isaac评测。
 
 ### 2026-11-12：flat 选模评测
 

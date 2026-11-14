@@ -1,5 +1,10 @@
 # P1 stairs 修订（2026-11-13，11-14完成源码复审）
 
+> 本页保留11月13日实现记录，已由[11月14日修订](STAIRS_REVISION_20261114.md)替代。
+> 当前平地是运动回放；辅助上限由气弹簧伸长极限减高度余量决定（SCUT约0.4389m）。
+> 无额外导轮终止豁免、无最低行probe；课程按类型×高度行调速，4000轮后渐增第二阶段扰动、critic373；请勿按下方旧配置启动。
+
+
 本页对应 `wheelleg/stairs.py`、`isaac/wheelleg_tasks/{terrain,env,env_cfg,runner}.py`，
 以及 `config/reference/scut_p1.yaml` / `config/policies/p1/policy_meta.yaml` 的 stairs 块。
 只修改本仓库；以下阈值是训练设计初值，尚无 Isaac/GPU 或 sim2sim 结果。

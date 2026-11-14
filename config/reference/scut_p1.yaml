@@ -240,7 +240,8 @@ training:
       - 0
       - -1.0
   disturbance:
-    baseline_evaluation_passed: false
+    # User-authorized flag on 2026-11-14; no new evaluation report was produced.
+    baseline_evaluation_passed: true
     ramp_iterations: 3000
     final_push_velocity_m_s: 1.25
     collision_interval_s:
@@ -251,7 +252,7 @@ training:
     - 100.0
     - 300.0
     lateral_probability: 0.8
-    phase2_start_iteration: null
+    phase2_start_iteration: 4000
   air_rewards:
     joint_limit: -10.0
     wheel_center: 10.0
@@ -387,6 +388,7 @@ stages:
     reward_overrides: {track_height_wide: 1.5, action_rate: -0.002, action_smoothness_leg: -0.01, action_smoothness_wheel: -0.002,
       leg_joint_vel: -0.001, leg_joint_acc: -4.0e-07, wheel_vel: -2.0e-06}
   # SCUT cfg_utils.py:281-313 directional slow/fast stairs; geometry ranges are design settings.
+  # 2026-11-14: SCUT分地形/独立抬高原则；课程与保护差异见docs/STAIRS_REVISION_20261114.md。
   stairs:
     air_reset_probability: 0.0
     air_height_offset_m:
@@ -460,8 +462,19 @@ stages:
           kind: flat
           step_count: 0
           speed_range_m_s:
-          - 0.3
-          - 1.5
+          - 0.0
+          - 2.7
+          command_mode: motion
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -5.0
+          - 5.0
+          height_range_m:
+          - 0.2
+          - 0.38
+          start_speed_range_m_s:
+          - 0.0
+          - 2.7
         up_one:
           proportion: 0.1
           kind: up
@@ -469,6 +482,17 @@ stages:
           speed_range_m_s:
           - 0.5
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.3
+          - 0.6
         down_one:
           proportion: 0.1
           kind: down
@@ -476,6 +500,17 @@ stages:
           speed_range_m_s:
           - 0.5
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.3
+          - 0.6
         mixed_one:
           proportion: 0.05
           kind: mixed
@@ -483,6 +518,17 @@ stages:
           speed_range_m_s:
           - 0.5
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.3
+          - 0.6
         mixed_fast:
           proportion: 0.05
           kind: mixed
@@ -490,6 +536,17 @@ stages:
           speed_range_m_s:
           - 1.5
           - 2.7
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.6
+          - 1.0
         up_two:
           proportion: 0.05
           kind: up
@@ -497,6 +554,17 @@ stages:
           speed_range_m_s:
           - 0.5
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.3
+          - 0.6
         down_two:
           proportion: 0.05
           kind: down
@@ -504,6 +572,17 @@ stages:
           speed_range_m_s:
           - 0.5
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.3
+          - 0.6
         mixed_two:
           proportion: 0.1
           kind: mixed
@@ -511,6 +590,17 @@ stages:
           speed_range_m_s:
           - 0.5
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 1.0
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.22
+          - 0.34
+          start_speed_range_m_s:
+          - 0.3
+          - 0.6
         grid:
           proportion: 0.1
           kind: grid
@@ -518,6 +608,17 @@ stages:
           speed_range_m_s:
           - 0.3
           - 1.2
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 0.5
+          yaw_range_rad_s:
+          - -0.3
+          - 0.3
+          height_range_m:
+          - 0.22
+          - 0.38
+          start_speed_range_m_s:
+          - 0.25
+          - 0.5
         slope:
           proportion: 0.05
           kind: slope
@@ -525,6 +626,17 @@ stages:
           speed_range_m_s:
           - 0.4
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 0.5
+          yaw_range_rad_s:
+          - -0.1
+          - 0.1
+          height_range_m:
+          - 0.24
+          - 0.34
+          start_speed_range_m_s:
+          - 0.25
+          - 0.6
         rough:
           proportion: 0.05
           kind: rough
@@ -532,6 +644,17 @@ stages:
           speed_range_m_s:
           - 0.3
           - 1.5
+          command_mode: traverse
+          heading_yaw_limit_rad_s: 0.5
+          yaw_range_rad_s:
+          - -0.3
+          - 0.3
+          height_range_m:
+          - 0.22
+          - 0.38
+          start_speed_range_m_s:
+          - 0.25
+          - 0.5
       rough_proportion: 0.05
     progress_weight: 1.0
     stuck_weight: -1.0
@@ -548,29 +671,30 @@ stages:
       pitch_penalty: -2.0
       vertical_velocity: -0.5
       angular_xy: -0.05
-    step_height_boost_m: 0.12
-    step_height_hold_s: 0.6
+      joint_torque: -1.0e-05
+      wheel_power: -1.0e-05
+    # Ceiling = robot.training.spring_extension_height_m minus this standing-height margin.
+    step_height_margin_m: 0.01
+    # Root height above the next tread: ~0.15 m body depth plus 4-12 cm design margin.
+    # Sample once per assist; high steps are capped by the spring-derived height limit.
+    step_height_clearance_range_m: [0.19, 0.27]
+    step_height_hold_s: 0.3
     course:
-      # 路线课程设计初值，SCUT提供分地形指令原则；完整公式/单位见 docs/STAIRS_TRAINING.md。
       episode_length_s: 30.0
       initial_speed_fraction: 0.4
       minimum_speed_fraction: 0.3
       speed_increment: 0.05
       speed_window_episodes: 256
-      speed_promote_rate: 0.75
-      speed_demote_rate: 0.4
+      speed_promote_rate: 0.6
+      speed_demote_rate: 0.3
       tracking_sigma: 0.5
-      tracking_promote: 0.8
+      tracking_promote: 0.6
       tracking_demote: 0.4
       minimum_episode_s: 2.0
       tracking_warmup_s: 1.0
       reverse_probability: 0.25
       yaw_jitter_rad: 0.05
-      yaw_rate_limit_rad_s: 0.1
-      heading_kp: 1.0
-      height_range_m:
-      - 0.22
-      - 0.34
+      heading_kp: 5.0
       segment_duration_s:
       - 3.0
       - 7.0
@@ -592,10 +716,9 @@ stages:
       edge_height_m: 0.04
       edge_gradient_excess_m: 0.025
       detection_distance_m: 0.6
-      trigger_distance_m: 0.3
+      trigger_distance_m: 0.5
       detection_hold_s: 0.15
       contact_force_n: 20.0
-      # 仅stairs导轮接触：普通接触-4/s乘0.5为-2/s；机身/连杆同时接触仍-4/s，终止名单不变。
       guide_body_regex: .*_guide_link
       guide_contact_scale: 0.5
       min_flight_s: 0.02
@@ -607,6 +730,33 @@ stages:
       impact_weight: -0.5
       air_wheel_speed_weight: 2.0
       air_wheel_speed_sigma: 1.0
+      yaw_deadzone_rad_s: 0.02
+      heading_probability: 0.5
+      traversal_hold_s: 0.15
+      motion_segment_probabilities:
+      - 0.25
+      - 0.25
+      - 0.25
+      - 0.25
+      small_turn_probability: 0.5
+      small_turn_range_rad_s:
+      - 0.2
+      - 1.0
+      traversal_tilt_rad: 0.45
+      traversal_angular_rad_s: 1.5
+      traversal_height_error_m: 0.08
+    motion_reward_overrides:
+      pitch_penalty: -3.0
+      angular_xy: -0.2
+      vertical_velocity: -4.0
+      action_rate: -0.01
+      action_smoothness_leg: -0.05
+      action_smoothness_wheel: -0.01
+      leg_joint_vel: -0.005
+      leg_joint_acc: -2.0e-06
+      wheel_vel: -1.0e-05
+      joint_torque: -0.0001
+      wheel_power: -0.0001
   recovery:
     air_reset_probability: 0.3
     air_height_offset_m: *id001

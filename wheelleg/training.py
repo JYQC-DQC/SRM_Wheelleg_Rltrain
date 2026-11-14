@@ -56,6 +56,9 @@ class TrainingConfig:
         asset = dict(self.asset)
         settings = dict(self.settings)
         shared = dict(self.shared)
+        if self.task != "p1-stairs":
+            shared.pop("spring_extension_height_m", None)
+            shared.pop("stairs_passive_joint_limits_rad", None)
         if self.task in ("p1-flat", "p2-spin"):
             shared.pop("airborne")
             shared["termination"] = dict(shared["termination"])
@@ -449,9 +452,15 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "tracking_warmup_s",
             "reverse_probability",
             "yaw_jitter_rad",
-            "yaw_rate_limit_rad_s",
             "heading_kp",
-            "height_range_m",
+            "yaw_deadzone_rad_s",
+            "heading_probability",
+            "traversal_hold_s",
+            "traversal_tilt_rad",
+            "traversal_angular_rad_s",
+            "traversal_height_error_m",
+            "small_turn_probability",
+            "small_turn_range_rad_s",
             "segment_duration_s",
             "height_duration_s",
             "lane_half_width_m",
@@ -487,7 +496,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
             if key not in course:
                 raise ValueError(f"{prefix}.course.{key} is required")
             value = course[key]
-            if key in ("height_range_m", "segment_duration_s", "height_duration_s"):
+            if key in ("small_turn_range_rad_s", "segment_duration_s", "height_duration_s"):
                 if value is None:
                     continue  # Unknown SRM values are reported by require_ready().
                 if (
@@ -507,7 +516,10 @@ def _validate_training(cfg: TrainingConfig) -> None:
                     invalid = value <= 0
                 if invalid:
                     raise ValueError(f"{prefix}.course.{key}: invalid sign or zero")
-        if not 0 < course["minimum_speed_fraction"] <= course["initial_speed_fraction"] <= 1:
+        if (
+            not 0 < course["minimum_speed_fraction"] < 1
+            or not course["minimum_speed_fraction"] <= course["initial_speed_fraction"] <= 1
+        ):
             raise ValueError(f"{prefix}.course: invalid speed fractions")
         for a, b in (("speed_demote_rate", "speed_promote_rate"), ("tracking_demote", "tracking_promote")):
             if not 0 <= course[a] < course[b] <= 1:
@@ -516,6 +528,67 @@ def _validate_training(cfg: TrainingConfig) -> None:
             raise ValueError(f"{prefix}.course.reverse_probability must be in [0,1]")
         if not 0 < course["guide_contact_scale"] <= 1:
             raise ValueError(f"{prefix}.course.guide_contact_scale must be in (0,1]")
+        for key in ("heading_probability", "small_turn_probability"):
+            if not 0 < course[key] < 1:
+                raise ValueError(f"{prefix}.course.{key} must be in (0,1)")
+        if "motion_segment_probabilities" not in course or len(course["motion_segment_probabilities"]) != 4:
+            raise ValueError(f"{prefix}.course.motion_segment_probabilities requires stand/straight/turn/combined")
+        probabilities = course["motion_segment_probabilities"]
+        if any(not isfinite(x) or x <= 0 for x in probabilities) or abs(sum(probabilities) - 1) > 1e-6:
+            raise ValueError(f"{prefix}.course.motion_segment_probabilities must be positive and sum to 1")
+        if "spring_extension_height_m" not in cfg.shared:
+            raise ValueError(f"{cfg.robot_path}: training.spring_extension_height_m is required")
+        ceiling = cfg.shared["spring_extension_height_m"]
+        if ceiling is not None and (type(ceiling) not in (int, float) or not isfinite(ceiling) or ceiling <= 0):
+            raise ValueError(f"{cfg.robot_path}: training.spring_extension_height_m must be positive or null")
+        for key in ("step_height_margin_m", "step_height_hold_s"):
+            if (
+                key not in cfg.stage
+                or type(cfg.stage[key]) not in (int, float)
+                or not isfinite(cfg.stage[key])
+                or cfg.stage[key] <= 0
+            ):
+                raise ValueError(f"{prefix}.{key}: expected a positive finite value")
+        if ceiling is not None and cfg.stage["step_height_margin_m"] >= ceiling:
+            raise ValueError(f"{prefix}.step_height_margin_m must be below the spring height limit")
+        if ceiling is not None:
+            ceiling -= cfg.stage["step_height_margin_m"]
+        if "step_height_clearance_range_m" not in cfg.stage:
+            raise ValueError(f"{prefix}.step_height_clearance_range_m is required")
+        clearance = cfg.stage["step_height_clearance_range_m"]
+        if clearance is not None and (
+            type(clearance) is not tuple
+            or len(clearance) != 2
+            or any(type(x) not in (int, float) or not isfinite(x) for x in clearance)
+            or not 0 < clearance[0] < clearance[1]
+            or (ceiling is not None and clearance[1] > ceiling)
+        ):
+            raise ValueError(
+                f"{prefix}.step_height_clearance_range_m: positive ordered pair below height ceiling required"
+            )
+        if "stairs_passive_joint_limits_rad" not in cfg.shared:
+            raise ValueError(f"{cfg.robot_path}: training.stairs_passive_joint_limits_rad is required")
+        limits = cfg.shared["stairs_passive_joint_limits_rad"]
+        if type(limits) is not MappingProxyType:
+            raise ValueError(f"{cfg.robot_path}: training.stairs_passive_joint_limits_rad must be a mapping")
+        if limits and (
+            cfg.robot.variant != "reference_simulation_only" or cfg.asset.get("reference_preset") != "scut_v14_2"
+        ):
+            raise ValueError("Passive limit widening is authorized only for SCUT reference simulation")
+        allowed = {f"{side}_{part}_joint" for side in ("left", "right") for part in ("front2", "front4", "rear2")}
+        for name, pair in limits.items():
+            if (
+                name not in allowed
+                or len(pair) != 2
+                or any(type(x) not in (int, float) or not isfinite(x) for x in pair)
+                or not pair[0] <= 0 < pair[1]
+            ):
+                raise ValueError(f"{cfg.robot_path}: training.stairs_passive_joint_limits_rad.{name}: invalid limits")
+        if "motion_reward_overrides" not in cfg.stage:
+            raise ValueError(f"{prefix}.motion_reward_overrides is required")
+        for name, weight in cfg.stage["motion_reward_overrides"].items():
+            if name not in cfg.settings["rewards"] or not isfinite(weight) or weight >= 0:
+                raise ValueError(f"{prefix}.motion_reward_overrides.{name}: expected existing negative penalty")
         for key in ("speed_window_episodes", "scan_min_rays"):
             if type(course[key]) is not int:
                 raise ValueError(f"{prefix}.course.{key} must be an integer")
@@ -559,13 +632,50 @@ def _validate_training(cfg: TrainingConfig) -> None:
         ):
             raise ValueError(f"{prefix}.terrain.profiles: positive proportions must sum to 1 and occupy whole columns")
         for name, profile in terrain["profiles"].items():
+            for key in (
+                "command_mode",
+                "start_speed_range_m_s",
+                "height_range_m",
+                "yaw_range_rad_s",
+                "heading_yaw_limit_rad_s",
+            ):
+                if key not in profile:
+                    raise ValueError(f"{prefix}.terrain.profiles.{name}.{key} is required")
+            if profile["command_mode"] not in ("motion", "traverse") or (profile["command_mode"] == "motion") != (
+                profile["kind"] == "flat"
+            ):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: motion replay requires flat terrain")
             if profile["kind"] not in ("up", "down", "mixed", "flat", "grid", "slope", "rough"):
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: unknown kind")
             if profile["step_count"] not in (0, 1, 2):
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: unsupported step_count")
             bounds = profile["speed_range_m_s"]
-            if bounds is not None and (len(bounds) != 2 or not 0 < bounds[0] <= bounds[1]):
+            if bounds is not None and (len(bounds) != 2 or not 0 <= bounds[0] < bounds[1]):
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: invalid speed range")
+            for key in ("start_speed_range_m_s", "height_range_m", "yaw_range_rad_s"):
+                pair = profile[key]
+                if pair is not None and (
+                    len(pair) != 2
+                    or any(type(v) not in (int, float) or not isfinite(v) for v in pair)
+                    or pair[0] >= pair[1]
+                ):
+                    raise ValueError(f"{prefix}.terrain.profiles.{name}.{key}: expected finite ordered pair")
+            start = profile["start_speed_range_m_s"]
+            height = profile["height_range_m"]
+            yaw = profile["yaw_range_rad_s"]
+            if start is not None and (start[0] < 0 or (profile["command_mode"] == "traverse" and start[0] == 0)):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: traversal minimum speed must be positive")
+            if start is not None and bounds is not None and any(a > b for a, b in zip(start, bounds, strict=True)):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: starting speeds exceed final speeds")
+            if height is not None and (height[0] <= 0 or (ceiling is not None and ceiling < height[1])):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: height must be positive and below assist ceiling")
+            if yaw is None or not yaw[0] <= 0 <= yaw[1] or max(abs(v) for v in yaw) <= course["yaw_deadzone_rad_s"]:
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: turning range must exceed yaw deadzone")
+            if (
+                not isfinite(profile["heading_yaw_limit_rad_s"])
+                or profile["heading_yaw_limit_rad_s"] <= course["yaw_deadzone_rad_s"]
+            ):
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: invalid heading correction limit")
         for key in ("width_range_m", "height_range_m", "spacing_range_m"):
             bounds = terrain["grid"][key]
             if len(bounds) != 2 or not 0 < bounds[0] <= bounds[1]:
@@ -595,8 +705,8 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 if width <= 0 or 2 * max(count - 1, 0) * width >= terrain["exit_x_m"] - terrain["entry_x_m"]:
                     raise ValueError(f"{prefix}.terrain.step_width_m: steps overlap or exceed obstacle region")
         for name, profile in terrain["profiles"].items():
-            bounds = profile["speed_range_m_s"]
-            if bounds is not None:
+            bounds = profile["start_speed_range_m_s"]
+            if bounds is not None and profile["command_mode"] == "traverse":
                 required_time = (terrain["finish_x_m"] - terrain["spawn_x_m"]) / bounds[0]
                 required_time += course["finish_hold_s"] + cfg.shared["leg_reset"]["settle_s"]
                 if course["episode_length_s"] <= required_time:

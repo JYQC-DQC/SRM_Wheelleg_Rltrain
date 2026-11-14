@@ -21,12 +21,20 @@ class WheelLegRunner(OnPolicyRunner):
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task == "p1-stairs":
-            contract["stair_course_revision"] = 1
+            contract["stair_course_revision"] = 4
             contract["stair_course_features"] = STAIR_FEATURES
             contract["stair_scan"] = [
                 cfg.stage["course"][k] for k in ("scan_half_length_m", "scan_half_width_m", "scan_resolution_m")
             ]
             contract["stair_terrain"] = mutable(cfg.stage["terrain"])
+            contract["stair_course"] = mutable(cfg.stage["course"])
+            contract["stair_passive_joint_limits_rad"] = mutable(cfg.shared["stairs_passive_joint_limits_rad"])
+            contract["stair_assist"] = [
+                cfg.shared["spring_extension_height_m"],
+                cfg.stage["step_height_margin_m"],
+                cfg.stage["step_height_hold_s"],
+                mutable(cfg.stage["step_height_clearance_range_m"]),
+            ]
         return contract
 
     def _construct_algorithm(self, obs):
@@ -53,10 +61,26 @@ class WheelLegRunner(OnPolicyRunner):
             self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
         if env.stair_course is not None:
             for k, name in enumerate(env.stair_course.names):
-                self.writer.add_scalar(
-                    f"Stairs/{name}/speed_fraction", env.stair_course.speed_fraction[k].item(), iteration
-                )
-                self.writer.add_scalar(f"Stairs/{name}/pass_rate", env.stair_course.latest_pass[k].item(), iteration)
+                if env.training.stage["terrain"]["profiles"][name]["command_mode"] != "motion":
+                    selected = env.stair_course.group == k
+                    if not selected.any():
+                        continue
+                    self.writer.add_scalar(
+                        f"Stairs/{name}/speed_fraction",
+                        env.stair_course.episode_speed_fraction[selected].mean().item(),
+                        iteration,
+                    )
+                    for row in range(env.training.stage["terrain"]["rows"]):
+                        self.writer.add_scalar(
+                            f"Stairs/{name}/row{row}/speed_fraction",
+                            env.stair_course.speed_fraction[k, row].item(),
+                            iteration,
+                        )
+                        self.writer.add_scalar(
+                            f"Stairs/{name}/row{row}/pass_rate",
+                            env.stair_course.latest_pass[k, row].item(),
+                            iteration,
+                        )
         if env.command_curriculum is not None and env.command_curriculum.last_landing_rate is not None:
             rate = env.command_curriculum.last_landing_rate
             self.writer.add_scalar("Curriculum/command_landing_gate_rate", rate, iteration)
@@ -91,7 +115,7 @@ class WheelLegRunner(OnPolicyRunner):
             extra["stair_course"] = {
                 k: getattr(env.stair_course, k).cpu() for k in ("speed_fraction", "completed", "passed", "latest_pass")
             }
-            extra["stair_terrain_levels"] = env.terrain.terrain_levels.cpu()
+            extra["stair_terrain_levels"] = env.stair_course.training_level.cpu()
         if hasattr(self.alg, "estimator_optimizer"):
             extra["estimator_optimizer"] = self.alg.estimator_optimizer.state_dict()
         super().save(path, extra)
@@ -140,9 +164,12 @@ class WheelLegRunner(OnPolicyRunner):
             for k in ("speed_fraction", "completed", "passed", "latest_pass"):
                 getattr(env.stair_course, k).copy_(infos["stair_course"][k].to(env.device))
             saved = infos["stair_terrain_levels"].to(env.device)
+            env.stair_course.training_level.copy_(saved)
             env.terrain.terrain_levels.copy_(saved)
             env.terrain.env_origins.copy_(env.terrain.terrain_origins[saved, env.terrain.terrain_types])
             # Reset restores physics at the new origins; it must not grade the discarded pre-load episode.
             env.stair_course.age.zero_()
+            env.stair_course.success.zero_()
+            env.stair_course.traversed.zero_()
             env.reset()
         return infos

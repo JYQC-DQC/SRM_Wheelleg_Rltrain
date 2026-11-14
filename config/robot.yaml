@@ -81,6 +81,10 @@ training:
   critic_torque_scale: 0.05
   spawn_clearance_m: 0.01
   spawn_clearance_max_m: 0.03
+  # Standing root height at full spring extension; requires SRM CAD/calibration.
+  spring_extension_height_m: null
+  # No authorization to widen real SRM mechanical limits.
+  stairs_passive_joint_limits_rad: {}
   # Numerical settings and guide starting ranges, not identified robot parameters.
   env_spacing_m: 8.0
   gravity_m_s2: 9.81

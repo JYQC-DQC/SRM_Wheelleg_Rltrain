@@ -77,138 +77,159 @@ def main() -> None:
                 video_length=int(duration / raw.step_dt),
             )
         try:
-            actor = load_policy_module(args.checkpoint[0], cfg.policy).to(args.device)
-            report, observations, histories = [], [], []
-            handover = {key: [] for key in ("root_state", "joint_position", "joint_velocity")}
-            raw.commands_fixed = True
-            for case in evaluation_cases(cfg):
-                command = torch.tensor(case.command, device=args.device)
-                raw.fixed_command = (command, case.height)
-                if stairs:
-                    # terrain_importer.py:315-355: assign verified types/levels and origins before reset.
-                    group = raw.stair_course.names.index(case.terrain_profile)
-                    columns = (raw.stair_course.column_groups == group).nonzero().flatten()
-                    slots = torch.arange(count, device=args.device)
-                    rows = cfg.stage["terrain"]["rows"]
-                    raw.terrain.terrain_types.copy_(columns[(slots // rows) % len(columns)])
-                    raw.terrain.terrain_levels.copy_(slots % rows)
-                    raw.terrain.env_origins.copy_(raw.terrain.terrain_origins[slots % rows, raw.terrain.terrain_types])
-                obs, _ = env.reset(seed=settings["seed"])
-                raw.commands.translation[:] = torch.tensor(case.translation, device=args.device)
-                raw.commands.translation_target.copy_(raw.commands.translation)
-                if raw.jump is not None:
-                    raw.jump.remaining[:] = case.jump_count
-                    raw.fixed_jump_height = case.jump_height
-                    raw.jump.next_trigger[:] = cfg.stage["first_trigger_range_s"][0]
-                    if cfg.task == "p3-tunnel":
-                        # Fixed evaluation count overrides the reset sample; restore/hide the beam accordingly.
-                        raw._reset_tunnel(torch.arange(count, device=args.device))
-                obs = raw._get_observations()
-                alive = torch.ones(count, dtype=torch.bool, device=args.device)
-                failed = torch.zeros_like(alive)
-                succeeded = torch.zeros_like(alive)
-                escaped = torch.zeros_like(alive)
-                tracking = torch.zeros(count, device=args.device)
-                levels = raw.terrain.terrain_levels.cpu().numpy().copy() if stairs else None
-                errors, valid, displacement = [], [], []
-                start_position = raw.robot.data.root_pos_w.clone()
-                with torch.inference_mode():
-                    for step in range(int(duration / raw.step_dt)):
-                        actions = actor(obs["policy"], obs.get("history"))
-                        if len(observations) < 1000:
-                            observations.extend(obs["policy"][alive].cpu().numpy())
-                            if "history" in obs:
-                                histories.extend(obs["history"][alive].cpu().numpy())
-                        obs, _, terminated, timeout, extras = env.step(actions)
-                        if not stairs and step >= int(duration / raw.step_dt) - 10:
-                            keep = alive & ~(terminated | timeout)
-                            root_state = raw.robot.data.root_state_w[keep].clone()
-                            root_state[:, :3] -= raw.terrain.env_origins[keep]
-                            handover["root_state"].append(root_state.cpu().numpy())
-                            handover["joint_position"].append(raw.robot.data.joint_pos[keep].cpu().numpy().copy())
-                            handover["joint_velocity"].append(raw.robot.data.joint_vel[keep].cpu().numpy().copy())
-                        info = extras["evaluation"]
-                        failed |= alive & info["failed"]
-                        succeeded |= alive & info["stair_success" if stairs else "jump_success"]
-                        if stairs:
-                            escaped |= alive & info["stair_escaped"]
-                            tracking.copy_(torch.where(alive, info["stair_tracking"], tracking))
-                            keep = alive & info["stair_success"] & ~terminated
-                            for key in handover:
-                                handover[key].append(info[key][keep].cpu().numpy().copy())
-                        errors.append(info["errors"].cpu().numpy())
-                        valid.append((alive & (step * raw.step_dt >= settings["settling_s"])).cpu().numpy())
-                        displacement.append((info["position"] - start_position)[:, :2].norm(dim=-1).cpu().numpy())
-                        alive &= ~(terminated | timeout)
-                        if stairs and not alive.any():
-                            break
-                result = metrics(np.stack(errors), np.stack(valid), failed.cpu().numpy())
-                result.update(
-                    case=case.name,
-                    jump_requested=case.jump_count,
-                    jump_successes=0 if stairs else int(succeeded.sum()),
-                    completed_duration=int(alive.sum()),
-                    maximum_displacement_m=float(np.max(displacement)),
-                )
-                if stairs:
-                    success_array = succeeded.cpu().numpy()
-                    result.update(
-                        terrain_profile=case.terrain_profile,
-                        traversal_successes=int(succeeded.sum()),
-                        traversal_success_rate=float(succeeded.float().mean()),
-                        escaped=int(escaped.sum()),
-                        mean_tracking_return=float(tracking.mean()),
-                        difficulty_rows={},
-                    )
-                    for level in range(cfg.stage["terrain"]["rows"]):
-                        selected = levels == level
-                        result["difficulty_rows"][str(level)] = dict(
-                            episodes=int(selected.sum()),
-                            traversal_successes=int(success_array[selected].sum()),
-                            traversal_success_rate=float(success_array[selected].mean()),
-                            failures=int(failed.cpu().numpy()[selected].sum()),
+            # Reset may mutate rollout inference tensors; keep all cases in the same inference scope.
+            with torch.inference_mode():
+                actor = load_policy_module(args.checkpoint[0], cfg.policy).to(args.device)
+                report, observations, histories = [], [], []
+                handover = {key: [] for key in ("root_state", "joint_position", "joint_velocity")}
+                raw.commands_fixed = True
+                for case in evaluation_cases(cfg):
+                    command = torch.tensor(case.command, device=args.device)
+                    raw.fixed_command = (command, case.height)
+                    if stairs:
+                        # terrain_importer.py:315-355: assign verified types/levels and origins before reset.
+                        group = raw.stair_course.names.index(case.terrain_profile)
+                        columns = (raw.stair_course.column_groups == group).nonzero().flatten()
+                        slots = torch.arange(count, device=args.device)
+                        rows = cfg.stage["terrain"]["rows"]
+                        raw.terrain.terrain_types.copy_(columns[(slots // rows) % len(columns)])
+                        raw.terrain.terrain_levels.copy_(slots % rows)
+                        raw.terrain.env_origins.copy_(
+                            raw.terrain.terrain_origins[slots % rows, raw.terrain.terrain_types]
                         )
-                if cfg.task == "p2-spin":
-                    # terrain_importer.py:348 assigns environments to terrain columns.
-                    # Groups describe the spawn patch; translating robots can cross patch boundaries.
-                    terrain = cfg.stage["terrain"]
-                    columns = raw.terrain.terrain_types.cpu().numpy()
-                    lower = 0
-                    result["spawn_terrain_groups"] = {}
-                    for name in ("flat", "rough", "slope"):
-                        upper = lower + round(terrain[f"{name}_proportion"] * terrain["columns"])
-                        selected = (columns >= lower) & (columns < upper)
-                        if selected.any():
-                            result["spawn_terrain_groups"][name] = metrics(
-                                np.stack(errors)[:, selected],
-                                np.stack(valid)[:, selected],
-                                failed.cpu().numpy()[selected],
+                    obs, _ = env.reset(seed=settings["seed"])
+                    raw.commands.translation[:] = torch.tensor(case.translation, device=args.device)
+                    raw.commands.translation_target.copy_(raw.commands.translation)
+                    if raw.jump is not None:
+                        raw.jump.remaining[:] = case.jump_count
+                        raw.fixed_jump_height = case.jump_height
+                        raw.jump.next_trigger[:] = cfg.stage["first_trigger_range_s"][0]
+                        if cfg.task == "p3-tunnel":
+                            # Fixed evaluation count overrides the reset sample; restore/hide the beam accordingly.
+                            raw._reset_tunnel(torch.arange(count, device=args.device))
+                    obs = raw._get_observations()
+                    alive = torch.ones(count, dtype=torch.bool, device=args.device)
+                    failed = torch.zeros_like(alive)
+                    succeeded = torch.zeros_like(alive)
+                    traversed = torch.zeros_like(alive)
+                    stopped = torch.zeros_like(alive)
+                    escaped = torch.zeros_like(alive)
+                    tracking = torch.zeros(count, device=args.device)
+                    levels = raw.terrain.terrain_levels.cpu().numpy().copy() if stairs else None
+                    errors, valid, displacement = [], [], []
+                    start_position = raw.robot.data.root_pos_w.clone()
+                    with torch.inference_mode():
+                        for step in range(int(duration / raw.step_dt)):
+                            actions = actor(obs["policy"], obs.get("history"))
+                            if len(observations) < 1000:
+                                observations.extend(obs["policy"][alive].cpu().numpy())
+                                if "history" in obs:
+                                    histories.extend(obs["history"][alive].cpu().numpy())
+                            obs, _, terminated, timeout, extras = env.step(actions)
+                            if not stairs and step >= int(duration / raw.step_dt) - 10:
+                                keep = alive & ~(terminated | timeout)
+                                root_state = raw.robot.data.root_state_w[keep].clone()
+                                root_state[:, :3] -= raw.terrain.env_origins[keep]
+                                handover["root_state"].append(root_state.cpu().numpy())
+                                handover["joint_position"].append(raw.robot.data.joint_pos[keep].cpu().numpy().copy())
+                                handover["joint_velocity"].append(raw.robot.data.joint_vel[keep].cpu().numpy().copy())
+                            info = extras["evaluation"]
+                            failed |= alive & info["failed"]
+                            if not stairs:
+                                succeeded |= alive & info["jump_success"]
+                            if stairs:
+                                traversed |= alive & info["stair_traversed"]
+                                stopped |= alive & info["stair_stopped"]
+                                ended = terminated | timeout | (step + 1 == int(duration / raw.step_dt))
+                                succeeded = torch.where(alive & ended, info["stair_success"] & ~terminated, succeeded)
+                                escaped |= alive & info["stair_escaped"]
+                                tracking.copy_(torch.where(alive, info["stair_tracking"], tracking))
+                                keep = alive & ended & info["stair_success"] & ~terminated
+                                for key in handover:
+                                    handover[key].append(info[key][keep].cpu().numpy().copy())
+                            errors.append(info["errors"].cpu().numpy())
+                            valid.append((alive & (step * raw.step_dt >= settings["settling_s"])).cpu().numpy())
+                            displacement.append(
+                                torch.where(alive, (info["position"] - start_position)[:, :2].norm(dim=-1), 0.0)
+                                .cpu()
+                                .numpy()
                             )
-                        lower = upper
-                report.append(result)
-            (args.output / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            rollout = dict(observation=np.asarray(observations, dtype=np.float32))
-            if histories:
-                rollout["history"] = np.asarray(histories, dtype=np.float32)
-            np.savez(args.output / "rollout.npz", **rollout)
-            np.savez(
-                args.output / "transition_states.npz",
-                **{key: np.concatenate(values, axis=0) for key, values in handover.items()},
-                joint_names=np.asarray(raw.robot.joint_names),
-            )
-            lines = [
-                "| Case | Episodes | Failures | e_v | e_w | e_h | Successful traversals / jumps |",
-                "|---|---:|---:|---:|---:|---:|---:|",
-            ]
-            for row in report:
-                successes = row["traversal_successes"] if stairs else row["jump_successes"]
-                lines.append(
-                    f"| {row['case']} | {row['episodes']} | {row['failures']} | "
-                    f"{row['mean_abs_velocity_error']} | {row['mean_abs_yaw_rate_error']} | "
-                    f"{row['mean_abs_height_error']} | {successes} |"
+                            alive &= ~(terminated | timeout)
+                            if stairs and not alive.any():
+                                break
+                    result = metrics(np.stack(errors), np.stack(valid), failed.cpu().numpy())
+                    result.update(
+                        case=case.name,
+                        jump_requested=case.jump_count,
+                        jump_successes=0 if stairs else int(succeeded.sum()),
+                        completed_duration=int(alive.sum()),
+                        maximum_displacement_m=float(np.max(displacement)),
+                    )
+                    if stairs:
+                        success_array = succeeded.cpu().numpy()
+                        result.update(
+                            terrain_profile=case.terrain_profile,
+                            task_successes=int(succeeded.sum()),
+                            task_success_rate=float(succeeded.float().mean()),
+                            geometry_crossings=int(traversed.sum()),
+                            final_stops=int(stopped.sum()),
+                            traversal_successes=int(traversed.sum()),
+                            traversal_success_rate=float(traversed.float().mean()),
+                            escaped=int(escaped.sum()),
+                            mean_tracking_return=float(tracking.mean()),
+                            difficulty_rows={},
+                        )
+                        for level in range(cfg.stage["terrain"]["rows"]):
+                            selected = levels == level
+                            result["difficulty_rows"][str(level)] = dict(
+                                episodes=int(selected.sum()),
+                                task_successes=int(success_array[selected].sum()),
+                                task_success_rate=float(success_array[selected].mean()),
+                                geometry_crossings=int(traversed.cpu().numpy()[selected].sum()),
+                                final_stops=int(stopped.cpu().numpy()[selected].sum()),
+                                failures=int(failed.cpu().numpy()[selected].sum()),
+                            )
+                    if cfg.task == "p2-spin":
+                        # terrain_importer.py:348 assigns environments to terrain columns.
+                        # Groups describe the spawn patch; translating robots can cross patch boundaries.
+                        terrain = cfg.stage["terrain"]
+                        columns = raw.terrain.terrain_types.cpu().numpy()
+                        lower = 0
+                        result["spawn_terrain_groups"] = {}
+                        for name in ("flat", "rough", "slope"):
+                            upper = lower + round(terrain[f"{name}_proportion"] * terrain["columns"])
+                            selected = (columns >= lower) & (columns < upper)
+                            if selected.any():
+                                result["spawn_terrain_groups"][name] = metrics(
+                                    np.stack(errors)[:, selected],
+                                    np.stack(valid)[:, selected],
+                                    failed.cpu().numpy()[selected],
+                                )
+                            lower = upper
+                    report.append(result)
+                (args.output / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+                rollout = dict(observation=np.asarray(observations, dtype=np.float32))
+                if histories:
+                    rollout["history"] = np.asarray(histories, dtype=np.float32)
+                np.savez(args.output / "rollout.npz", **rollout)
+                np.savez(
+                    args.output / "transition_states.npz",
+                    **{key: np.concatenate(values, axis=0) for key, values in handover.items()},
+                    joint_names=np.asarray(raw.robot.joint_names),
                 )
-            (args.output / "evaluation.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-            print(json.dumps(report, indent=2))
+                lines = [
+                    "| Case | Episodes | Failures | e_v | e_w | e_h | Task successes / jumps |",
+                    "|---|---:|---:|---:|---:|---:|---:|",
+                ]
+                for row in report:
+                    successes = row["task_successes"] if stairs else row["jump_successes"]
+                    lines.append(
+                        f"| {row['case']} | {row['episodes']} | {row['failures']} | "
+                        f"{row['mean_abs_velocity_error']} | {row['mean_abs_yaw_rate_error']} | "
+                        f"{row['mean_abs_height_error']} | {successes} |"
+                    )
+                (args.output / "evaluation.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+                print(json.dumps(report, indent=2))
         finally:
             env.close()
     finally:

@@ -3,7 +3,38 @@
 import numpy as np
 import torch
 
-FEATURES = 14
+FEATURES = 19
+
+
+def advance_height_assist(
+    trigger: torch.Tensor,
+    supported: torch.Tensor,
+    remaining: torch.Tensor,
+    target: torch.Tensor,
+    previous_trigger: torch.Tensor,
+    stage: dict,
+    dt: float,
+    ceiling: float,
+    command_height: torch.Tensor,
+    step_rise: torch.Tensor,
+    randomize: bool,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Keep assistance throughout a slow approach, then hold briefly after the edge leaves the scan.
+    # Actual guide contact cancels it for retraction; no contact-termination exemption is added.
+    entered = trigger & ~previous_trigger & (remaining <= 0) & ~supported
+    # Root clearance above the next tread; clamp the interval BEFORE sampling so
+    # short steps keep height diversity instead of accumulating samples at the ceiling.
+    low, high = stage["step_height_clearance_range_m"]
+    lower = torch.maximum(command_height, step_rise + low).clamp(max=ceiling)
+    upper = torch.maximum(lower, step_rise + high).clamp(max=ceiling)
+    fraction = torch.rand_like(target) if randomize else 0.5
+    sampled = lower + fraction * (upper - lower)
+    target = torch.where(entered, sampled, target)
+    remaining = torch.where(
+        trigger & (entered | (remaining > 0)), stage["step_height_hold_s"], (remaining - dt).clamp_min(0)
+    )
+    remaining = torch.where(supported, 0.0, remaining)
+    return remaining, target, trigger
 
 
 def terrain_columns(profiles: dict, columns: int) -> list[str]:
@@ -39,8 +70,8 @@ def scan_course(
     direction: torch.Tensor,
     fallback: torch.Tensor,
     settings: dict,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Local wheel support reference and up/down edge distances. All lengths in metres."""
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Wheel ground, up/down distances and nearest upward riser height, all in metres."""
     valid = torch.isfinite(hits).all(-1)
     clean = torch.where(valid[..., None], hits, position[:, None])
     delta = clean[:, :, :2] - position[:, None, :2]
@@ -71,6 +102,7 @@ def scan_course(
     z = total / counts.clamp_min(1)
     up = torch.full_like(ground, float("inf"))
     down = up.clone()
+    rise = torch.zeros_like(ground)
     # One/two-bin jumps handle a riser split by slight yaw; same-sign outer gradients reject a slope.
     # Opposite-sign neighbours are allowed: a narrow bar genuinely has adjacent up/down edges.
     for span in (1, 2):
@@ -86,13 +118,19 @@ def scan_course(
         ahead = (centers[None, None] - wx[:, :, None]) * direction[:, None, None]
         good &= (ahead > 0) & (ahead <= settings["detection_distance_m"])
         signed = heights * direction[:, None, None]
-        up = torch.minimum(
-            up, torch.where(good & (signed >= settings["edge_height_m"]), ahead, float("inf")).amin((1, 2))
+        up_ahead = torch.where(good & (signed >= settings["edge_height_m"]), ahead, float("inf"))
+        nearest_up = up_ahead.amin((1, 2))
+        nearest_rise = torch.where(
+            torch.isfinite(up_ahead) & (up_ahead == nearest_up[:, None, None]), signed, 0.0
+        ).amax((1, 2))
+        rise = torch.where(
+            nearest_up < up, nearest_rise, torch.where(nearest_up == up, torch.maximum(rise, nearest_rise), rise)
         )
+        up = torch.minimum(up, nearest_up)
         down = torch.minimum(
             down, torch.where(good & (signed <= -settings["edge_height_m"]), ahead, float("inf")).amin((1, 2))
         )
-    return ground, up, down
+    return ground, up, down, rise
 
 
 class StairCourse:
@@ -101,12 +139,27 @@ class StairCourse:
         self.names = list(self.terrain["profiles"])
         columns = terrain_columns(self.terrain["profiles"], self.terrain["columns"])
         self.column_groups = torch.tensor([self.names.index(k) for k in columns], device=device)
+        self.terrain_type = torch.zeros(count, dtype=torch.long, device=device)
+        self.first_column = torch.tensor([columns.index(k) for k in self.names], device=device)
+        self.last_column = torch.tensor([len(columns) - 1 - columns[::-1].index(k) for k in self.names], device=device)
         self.group = torch.zeros(count, dtype=torch.long, device=device)
+        self.motion_groups = torch.tensor(
+            [self.terrain["profiles"][k]["command_mode"] == "motion" for k in self.names], device=device
+        )
+        self.motion = torch.zeros(count, dtype=torch.bool, device=device)
+        self.heading = torch.zeros_like(self.motion)
+        self.training_level = torch.zeros(count, dtype=torch.long, device=device)
+        self.motion_boundary = torch.zeros_like(self.motion)
+        self.traversed = torch.zeros_like(self.motion)
+        self.traverse_hold = torch.zeros(count, device=device)
+        self.guide_support = torch.zeros_like(self.motion)
+        self.yaw_track_sum = torch.zeros(count, device=device)
         self.drop_terrain = torch.tensor(
             [self.terrain["profiles"][k]["kind"] in ("down", "mixed", "grid") for k in self.names],
             device=device,
         )
         self.age = torch.zeros(count, device=device)
+        self.diagnostics = torch.zeros(count, 8, device=device)
         self.crossed = torch.zeros(count, 4, dtype=torch.bool, device=device)
         self.edges = torch.full((count, 4), float("inf"), device=device)
         self.edge_count = torch.zeros(count, dtype=torch.long, device=device)
@@ -130,13 +183,23 @@ class StairCourse:
         self.cushion = torch.zeros(count, device=device)
         self.flying = torch.zeros(count, dtype=torch.bool, device=device)
         self.forward_sign = torch.ones(count, device=device)
-        self.speed_fraction = torch.full((len(self.names),), self.p["initial_speed_fraction"], device=device)
-        self.completed = torch.zeros(len(self.names), device=device)
-        self.passed = torch.zeros(len(self.names), device=device)
-        self.latest_pass = torch.zeros(len(self.names), device=device)
+        # A low step cannot promote speeds for an unmastered high step.
+        self.speed_fraction = torch.full(
+            (len(self.names), self.terrain["rows"]), self.p["initial_speed_fraction"], device=device
+        )
+        self.completed = torch.zeros_like(self.speed_fraction)
+        self.passed = torch.zeros_like(self.speed_fraction)
+        self.latest_pass = torch.zeros_like(self.speed_fraction)
+        self.episode_speed_fraction = torch.zeros(count, device=device)
 
     def reset(self, ids: torch.Tensor, terrain_types: torch.Tensor, origin: torch.Tensor, tick: int) -> None:
         self.group[ids] = self.column_groups[terrain_types]
+        self.terrain_type[ids] = terrain_types
+        self.episode_speed_fraction[ids] = self.speed_fraction[self.group[ids], self.training_level[ids]]
+        self.motion[ids] = self.motion_groups[self.group[ids]]
+        self.heading[ids] = (~self.motion[ids]) & (
+            torch.rand(len(ids), device=ids.device) < self.p["heading_probability"]
+        )
         self.forward_sign[ids] = torch.where(
             torch.rand(len(ids), device=ids.device) < self.p["reverse_probability"], -1.0, 1.0
         )
@@ -148,6 +211,7 @@ class StairCourse:
             self.edge_count[selected] = len(edges)
         for field in (
             self.age,
+            self.diagnostics,
             self.crossed,
             self.arrived,
             self.success,
@@ -165,6 +229,11 @@ class StairCourse:
             self.impact,
             self.cushion,
             self.flying,
+            self.motion_boundary,
+            self.traversed,
+            self.traverse_hold,
+            self.guide_support,
+            self.yaw_track_sum,
         ):
             field[ids] = 0
         self.lane_ok[ids] = True
@@ -174,7 +243,15 @@ class StairCourse:
     def begin_step(self) -> None:
         self.impact.zero_()
 
-    def sample(self, tick: int, dt: float, force: torch.Tensor, wheel_z: torch.Tensor, wheel_vz: torch.Tensor) -> None:
+    def sample(
+        self,
+        tick: int,
+        dt: float,
+        force: torch.Tensor,
+        wheel_z: torch.Tensor,
+        wheel_vz: torch.Tensor,
+        guide_supported: torch.Tensor,
+    ) -> None:
         use = tick > self.last_tick
         self.last_tick[use] = tick
         contact = force > self.p["contact_force_n"]
@@ -196,7 +273,9 @@ class StairCourse:
         self.seen_support |= use[:, None] & contact
         self.contact.copy_(torch.where(use[:, None], contact, self.contact))
         self.previous_down.copy_(torch.where(use[:, None], (-wheel_vz).clamp_min(0), self.previous_down))
-        self.flying.copy_((self.flight_time >= self.p["min_flight_s"]).all(-1) & self.seen_support.all(-1))
+        self.flying.copy_(
+            (self.flight_time >= self.p["min_flight_s"]).all(-1) & self.seen_support.all(-1) & ~guide_supported
+        )
 
     def update(
         self, state: dict, origin: torch.Tensor, dt: float, terminated: torch.Tensor, reward_parameters: dict
@@ -205,68 +284,115 @@ class StairCourse:
         x = state["wheel_position_w"][:, :, 0] - origin[:, 0:1]
         center = x.mean(-1)
         lateral = (state["wheel_position_w"][:, :, 1] - origin[:, 1:2]).abs().amax(-1)
-        self.lane_ok &= lateral <= self.p["lane_half_width_m"]
+        self.lane_ok &= (lateral <= self.p["lane_half_width_m"]) | self.motion
         end = self.terrain["tile_size_m"][0] - self.terrain["spawn_x_m"] - self.p["edge_clearance_m"]
-        self.escaped.copy_(~self.lane_ok | (center < -self.p["backtrack_limit_m"]) | (x.amax(-1) > end))
+        self.escaped.copy_(
+            (~self.lane_ok | (center < -self.p["backtrack_limit_m"]) | (x.amax(-1) > end)) & ~self.motion
+        )
+        sx, sy = self.terrain["tile_size_m"]
+        margin = self.terrain["boundary_margin_m"]
+        dx = state["wheel_position_w"][:, :, 0]
+        dy = state["wheel_position_w"][:, :, 1] - origin[:, 1:2]
+        left = (self.first_column[self.group] - self.terrain_type - 0.5) * sy + margin
+        right = (self.last_column[self.group] - self.terrain_type + 0.5) * sy - margin
+        # Motion replay uses the whole contiguous flat block, never neighbouring obstacle columns.
+        self.motion_boundary.copy_(
+            self.motion
+            & ((dx.abs() > self.terrain["rows"] * sx / 2 - margin) | (dy < left[:, None]) | (dy > right[:, None])).any(
+                -1
+            )
+        )
         reached = (x.amin(-1)[:, None] >= self.edges + self.p["edge_clearance_m"]) & self.lane_ok[:, None]
         self.crossed |= reached
         goal = self.terrain["finish_x_m"] - self.terrain["spawn_x_m"]
-        self.arrived.copy_((x.amin(-1) >= goal) & (self.crossed.sum(-1) >= self.edge_count) & self.lane_ok)
+        self.arrived.copy_(
+            (x.amin(-1) >= goal) & (self.crossed.sum(-1) >= self.edge_count) & self.lane_ok & ~self.motion
+        )
         tracking = torch.exp(-state["linear_error"].square() / self.p["tracking_sigma"])
-        band = reward_parameters["height_gate_zero_error_m"] - reward_parameters["height_gate_full_error_m"]
-        tracking *= ((reward_parameters["height_gate_zero_error_m"] - state["height_error"].abs()) / band).clamp(0, 1)
+        # Recovery already grades height; do not grade it again through the speed score.
         tracking = torch.where(terminated, 0.0, tracking)
-        counted = ~self.arrived & ~self.flying & (self.cushion <= 0) & (self.age > self.p["tracking_warmup_s"])
+        yaw_tracking = torch.exp(-state["angular_error"].square() / reward_parameters["angular_sigma"])
+        yaw_tracking = torch.where(terminated, 0.0, yaw_tracking)
+        counted = (
+            ~self.arrived
+            & ~self.flying
+            & ~self.guide_support
+            & (self.cushion <= 0)
+            & (self.age > self.p["tracking_warmup_s"])
+        )
         self.track_sum += torch.where(counted, tracking, 0.0)
+        self.yaw_track_sum += torch.where(counted, yaw_tracking, 0.0)
         self.track_count += counted
-        stable = self.arrived & state["wheel_contact"].all(-1) & ~terminated & ~self.escaped
+        stable = state["wheel_contact"].all(-1) & ~terminated & ~self.escaped
         stable &= state["undesired_force"].amax(-1) <= reward_parameters["contact_force_n"]
+        recovered = stable & (state["height_error"].abs() <= self.p["traversal_height_error_m"])
+        recovered &= (state["roll"].abs() < self.p["traversal_tilt_rad"]) & (
+            state["pitch"].abs() < self.p["traversal_tilt_rad"]
+        )
+        recovered &= state["angular_velocity"][:, :2].abs().amax(-1) < self.p["traversal_angular_rad_s"]
         stable &= state["height_error"].abs() <= reward_parameters["height_gate_full_error_m"]
         stable &= (state["roll"].abs() < self.p["finish_tilt_rad"]) & (state["pitch"].abs() < self.p["finish_tilt_rad"])
         stable &= state["angular_velocity"][:, :2].abs().amax(-1) < self.p["finish_angular_rad_s"]
-        stable &= state["heading_velocity"].norm(dim=-1) < self.p["finish_speed_m_s"]
-        self.hold.copy_(torch.where(stable, self.hold + dt, 0.0))
+        # Past crossings are diagnostic history: recovery must occur beyond the last edge now.
+        cleared = (reached.sum(-1) >= self.edge_count) & self.lane_ok & ~self.motion
+        self.traverse_hold.copy_(torch.where(cleared & recovered, self.traverse_hold + dt, 0.0))
+        self.traversed |= self.traverse_hold >= self.p["traversal_hold_s"]
+        stopped = stable & self.arrived & (state["heading_velocity"].norm(dim=-1) < self.p["finish_speed_m_s"])
+        self.hold.copy_(torch.where(stopped, self.hold + dt, 0.0))
         self.finished.copy_(self.hold >= self.p["finish_hold_s"])
         mean = self.track_sum / self.track_count.clamp_min(1)
-        self.success.copy_(self.finished & (self.track_count > 0) & (mean >= self.p["tracking_promote"]))
-        self.progress.copy_(torch.where(self.lane_ok & ~self.arrived & (self.age > dt), center - self.last_x, 0.0))
+        task_done = self.traversed | (self.motion & recovered & (self.age >= self.p["minimum_episode_s"]))
+        yaw_mean = self.yaw_track_sum / self.track_count.clamp_min(1)
+        self.success.copy_(
+            task_done
+            & ~terminated
+            & ~self.escaped
+            & (self.track_count > 0)
+            & (mean >= self.p["tracking_promote"])
+            & (yaw_mean >= self.p["tracking_promote"])
+        )
+        self.progress.copy_(
+            torch.where(self.lane_ok & ~self.arrived & ~self.motion & (self.age > dt), center - self.last_x, 0.0)
+        )
         self.last_x.copy_(center)
 
     def curriculum(
         self, ids: torch.Tensor, terminated: torch.Tensor, out_of_bounds: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         eligible = (
-            ((self.age[ids] >= self.p["minimum_episode_s"]) | self.finished[ids]) & (self.age[ids] > 0) & ~out_of_bounds
+            ((self.age[ids] >= self.p["minimum_episode_s"]) | self.traversed[ids])
+            & (self.age[ids] > 0)
+            & ~out_of_bounds
         )
         average = self.track_sum[ids] / self.track_count[ids].clamp_min(1)
         up = eligible & self.success[ids] & ~terminated
         down = (
             eligible
             & ~up
-            & (
-                terminated
-                | self.escaped[ids]
-                | (self.age[ids] >= self.p["episode_length_s"])
-                | ((self.track_count[ids] > 0) & (average < self.p["tracking_demote"]))
-            )
+            & (terminated | self.escaped[ids] | ((self.track_count[ids] > 0) & (average < self.p["tracking_demote"])))
         )
         # Premature physical failure is evidence even when the minimum normal evaluation duration was not reached.
         down |= (self.age[ids] > 0) & ~out_of_bounds & (terminated | self.escaped[ids])
-        self.completed.scatter_add_(0, self.group[ids], (eligible | down).float())
-        self.passed.scatter_add_(0, self.group[ids], up.float())
+        group, level = self.group[ids], self.training_level[ids]
+        cell = group * self.terrain["rows"] + level
+        current_speed = (self.episode_speed_fraction[ids] - self.speed_fraction[group, level]).abs() < 1e-6
+        counted = ~self.motion[ids] & current_speed
+        self.completed.view(-1).scatter_add_(0, cell, ((eligible | down) & counted).float())
+        self.passed.view(-1).scatter_add_(0, cell, (up & counted).float())
         ready = self.completed >= self.p["speed_window_episodes"]
         rate = self.passed / self.completed.clamp_min(1)
         increase = ready & (rate >= self.p["speed_promote_rate"])
         decrease = ready & (rate < self.p["speed_demote_rate"])
-        self.speed_fraction.copy_(
-            (self.speed_fraction + self.p["speed_increment"] * (increase.float() - decrease.float())).clamp(
-                self.p["minimum_speed_fraction"], 1
-            )
+        next_speed = (self.speed_fraction + self.p["speed_increment"] * (increase.float() - decrease.float())).clamp(
+            self.p["minimum_speed_fraction"], 1
         )
+        changed = next_speed != self.speed_fraction
+        self.speed_fraction.copy_(next_speed)
         self.latest_pass.copy_(torch.where(ready, rate, self.latest_pass))
         self.completed[ready] = 0
         self.passed[ready] = 0
-        return up, down
+        advance = ~self.motion[ids] & current_speed & ~changed[group, level]
+        return up & advance, down & advance
 
     def features(self, state: dict, origin: torch.Tensor) -> torch.Tensor:
         length = self.terrain["finish_x_m"] - self.terrain["spawn_x_m"]
@@ -282,7 +408,12 @@ class StairCourse:
                 (self.cushion / self.p["cushion_s"])[:, None],
                 self.arrived.float()[:, None],
                 (self.track_sum / self.track_count.clamp_min(1))[:, None],
-                self.speed_fraction[self.group, None],
+                self.episode_speed_fraction[:, None],
+                self.motion.float()[:, None],
+                self.traversed.float()[:, None],
+                (self.traverse_hold / self.p["traversal_hold_s"])[:, None],
+                self.guide_support.float()[:, None],
+                (self.yaw_track_sum / self.track_count.clamp_min(1))[:, None],
             ),
             -1,
         ).clamp(-1, 1)

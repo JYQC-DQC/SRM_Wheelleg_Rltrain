@@ -134,6 +134,16 @@ training:
   critic_torque_scale: 0.05
   spawn_clearance_m: 0.01
   spawn_clearance_max_m: 0.03
+  # V14_2 slide upper +0.065 m, stroke 0.08 m; symmetric vertical-leg FK.
+  # Verified read-only against the training USD on 2026-11-14; prepare_scut recomputes from USD.
+  spring_extension_height_m: 0.44885688
+  # Authorized ONLY for SCUT reference stairs simulation. Keep USD spring slide limits unchanged.
+  # Knee at +0.065 m spring extension: 1.48676968 rad; prepare_scut recomputes both sides from USD.
+  stairs_passive_joint_limits_rad:
+    left_front2_joint: [-1.4867696477775674, 0.09999999284490206]
+    right_front2_joint: [-1.4867697635171315, 0.09999999284490206]
+    left_rear2_joint: [-0.019999998568980413, 1.4867696477775674]
+    right_rear2_joint: [-0.019999998568980413, 1.4867697635171315]
   env_spacing_m: 16.0
   gravity_m_s2: 9.81
   ground_material:
