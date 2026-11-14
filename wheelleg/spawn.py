@@ -47,7 +47,7 @@ def spring_extension_height(
     height = geometry(low)[1]
     if not isfinite(height) or height <= 0:
         raise ValueError(f"Invalid spring-limited standing height: {height} m")
-    return height, low
+    return float(height), float(low)
 
 
 def scut_spawn_height(
