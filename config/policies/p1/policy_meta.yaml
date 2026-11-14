@@ -524,6 +524,8 @@ stages:
       rough_proportion: 0.05
     disturbance_phase: 2
     reward_overrides:
+      # Reduce standing bounty while preserving guidance toward newly extended heights.
+      track_height_wide: 1.0
       action_rate: -0.002
       action_smoothness_leg: -0.01
       action_smoothness_wheel: -0.002
