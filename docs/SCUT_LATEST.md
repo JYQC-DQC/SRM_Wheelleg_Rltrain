@@ -1,6 +1,10 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
 2026-11-14：当前stairs参数与来源以[STAIRS_REVISION_20261114.md](STAIRS_REVISION_20261114.md)为准。
+revision 5将stairs平地高度扩至实际弹簧站姿高度减1cm（模板0.43885688m），
+按flat/up-down-mixed/grid/slope/rough分区约束；导轮释放及减罚仅限台阶。
+后续flat须覆盖最高可用站姿，先核对对应机械限位；本轮未修改独立flat旧配置或云端运行。
+准备工具同步生成高度上限，新合同revision=5，旧stairs仅可Actor初始化。尚未运行本轮Isaac/GPU验证。
 已核对heading覆盖顺序、高度参考面和两校接触名单；不再声称所有地形统一±0.1就是SCUT对齐。
 revision 3删除额外导轮豁免和最低行probe；辅助上限按USD气弹簧行程计算、模板约0.4389m（含1cm余量）。
 revision 4进一步按最近台阶高度+[0.19,0.27]m随机辅助目标，每次事件锁存、评测取中点，不对矮台阶一律伸到上限。

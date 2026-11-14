@@ -705,7 +705,7 @@ class WheelLegEnv(DirectRLEnv):
             # Upward guide force is support, not proof of contact with the upper platform.
             # Release height guidance for retraction, but retain the ordinary contact termination timer.
             self.stair_course.guide_support.copy_(
-                (s["guide_support_force"] > t.stage["course"]["contact_force_n"]) & ~self.stair_course.motion
+                (s["guide_support_force"] > t.stage["course"]["contact_force_n"]) & self.stair_course.steps
             )
         if self.family == "p1":
             # Preserve the phase before transitions: the last cushioning interval must remain unpenalized.
@@ -932,7 +932,9 @@ class WheelLegEnv(DirectRLEnv):
                 self.contact_peaks[:, self.stair_non_guide_contacts]
                 > t.settings["reward_parameters"]["contact_force_n"]
             ).any(-1)
-            s["contact_multiplier"] = torch.where(other_hit, 1.0, t.stage["course"]["guide_contact_scale"])
+            s["contact_multiplier"] = torch.where(
+                self.stair_course.steps & ~other_hit, t.stage["course"]["guide_contact_scale"], 1.0
+            )
             s["termination_multiplier"] = one
         weights = self.reward_weights
         if t.task == "p1-flat":
@@ -954,10 +956,22 @@ class WheelLegEnv(DirectRLEnv):
             )
             for name, value in motion_terms.items():
                 terms[name] = torch.where(self.stair_course.motion, value, terms[name])
+            power_weight = torch.full_like(s["height_error"], weights["wheel_power"])
+            for kind, overrides in t.stage["terrain_reward_overrides"].items():
+                selected = torch.zeros_like(self.stair_course.motion)
+                for group, name in enumerate(self.stair_course.names):
+                    if t.stage["terrain"]["profiles"][name]["kind"] == kind:
+                        selected |= self.stair_course.group == group
+                terrain_terms = compute_rewards(
+                    s, t.settings["reward_parameters"], overrides, self.step_dt, t.settings["reward_clip"]
+                )
+                for name, value in terrain_terms.items():
+                    terms[name] = torch.where(selected, value, terms[name])
+                power_weight = torch.where(selected, overrides["wheel_power"], power_weight)
             # SCUT wheelbipe25_v3/env.py:3542-3544 charges positive motor work, not braking work.
             positive_work = (s["wheel_torque"] * s["wheel_velocity"]).clamp_min(0).sum(-1)
             terms["wheel_power"] = torch.where(
-                self.stair_course.motion, terms["wheel_power"], weights["wheel_power"] * self.step_dt * positive_work
+                self.stair_course.motion, terms["wheel_power"], power_weight * self.step_dt * positive_work
             )
         if self.family == "p1" and "leg_joint_acc" in terms:
             disabled = s["hip_acceleration_relaxed"] | relaxed

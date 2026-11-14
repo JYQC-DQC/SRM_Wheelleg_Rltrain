@@ -147,6 +147,11 @@ class StairCourse:
             [self.terrain["profiles"][k]["command_mode"] == "motion" for k in self.names], device=device
         )
         self.motion = torch.zeros(count, dtype=torch.bool, device=device)
+        self.step_groups = torch.tensor(
+            [self.terrain["profiles"][k]["kind"] in ("up", "down", "mixed") for k in self.names],
+            device=device,
+        )
+        self.steps = torch.zeros_like(self.motion)
         self.heading = torch.zeros_like(self.motion)
         self.training_level = torch.zeros(count, dtype=torch.long, device=device)
         self.motion_boundary = torch.zeros_like(self.motion)
@@ -197,6 +202,7 @@ class StairCourse:
         self.terrain_type[ids] = terrain_types
         self.episode_speed_fraction[ids] = self.speed_fraction[self.group[ids], self.training_level[ids]]
         self.motion[ids] = self.motion_groups[self.group[ids]]
+        self.steps[ids] = self.step_groups[self.group[ids]]
         self.heading[ids] = (~self.motion[ids]) & (
             torch.rand(len(ids), device=ids.device) < self.p["heading_probability"]
         )

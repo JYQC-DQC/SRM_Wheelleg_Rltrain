@@ -589,6 +589,17 @@ def _validate_training(cfg: TrainingConfig) -> None:
         for name, weight in cfg.stage["motion_reward_overrides"].items():
             if name not in cfg.settings["rewards"] or not isfinite(weight) or weight >= 0:
                 raise ValueError(f"{prefix}.motion_reward_overrides.{name}: expected existing negative penalty")
+        if "terrain_reward_overrides" not in cfg.stage:
+            raise ValueError(f"{prefix}.terrain_reward_overrides is required")
+        terrain_weights = cfg.stage["terrain_reward_overrides"]
+        if set(terrain_weights) != {"grid", "slope", "rough"}:
+            raise ValueError(f"{prefix}.terrain_reward_overrides requires grid, slope and rough")
+        for kind, overrides in terrain_weights.items():
+            if set(overrides) != set(cfg.stage["motion_reward_overrides"]):
+                raise ValueError(f"{prefix}.terrain_reward_overrides.{kind}: must cover all motion penalties")
+            for name, weight in overrides.items():
+                if not isfinite(weight) or weight >= 0:
+                    raise ValueError(f"{prefix}.terrain_reward_overrides.{kind}.{name}: negative penalty required")
         for key in ("speed_window_episodes", "scan_min_rays"):
             if type(course[key]) is not int:
                 raise ValueError(f"{prefix}.course.{key} must be an integer")
@@ -667,7 +678,12 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: traversal minimum speed must be positive")
             if start is not None and bounds is not None and any(a > b for a, b in zip(start, bounds, strict=True)):
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: starting speeds exceed final speeds")
-            if height is not None and (height[0] <= 0 or (ceiling is not None and ceiling < height[1])):
+            if height is not None and (
+                height[0] <= 0
+                or (
+                    ceiling is not None and (height[0] >= ceiling if profile["kind"] == "flat" else ceiling < height[1])
+                )
+            ):
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: height must be positive and below assist ceiling")
             if yaw is None or not yaw[0] <= 0 <= yaw[1] or max(abs(v) for v in yaw) <= course["yaw_deadzone_rad_s"]:
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: turning range must exceed yaw deadzone")

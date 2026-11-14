@@ -192,7 +192,12 @@ def main() -> None:
         }
         args.output.mkdir(parents=True, exist_ok=False)
         (args.output / "robot.yaml").write_text(yaml.safe_dump(robot, sort_keys=False), encoding="utf-8")
-        (args.output / "policy_meta.yaml").write_bytes((root / "config/reference/scut_p1.yaml").read_bytes())
+        policy = yaml.safe_load((root / "config/reference/scut_p1.yaml").read_text(encoding="utf-8"))
+        stairs = policy["stages"]["stairs"]
+        stairs["terrain"]["profiles"]["flat"]["height_range_m"][1] = (
+            robot["training"]["spring_extension_height_m"] - stairs["step_height_margin_m"]
+        )
+        (args.output / "policy_meta.yaml").write_text(yaml.safe_dump(policy, sort_keys=False), encoding="utf-8")
         (args.output / "policy_p2.yaml").write_bytes((root / "config/reference/scut_p2.yaml").read_bytes())
         (args.output / "reference_manifest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         from wheelleg.training import load_training

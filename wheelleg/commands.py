@@ -130,6 +130,12 @@ class Commands:
             for k, name in enumerate(self.course.names):
                 selected = ids[self.course.group[ids] == k]
                 bounds = self.cfg.stage["terrain"]["profiles"][name]["height_range_m"]
+                if self.cfg.stage["terrain"]["profiles"][name]["kind"] == "flat":
+                    # Cover the full usable extension range, including after USD geometry is regenerated.
+                    bounds = (
+                        bounds[0],
+                        self.cfg.shared["spring_extension_height_m"] - self.cfg.stage["step_height_margin_m"],
+                    )
                 self.target_height[selected, 0] = uniform(bounds, (len(selected),), self.device)
             self.height_remaining[ids] = uniform(p["height_duration_s"], (len(ids),), self.device)
             return
