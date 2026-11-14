@@ -522,10 +522,6 @@ stages:
           height_range_m: null
           start_speed_range_m_s: null
       rough_proportion: 0.05
-    progress_weight: 1.0
-    stuck_weight: -1.0
-    stuck_window_s: 1.0
-    stuck_distance_m: 0.05
     disturbance_phase: 2
     reward_overrides:
       action_rate: -0.002

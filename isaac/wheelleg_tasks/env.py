@@ -1012,7 +1012,6 @@ class WheelLegEnv(DirectRLEnv):
                 terms.update(self.landing_reward.terms(s, t.shared["wheel_radius_m"], self.step_dt))
         if self.stair_course is not None:
             p = t.stage["course"]
-            terms["progress"] = t.stage["progress_weight"] * self.stair_course.progress
             terms["stair_impact"] = p["impact_weight"] * self.stair_course.impact
             # No survival bounty in flight: bounded wheel-speed matching, disabled as soon as wheels touch.
             error = s["wheel_velocity"] * t.shared["wheel_radius_m"] - s["heading_velocity"][:, 0:1]
@@ -1029,15 +1028,7 @@ class WheelLegEnv(DirectRLEnv):
                 t.settings["air_rewards"]["joint_limit"] * self.step_dt * excess.sum(-1) * self.stair_course.flying
             )
             terms["stand_still"] = torch.where(relaxed, 0.0, terms["stand_still"])
-            self.stuck_time += self.step_dt
-            ready = self.stuck_time >= t.stage["stuck_window_s"]
-            moved = self.robot.data.root_pos_w[:, 0] - self.stuck_start[:, 0]
-            expected = self.commands.value[:, 0].abs() > t.stage["course"]["finish_speed_m_s"]
-            self.stuck.copy_(torch.where(ready, (moved < t.stage["stuck_distance_m"]) & expected, self.stuck))
-            self.stuck &= ~self.stair_course.arrived & ~self.stair_course.motion & ~relaxed & expected
-            self.stuck_start[ready] = self.robot.data.root_pos_w[ready]
-            self.stuck_time[ready] = 0
-            terms["stuck"] = t.stage["stuck_weight"] * self.step_dt * self.stuck
+            # Command tracking replaces world-x progress and stuck costs for arbitrary headings.
             diagnostic_sample = torch.stack(
                 (
                     self.commands.value[:, 0].abs(),

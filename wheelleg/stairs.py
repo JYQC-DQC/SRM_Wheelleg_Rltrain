@@ -208,7 +208,6 @@ class StairCourse:
         self.track_sum = torch.zeros(count, device=device)
         self.track_count = torch.zeros(count, device=device)
         self.last_x = torch.zeros(count, device=device)
-        self.progress = torch.zeros(count, device=device)
         self.seen_support = torch.zeros(count, 2, dtype=torch.bool, device=device)
         self.contact = torch.zeros_like(self.seen_support)
         self.flight_time = torch.zeros(count, 2, device=device)
@@ -260,7 +259,6 @@ class StairCourse:
             self.track_sum,
             self.track_count,
             self.last_x,
-            self.progress,
             self.seen_support,
             self.contact,
             self.flight_time,
@@ -388,9 +386,6 @@ class StairCourse:
             & (self.track_count > 0)
             & (mean >= self.p["tracking_promote"])
             & (yaw_mean >= self.p["tracking_promote"])
-        )
-        self.progress.copy_(
-            torch.where(~self.escaped & ~self.arrived & ~self.motion & (self.age > dt), center - self.last_x, 0.0)
         )
         self.last_x.copy_(center)
 

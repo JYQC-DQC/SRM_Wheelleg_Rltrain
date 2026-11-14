@@ -659,10 +659,6 @@ stages:
           - 0.25
           - 0.5
       rough_proportion: 0.05
-    progress_weight: 1.0
-    stuck_weight: -1.0
-    stuck_window_s: 1.0
-    stuck_distance_m: 0.05
     disturbance_phase: 2
     reward_overrides:
       action_rate: -0.002
