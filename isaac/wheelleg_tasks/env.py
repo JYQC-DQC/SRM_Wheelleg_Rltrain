@@ -5,6 +5,7 @@ but all robot parameters and joint mappings come from this project's YAML.
 """
 
 import re
+from math import degrees
 
 import isaaclab.sim as sim_utils
 import numpy as np
@@ -89,14 +90,6 @@ class WheelLegEnv(DirectRLEnv):
             self.robot.write_joint_position_limit_to_sim(
                 torch.stack((self.lower[self.legs], self.upper[self.legs]), -1).expand(n, -1, -1),
                 joint_ids=[self.joints[i] for i in self.legs],
-            )
-        if t.task == "p1-stairs" and t.shared["stairs_passive_joint_limits_rad"]:
-            limits = t.shared["stairs_passive_joint_limits_rad"]
-            ids, _ = self.robot.find_joints(list(limits), preserve_order=True)
-            # runs/api_reference/articulation.py:710-768 updates both PhysX and cached joint limits.
-            # Authorized SCUT simulation overrides only; original USD and spring stroke stay unchanged.
-            self.robot.write_joint_position_limit_to_sim(
-                torch.tensor(list(limits.values()), device=d).expand(n, -1, -1), joint_ids=ids
             )
         self.nominal_friction = torch.tensor(t.shared["joint_coulomb_friction"], device=d)
         self.nominal_dynamic_friction = torch.tensor(t.shared["joint_dynamic_friction"], device=d)
@@ -264,6 +257,20 @@ class WheelLegEnv(DirectRLEnv):
 
     def _setup_scene(self) -> None:
         self.robot = Articulation(self.cfg.robot)
+        if self.training.task == "p1-stairs":
+            limits = self.training.shared["stairs_passive_joint_limits_rad"]
+            # scene.py:138,216: author overrides in env_0 before inherited physics cloning.
+            # Runtime set_dof_limits rewrites every joint, including unlimited wheel/hip joints.
+            # USD revolute limits are degrees; only this in-memory stage is changed.
+            found = set()
+            for prim in self.scene.stage.Traverse():
+                if str(prim.GetPath()).startswith("/World/envs/env_0/Robot/") and prim.GetName() in limits:
+                    lower, upper = limits[prim.GetName()]
+                    prim.GetAttribute("physics:lowerLimit").Set(degrees(lower))
+                    prim.GetAttribute("physics:upperLimit").Set(degrees(upper))
+                    found.add(prim.GetName())
+            if found != set(limits):
+                raise ValueError(f"Missing passive joint prims for stairs overrides: {set(limits) - found}")
         self.scene.articulations["robot"] = self.robot
         self.contact = ContactSensor(self.cfg.contact_sensor)
         self.scene.sensors["contact"] = self.contact

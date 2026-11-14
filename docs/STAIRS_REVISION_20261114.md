@@ -131,7 +131,8 @@ state_machines/step_up.py:48–108的辅助及wall timeout、V14/env.py:118–14
 
 本轮只做语法、Ruff、配置加载及标量几何核算；远端使用已有USD库只读提取实际资产并执行准备工具的几何代码段。
 不运行pytest、GPU训练、Isaac仿真场景、MuJoCo动力学或实车；完整prepare_scut/AppLauncher入口未运行。
-Isaac限位写入接口已核对runs/api_reference/articulation.py:710–768，但未在运行中的PhysX场景执行。
+首次云端启动发现运行时限位接口会连带重写无限转动关节并触发PhysX错误，已停止该次运行。
+改为在env_0克隆前，仅在内存USD场景覆盖指定被动关节的角度限位（USD使用度）；不重写其他关节、不修改源USD文件。
 最高台阶通过能力、快速收腿是否能在累计接触阈值内完成、辅助高度跟踪质量均待物理验证。
 
 本轮实际静态输出（不是动力学测试）：
