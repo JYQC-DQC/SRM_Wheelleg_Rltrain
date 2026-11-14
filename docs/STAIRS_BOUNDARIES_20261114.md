@@ -1,5 +1,7 @@
 # stairs revision 6：中性出界、有效区域与出生点
 
+2026-11-14 revision 7：stairs删除世界+x进展/卡住项，宽核高度权重2→1；仅井字和粗糙地形加入站立/直行/自转/组合。生效规则与停留风险见 [STAIRS_FREE_COMMANDS_20261114.md](STAIRS_FREE_COMMANDS_20261114.md)。本地改动未在Isaac/GPU运行，未更新云端。
+
 本页优先于 revision 5 及旧文档的中心走廊、逃逸降级和井字范围描述。
 仅修改本仓库；未提交、推送、上传或重启云端，未运行测试、Isaac/GPU 或 MuJoCo。
 

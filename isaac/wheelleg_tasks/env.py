@@ -404,7 +404,7 @@ class WheelLegEnv(DirectRLEnv):
                 self.commands.value[:, 2] = torch.where(
                     self.stair_course.heading, heading_rate, self.commands.value[:, 2]
                 )
-                moving = self.stair_course.motion & (
+                moving = (self.stair_course.motion | self.stair_course.free_commands) & (
                     self.commands.value[:, 0].abs() > t.settings["reward_parameters"]["stand_deadzone"]
                 )
                 self.stair_course.forward_sign[moving] = self.commands.value[moving, 0].sign()
@@ -418,7 +418,9 @@ class WheelLegEnv(DirectRLEnv):
             distance = (goal + t.stage["course"]["edge_clearance_m"] - rear_x).clamp_min(0)
             limit = torch.sqrt(2 * t.settings["commands"]["linear_slew_m_s2"] * distance)
             self.commands.value[:, 0] = torch.where(
-                self.stair_course.motion, self.commands.value[:, 0], self.commands.value[:, 0].clamp(-limit, limit)
+                self.stair_course.motion | self.stair_course.free_commands,
+                self.commands.value[:, 0],
+                self.commands.value[:, 0].clamp(-limit, limit),
             )
             self.commands.value[self.stair_course.arrived] = 0.0
         if self.family == "p1" and t.stage["air_reset_probability"] > 0:
@@ -782,7 +784,7 @@ class WheelLegEnv(DirectRLEnv):
                 | self.stair_course.motion_boundary
             )
             if not self.cfg.evaluation:
-                timeout |= self.stair_course.traversed
+                timeout |= self.stair_course.traversed & ~self.stair_course.free_commands
             # A map boundary is not a control failure. Physical failures take precedence over bootstrapping.
             timeout |= self.stair_course.escaped
             timeout &= ~terminated
@@ -1039,6 +1041,15 @@ class WheelLegEnv(DirectRLEnv):
                     s["roll"].square(),
                     s["pitch"].square(),
                     (s["guide_support_force"] > p["contact_force_n"]).float(),
+                    s["heading_velocity"][:, 0].abs(),
+                    s["linear_error"].abs(),
+                    s["angular_error"].abs(),
+                    (self.commands.value[:, 0].abs() >= t.settings["reward_parameters"]["stand_deadzone"]).float(),
+                    (
+                        (self.commands.value[:, 0].abs() >= t.settings["reward_parameters"]["stand_deadzone"])
+                        & (s["heading_velocity"][:, 0].abs() < t.settings["reward_parameters"]["stand_deadzone"])
+                        & ~relaxed
+                    ).float(),
                 ),
                 -1,
             )
@@ -1379,6 +1390,11 @@ class WheelLegEnv(DirectRLEnv):
                             "roll_rms",
                             "pitch_rms",
                             "guide_contact_ratio",
+                            "actual_abs_vx",
+                            "velocity_error_abs",
+                            "yaw_error_abs",
+                            "moving_command_ratio",
+                            "commanded_but_stationary_ratio",
                         )
                     ):
                         self.extras["log"][f"Stairs/{name}/{label}"] = (
@@ -1387,12 +1403,16 @@ class WheelLegEnv(DirectRLEnv):
                     self.extras["log"][f"Stairs/{name}/physical_failure"] = (
                         self.reset_terminated[selected].float().mean()
                     )
+                    self.extras["log"][f"Stairs/{name}/surface_active_seconds"] = self.stair_course.surface_time[
+                        selected
+                    ].mean()
                     self.extras["log"][f"Stairs/{name}/escaped"] = self.stair_course.escaped[selected].float().mean()
                     self.extras["log"][f"Stairs/{name}/timeout_incomplete"] = (
                         (
                             (self.stair_course.age[selected] >= self.max_episode_length_s)
                             & ~self.stair_course.traversed[selected]
                             & ~self.stair_course.motion[selected]
+                            & ~self.stair_course.free_commands[selected]
                         )
                         .float()
                         .mean()

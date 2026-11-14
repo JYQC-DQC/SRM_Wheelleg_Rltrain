@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-FEATURES = 19
+FEATURES = 21
 
 
 def advance_height_assist(
@@ -179,6 +179,11 @@ class StairCourse:
             [self.terrain["profiles"][k]["command_mode"] == "motion" for k in self.names], device=device
         )
         self.motion = torch.zeros(count, dtype=torch.bool, device=device)
+        self.free_groups = torch.tensor(
+            [self.terrain["profiles"][k]["command_mode"] == "free" for k in self.names], device=device
+        )
+        self.free_commands = torch.zeros_like(self.motion)
+        self.surface_time = torch.zeros(count, device=device)
         self.step_groups = torch.tensor(
             [self.terrain["profiles"][k]["kind"] in ("up", "down", "mixed") for k in self.names],
             device=device,
@@ -196,7 +201,7 @@ class StairCourse:
             device=device,
         )
         self.age = torch.zeros(count, device=device)
-        self.diagnostics = torch.zeros(count, 8, device=device)
+        self.diagnostics = torch.zeros(count, 13, device=device)
         self.crossed = torch.zeros(count, 4, dtype=torch.bool, device=device)
         self.edges = torch.full((count, 4), float("inf"), device=device)
         self.edge_count = torch.zeros(count, dtype=torch.long, device=device)
@@ -234,8 +239,9 @@ class StairCourse:
         self.terrain_type[ids] = terrain_types
         self.episode_speed_fraction[ids] = self.speed_fraction[self.group[ids], self.training_level[ids]]
         self.motion[ids] = self.motion_groups[self.group[ids]]
+        self.free_commands[ids] = self.free_groups[self.group[ids]]
         self.steps[ids] = self.step_groups[self.group[ids]]
-        self.heading[ids] = (~self.motion[ids]) & (
+        self.heading[ids] = (~self.motion[ids] & ~self.free_commands[ids]) & (
             torch.rand(len(ids), device=ids.device) < self.p["heading_probability"]
         )
         self.forward_sign[ids] = torch.where(
@@ -249,6 +255,7 @@ class StairCourse:
             self.edge_count[selected] = len(edges)
         for field in (
             self.age,
+            self.surface_time,
             self.diagnostics,
             self.crossed,
             self.arrived,
@@ -338,17 +345,35 @@ class StairCourse:
         ).any(-1)
         self.escaped.copy_(torch.where(self.motion, flat_exit, self.escaped))
         self.motion_boundary.copy_(self.motion & self.escaped)
+        surface_start, surface_end = self.terrain["surface_x_range_m"]
+        on_surface = (
+            (x.amin(-1) >= surface_start - self.terrain["spawn_x_m"])
+            & (x.amax(-1) <= surface_end - self.terrain["spawn_x_m"])
+            & ~self.escaped
+        )
         reached = (x.amin(-1)[:, None] >= self.edges + self.p["edge_clearance_m"]) & ~self.escaped[:, None]
         self.crossed |= reached
         goal = self.terrain["finish_x_m"] - self.terrain["spawn_x_m"]
         self.arrived.copy_(
-            (x.amin(-1) >= goal) & (self.crossed.sum(-1) >= self.edge_count) & ~self.escaped & ~self.motion
+            (x.amin(-1) >= goal)
+            & (self.crossed.sum(-1) >= self.edge_count)
+            & ~self.escaped
+            & ~self.motion
+            & ~self.free_commands
         )
         tracking = torch.exp(-state["linear_error"].square() / self.p["tracking_sigma"])
         # Recovery already grades height; do not grade it again through the speed score.
         tracking = torch.where(terminated, 0.0, tracking)
         yaw_tracking = torch.exp(-state["angular_error"].square() / reward_parameters["angular_sigma"])
         yaw_tracking = torch.where(terminated, 0.0, yaw_tracking)
+        # At 0.25 m/s, the old exp(-error^2/0.5) grants a stationary robot 0.88.
+        # Free-command grading must distinguish tracking from merely remaining upright.
+        tolerance = state["tracked_command"].abs() * self.p["free_tracking_relative_error"]
+        tolerance += tolerance.new_tensor(self.p["free_tracking_error_floor"])
+        free_tracking = torch.exp(-(state["linear_error"] / tolerance[:, 0]).square())
+        free_yaw_tracking = torch.exp(-(state["angular_error"] / tolerance[:, 1]).square())
+        tracking = torch.where(self.free_commands & ~terminated, free_tracking, tracking)
+        yaw_tracking = torch.where(self.free_commands & ~terminated, free_yaw_tracking, yaw_tracking)
         counted = (
             ~self.arrived
             & ~self.flying
@@ -356,6 +381,8 @@ class StairCourse:
             & (self.cushion <= 0)
             & (self.age > self.p["tracking_warmup_s"])
         )
+        counted &= ~self.free_commands | on_surface
+        self.surface_time += dt * (self.free_commands & on_surface & counted)
         self.track_sum += torch.where(counted, tracking, 0.0)
         self.yaw_track_sum += torch.where(counted, yaw_tracking, 0.0)
         self.track_count += counted
@@ -377,7 +404,11 @@ class StairCourse:
         self.hold.copy_(torch.where(stopped, self.hold + dt, 0.0))
         self.finished.copy_(self.hold >= self.p["finish_hold_s"])
         mean = self.track_sum / self.track_count.clamp_min(1)
-        task_done = self.traversed | (self.motion & recovered & (self.age >= self.p["minimum_episode_s"]))
+        task_done = torch.where(
+            self.free_commands,
+            recovered & on_surface & (self.surface_time >= self.p["free_surface_min_s"]),
+            self.traversed | (self.motion & recovered & (self.age >= self.p["minimum_episode_s"])),
+        )
         yaw_mean = self.yaw_track_sum / self.track_count.clamp_min(1)
         self.success.copy_(
             task_done
@@ -458,6 +489,8 @@ class StairCourse:
                 (self.traverse_hold / self.p["traversal_hold_s"])[:, None],
                 self.guide_support.float()[:, None],
                 (self.yaw_track_sum / self.track_count.clamp_min(1))[:, None],
+                self.free_commands.float()[:, None],
+                (self.surface_time / self.p["free_surface_min_s"])[:, None],
             ),
             -1,
         ).clamp(-1, 1)

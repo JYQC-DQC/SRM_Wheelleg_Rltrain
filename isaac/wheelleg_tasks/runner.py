@@ -21,7 +21,7 @@ class WheelLegRunner(OnPolicyRunner):
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task == "p1-stairs":
-            contract["stair_course_revision"] = 6
+            contract["stair_course_revision"] = 7
             contract["stair_course_features"] = STAIR_FEATURES
             contract["stair_scan"] = [
                 cfg.stage["course"][k] for k in ("scan_half_length_m", "scan_half_width_m", "scan_resolution_m")

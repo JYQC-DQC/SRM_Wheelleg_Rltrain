@@ -532,6 +532,29 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if "motion_segment_probabilities" not in course or len(course["motion_segment_probabilities"]) != 4:
             raise ValueError(f"{prefix}.course.motion_segment_probabilities requires stand/straight/turn/combined")
         probabilities = course["motion_segment_probabilities"]
+        if "free_segment_probabilities" not in course or len(course["free_segment_probabilities"]) != 4:
+            raise ValueError(f"{prefix}.course.free_segment_probabilities requires stand/straight/spin/combined")
+        free_probabilities = course["free_segment_probabilities"]
+        for key, size in (("free_tracking_error_floor", 2), ("free_tracking_relative_error", None)):
+            if key not in course:
+                raise ValueError(f"{prefix}.course.{key} is required")
+            values = course[key] if size else (course[key],)
+            if (size and len(values) != size) or any(
+                type(v) not in (int, float) or not isfinite(v) or v <= 0 for v in values
+            ):
+                raise ValueError(f"{prefix}.course.{key}: positive finite tolerances required")
+        if (
+            any(type(v) not in (int, float) or not isfinite(v) or v <= 0 for v in free_probabilities)
+            or abs(sum(free_probabilities) - 1) > 1e-6
+        ):
+            raise ValueError(f"{prefix}.course.free_segment_probabilities must be positive and sum to 1")
+        if (
+            "free_surface_min_s" not in course
+            or type(course["free_surface_min_s"]) not in (int, float)
+            or not isfinite(course["free_surface_min_s"])
+            or not 0 < course["free_surface_min_s"] < course["episode_length_s"]
+        ):
+            raise ValueError(f"{prefix}.course.free_surface_min_s must be positive and below episode length")
         if any(not isfinite(x) or x <= 0 for x in probabilities) or abs(sum(probabilities) - 1) > 1e-6:
             raise ValueError(f"{prefix}.course.motion_segment_probabilities must be positive and sum to 1")
         if "spring_extension_height_m" not in cfg.shared:
@@ -651,10 +674,23 @@ def _validate_training(cfg: TrainingConfig) -> None:
             ):
                 if key not in profile:
                     raise ValueError(f"{prefix}.terrain.profiles.{name}.{key} is required")
-            if profile["command_mode"] not in ("motion", "traverse") or (profile["command_mode"] == "motion") != (
-                profile["kind"] == "flat"
-            ):
-                raise ValueError(f"{prefix}.terrain.profiles.{name}: motion replay requires flat terrain")
+            expected_mode = (
+                "motion"
+                if profile["kind"] == "flat"
+                else ("free" if profile["kind"] in ("grid", "rough") else "traverse")
+            )
+            if profile["command_mode"] != expected_mode:
+                raise ValueError(f"{prefix}.terrain.profiles.{name}: expected {expected_mode} commands")
+            if expected_mode == "free":
+                if "free_yaw_limit_range_rad_s" not in profile:
+                    raise ValueError(f"{prefix}.terrain.profiles.{name}.free_yaw_limit_range_rad_s required")
+                limits = profile["free_yaw_limit_range_rad_s"]
+                if (
+                    len(limits) != 2
+                    or any(type(v) not in (int, float) or not isfinite(v) for v in limits)
+                    or not 0 < limits[0] <= limits[1]
+                ):
+                    raise ValueError(f"{prefix}.terrain.profiles.{name}: positive ordered free yaw limits required")
             if profile["kind"] not in ("up", "down", "mixed", "flat", "grid", "slope", "rough"):
                 raise ValueError(f"{prefix}.terrain.profiles.{name}: unknown kind")
             if profile["step_count"] not in (0, 1, 2):

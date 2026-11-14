@@ -611,7 +611,8 @@ stages:
           speed_range_m_s:
           - 0.3
           - 1.2
-          command_mode: traverse
+          command_mode: free
+          free_yaw_limit_range_rad_s: [0.5, 2.0]
           heading_yaw_limit_rad_s: 0.5
           yaw_range_rad_s:
           - -0.3
@@ -647,7 +648,8 @@ stages:
           speed_range_m_s:
           - 0.3
           - 1.5
-          command_mode: traverse
+          command_mode: free
+          free_yaw_limit_range_rad_s: [0.5, 2.0]
           heading_yaw_limit_rad_s: 0.5
           yaw_range_rad_s:
           - -0.3
@@ -732,6 +734,11 @@ stages:
       yaw_deadzone_rad_s: 0.02
       heading_probability: 0.5
       traversal_hold_s: 0.15
+      # Stand, straight, spin, combined; one policy and one episode stream.
+      free_segment_probabilities: [0.15, 0.35, 0.20, 0.30]
+      free_surface_min_s: 3.0
+      free_tracking_error_floor: [0.1, 0.1]  # m/s, rad/s; curriculum only, not reward weights.
+      free_tracking_relative_error: 0.25
       motion_segment_probabilities:
       - 0.25
       - 0.25

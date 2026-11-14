@@ -30,9 +30,11 @@ class Commands:
             [self.settings["linear_slew_m_s2"], self.settings["linear_slew_m_s2"], self.settings["angular_slew_rad_s2"]]
         )
         self.command_fraction = cfg.settings["command_curriculum"]["initial_fraction"]
+        self.free_started = torch.zeros(count, dtype=torch.bool, device=device)
         self.course = None  # Assigned by the stairs environment before the first reset.
 
     def reset(self, ids: torch.Tensor) -> None:
+        self.free_started[ids] = False
         self.value[ids] = 0
         self.remaining[ids] = 0
         self.height_remaining[ids] = 0
@@ -55,6 +57,33 @@ class Commands:
                 selected = ids[course.group[ids] == k]
                 profile = self.cfg.stage["terrain"]["profiles"][name]
                 bounds = profile["speed_range_m_s"]
+                if profile["command_mode"] == "free":
+                    fraction = (course.episode_speed_fraction[selected] - course.p["minimum_speed_fraction"]) / (
+                        1 - course.p["minimum_speed_fraction"]
+                    )
+                    start = self.value.new_tensor(profile["start_speed_range_m_s"])
+                    scaled = start + fraction[:, None] * (self.value.new_tensor(bounds) - start)
+                    speed = scaled[:, 0] + torch.rand(len(selected), device=self.device) * (scaled[:, 1] - scaled[:, 0])
+                    limits = profile["free_yaw_limit_range_rad_s"]
+                    yaw_limit = limits[0] + fraction * (limits[1] - limits[0])
+                    yaw = (2 * torch.rand(len(selected), device=self.device) - 1) * yaw_limit
+                    kinds = (
+                        torch.multinomial(
+                            self.value.new_tensor(course.p["free_segment_probabilities"]),
+                            len(selected),
+                            replacement=True,
+                        )
+                        if len(selected)
+                        else selected
+                    )
+                    sign = torch.where(torch.rand(len(selected), device=self.device) < 0.5, -1.0, 1.0)
+                    vx = torch.where((kinds == 1) | (kinds == 3), speed * sign, 0.0)
+                    wz = torch.where((kinds == 2) | (kinds == 3), yaw, 0.0)
+                    # Reach the obstacle surface before allowing stand/spin samples on the safe spawn pad.
+                    entered = course.surface_time[selected] > 0
+                    self.target[selected, 0] = torch.where(entered, vx, speed * course.forward_sign[selected])
+                    self.target[selected, 2] = torch.where(entered, wz, 0.0)
+                    continue
                 # SCUT cfg_utils.py:281-313: axis-aligned travel, slow/fast ranges, limited turning.
                 if profile["command_mode"] == "motion":
                     kinds = (
@@ -143,6 +172,10 @@ class Commands:
         self.height_remaining[ids] = uniform(self.settings["height_duration_s"], (len(ids),), self.device)
 
     def step(self, dt: float, frozen: torch.Tensor) -> None:
+        if self.cfg.task == "p1-stairs":
+            entered = self.course.free_commands & (self.course.surface_time > 0)
+            self.remaining[entered & ~self.free_started] = 0
+            self.free_started |= entered
         self.remaining -= dt
         self.height_remaining -= dt
         self._resample(((self.remaining <= 0) & ~frozen).nonzero().flatten())
