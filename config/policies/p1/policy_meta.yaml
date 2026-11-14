@@ -370,6 +370,8 @@ stages:
       boundary_margin_m: 0.5
       spawn_x_m: 0.8
       entry_x_m: 2.4
+      # Wider continuous terrain region; staircase edges remain unchanged.
+      surface_x_range_m: [2.0, 6.2]
       exit_x_m: 5.6
       finish_x_m: 6.6
       ground_thickness_m: 0.1
@@ -383,9 +385,9 @@ stages:
         - 0.025
         - 0.045
         spacing_range_m:
-        - 0.65
-        - 0.85
-        half_span_m: 1.4
+        - 0.55
+        - 0.70
+        half_span_m: 3.8
       profiles:
         flat:
           proportion: 0.3
@@ -564,8 +566,6 @@ stages:
       height_duration_s:
       - 3.0
       - 7.0
-      lane_half_width_m: 1.0
-      backtrack_limit_m: 0.4
       edge_clearance_m: 0.15
       finish_hold_s: 0.4
       finish_tilt_rad: 0.25
@@ -646,6 +646,13 @@ stages:
         wheel_vel: -0.000006
         joint_torque: -0.00005
         wheel_power: -0.00005
+    # Jitter relative to the fixed terrain origin; obstacle tiles stay on their flat approach pad.
+    spawn_xy_jitter_m:
+      flat: {x: [-1.0, 1.0], y: [-1.0, 1.0]}
+      grid: {x: [0.0, 0.3], y: [-1.0, 1.0]}
+      rough: {x: [0.0, 0.3], y: [-1.0, 1.0]}
+    # Conservative horizontal reset footprint; validate against each robot asset before widening jitter.
+    spawn_footprint_margin_m: null  # TODO: bound the SRM reset pose footprint from its collision asset.
     motion_reward_overrides:
       pitch_penalty: -3.0
       angular_xy: -0.2

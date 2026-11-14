@@ -114,6 +114,7 @@ def main() -> None:
                     traversed = torch.zeros_like(alive)
                     stopped = torch.zeros_like(alive)
                     escaped = torch.zeros_like(alive)
+                    neutral_exit = torch.zeros_like(alive)
                     tracking = torch.zeros(count, device=args.device)
                     levels = raw.terrain.terrain_levels.cpu().numpy().copy() if stairs else None
                     errors, valid, displacement = [], [], []
@@ -143,6 +144,7 @@ def main() -> None:
                                 ended = terminated | timeout | (step + 1 == int(duration / raw.step_dt))
                                 succeeded = torch.where(alive & ended, info["stair_success"] & ~terminated, succeeded)
                                 escaped |= alive & info["stair_escaped"]
+                                neutral_exit |= alive & info["stair_neutral_exit"]
                                 tracking.copy_(torch.where(alive, info["stair_tracking"], tracking))
                                 keep = alive & ended & info["stair_success"] & ~terminated
                                 for key in handover:
@@ -166,25 +168,38 @@ def main() -> None:
                         maximum_displacement_m=float(np.max(displacement)),
                     )
                     if stairs:
+                        eligible = ~neutral_exit
+                        succeeded &= eligible
+                        eligible_count = int(eligible.sum())
                         success_array = succeeded.cpu().numpy()
                         result.update(
                             terrain_profile=case.terrain_profile,
+                            neutral_exits=int(neutral_exit.sum()),
+                            eligible_episodes=eligible_count,
                             task_successes=int(succeeded.sum()),
-                            task_success_rate=float(succeeded.float().mean()),
+                            task_success_rate=int(succeeded.sum()) / eligible_count if eligible_count else None,
                             geometry_crossings=int(traversed.sum()),
                             final_stops=int(stopped.sum()),
-                            traversal_successes=int(traversed.sum()),
-                            traversal_success_rate=float(traversed.float().mean()),
+                            traversal_successes=int((traversed & eligible & ~failed).sum()),
+                            traversal_success_rate=int((traversed & eligible & ~failed).sum()) / eligible_count
+                            if eligible_count
+                            else None,
                             escaped=int(escaped.sum()),
                             mean_tracking_return=float(tracking.mean()),
                             difficulty_rows={},
                         )
                         for level in range(cfg.stage["terrain"]["rows"]):
                             selected = levels == level
+                            valid_selected = selected & eligible.cpu().numpy()
+                            valid_count = int(valid_selected.sum())
                             result["difficulty_rows"][str(level)] = dict(
                                 episodes=int(selected.sum()),
+                                eligible_episodes=valid_count,
+                                neutral_exits=int(neutral_exit.cpu().numpy()[selected].sum()),
                                 task_successes=int(success_array[selected].sum()),
-                                task_success_rate=float(success_array[selected].mean()),
+                                task_success_rate=int(success_array[valid_selected].sum()) / valid_count
+                                if valid_count
+                                else None,
                                 geometry_crossings=int(traversed.cpu().numpy()[selected].sum()),
                                 final_stops=int(stopped.cpu().numpy()[selected].sum()),
                                 failures=int(failed.cpu().numpy()[selected].sum()),

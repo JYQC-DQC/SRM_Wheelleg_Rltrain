@@ -59,7 +59,39 @@ def step_layout(terrain: dict, profile: dict, difficulty: float) -> tuple[list[f
         edges = [entry + i * width for i in range(count)]
         edges += [exit_x - (count - 1 - i) * width for i in range(count)]
         return edges, [i * h for i in range(count + 1)] + [i * h for i in reversed(range(count))]
+    if "surface_x_range_m" in terrain and profile["kind"] in ("grid", "slope", "rough"):
+        return list(terrain["surface_x_range_m"]), [0.0, 0.0, 0.0]
     return [entry, exit_x], [0.0, 0.0, 0.0]
+
+
+def grid_layout(terrain: dict, difficulty: float) -> tuple[list[tuple[float, float, float, float]], float]:
+    """Shared non-overlapping bar rectangles for Isaac and MuJoCo; old snapshots keep their four bars."""
+    g = terrain["grid"]
+    rng = np.random.default_rng(np.random.SeedSequence([terrain["seed"], round(difficulty * 1000000)]))
+    width = rng.uniform(*g["width_range_m"])
+    height = g["height_range_m"][0] + difficulty * np.ptp(g["height_range_m"])
+    spacing_x, spacing_y = rng.uniform(*g["spacing_range_m"], size=2)
+    start, end = (
+        terrain["surface_x_range_m"] if "surface_x_range_m" in terrain else (terrain["entry_x_m"], terrain["exit_x_m"])
+    )
+    cx, cy = (start + end) / 2, terrain["tile_size_m"][1] / 2
+    if "surface_x_range_m" in terrain:
+        nx = int((end - start - width) / (2 * spacing_x))
+        ny = int((2 * g["half_span_m"] - width) / (2 * spacing_y))
+        xs = cx + np.arange(-nx, nx + 1) * spacing_x
+        ys = cy + np.arange(-ny, ny + 1) * spacing_y
+    else:
+        xs = cx + np.array([-0.5, 0.5]) * spacing_x
+        ys = cy + np.array([-0.5, 0.5]) * spacing_y
+    vertical = [(x - width / 2, x + width / 2) for x in xs]
+    rectangles = [(a, b, cy - g["half_span_m"], cy + g["half_span_m"]) for a, b in vertical]
+    for y in ys:
+        left = start
+        for a, b in [*vertical, (end, end)]:
+            if a > left:
+                rectangles.append((left, a, y - width / 2, y + width / 2))
+            left = b
+    return rectangles, float(height)
 
 
 def scan_course(
@@ -168,11 +200,10 @@ class StairCourse:
         self.crossed = torch.zeros(count, 4, dtype=torch.bool, device=device)
         self.edges = torch.full((count, 4), float("inf"), device=device)
         self.edge_count = torch.zeros(count, dtype=torch.long, device=device)
-        self.lane_ok = torch.ones(count, dtype=torch.bool, device=device)
-        self.arrived = torch.zeros_like(self.lane_ok)
-        self.success = torch.zeros_like(self.lane_ok)
-        self.finished = torch.zeros_like(self.lane_ok)
-        self.escaped = torch.zeros_like(self.lane_ok)
+        self.arrived = torch.zeros_like(self.motion)
+        self.success = torch.zeros_like(self.motion)
+        self.finished = torch.zeros_like(self.motion)
+        self.escaped = torch.zeros_like(self.motion)
         self.hold = torch.zeros(count, device=device)
         self.track_sum = torch.zeros(count, device=device)
         self.track_count = torch.zeros(count, device=device)
@@ -196,6 +227,8 @@ class StairCourse:
         self.passed = torch.zeros_like(self.speed_fraction)
         self.latest_pass = torch.zeros_like(self.speed_fraction)
         self.episode_speed_fraction = torch.zeros(count, device=device)
+        # Per-rollout counts: resets, eligible, successes, crossings, stops, neutral exits.
+        self.reset_counts = torch.zeros(len(self.names), 6, device=device)
 
     def reset(self, ids: torch.Tensor, terrain_types: torch.Tensor, origin: torch.Tensor, tick: int) -> None:
         self.group[ids] = self.column_groups[terrain_types]
@@ -242,7 +275,6 @@ class StairCourse:
             self.yaw_track_sum,
         ):
             field[ids] = 0
-        self.lane_ok[ids] = True
         self.support_z[ids] = origin[:, 2:3]
         self.last_tick[ids] = tick
 
@@ -289,30 +321,30 @@ class StairCourse:
         self.age += dt
         x = state["wheel_position_w"][:, :, 0] - origin[:, 0:1]
         center = x.mean(-1)
-        lateral = (state["wheel_position_w"][:, :, 1] - origin[:, 1:2]).abs().amax(-1)
-        self.lane_ok &= (lateral <= self.p["lane_half_width_m"]) | self.motion
-        end = self.terrain["tile_size_m"][0] - self.terrain["spawn_x_m"] - self.p["edge_clearance_m"]
-        self.escaped.copy_(
-            (~self.lane_ok | (center < -self.p["backtrack_limit_m"]) | (x.amax(-1) > end)) & ~self.motion
-        )
         sx, sy = self.terrain["tile_size_m"]
         margin = self.terrain["boundary_margin_m"]
-        dx = state["wheel_position_w"][:, :, 0]
-        dy = state["wheel_position_w"][:, :, 1] - origin[:, 1:2]
+        x_margin = self.p["edge_clearance_m"]
+        x_low = torch.where(self.motion, -sx / 2 + margin, x_margin - self.terrain["spawn_x_m"])
+        x_high = torch.where(self.motion, sx / 2 - margin, sx - self.terrain["spawn_x_m"] - x_margin)
+        y_half = sy / 2 - margin
+        y_max = (state["wheel_position_w"][:, :, 1] - origin[:, 1:2]).abs().amax(-1)
+        # A pure boundary exit is a neutral truncation; physical termination stays separate.
+        self.escaped.copy_((x.amin(-1) < x_low) | (x.amax(-1) > x_high) | (y_max > y_half))
+        # Flat tiles form one contiguous homogeneous block; other kinds stay in their own difficulty tile.
+        wx = state["wheel_position_w"][:, :, 0]
+        wy = state["wheel_position_w"][:, :, 1] - origin[:, 1:2]
         left = (self.first_column[self.group] - self.terrain_type - 0.5) * sy + margin
         right = (self.last_column[self.group] - self.terrain_type + 0.5) * sy - margin
-        # Motion replay uses the whole contiguous flat block, never neighbouring obstacle columns.
-        self.motion_boundary.copy_(
-            self.motion
-            & ((dx.abs() > self.terrain["rows"] * sx / 2 - margin) | (dy < left[:, None]) | (dy > right[:, None])).any(
-                -1
-            )
-        )
-        reached = (x.amin(-1)[:, None] >= self.edges + self.p["edge_clearance_m"]) & self.lane_ok[:, None]
+        flat_exit = (
+            (wx.abs() > self.terrain["rows"] * sx / 2 - margin) | (wy < left[:, None]) | (wy > right[:, None])
+        ).any(-1)
+        self.escaped.copy_(torch.where(self.motion, flat_exit, self.escaped))
+        self.motion_boundary.copy_(self.motion & self.escaped)
+        reached = (x.amin(-1)[:, None] >= self.edges + self.p["edge_clearance_m"]) & ~self.escaped[:, None]
         self.crossed |= reached
         goal = self.terrain["finish_x_m"] - self.terrain["spawn_x_m"]
         self.arrived.copy_(
-            (x.amin(-1) >= goal) & (self.crossed.sum(-1) >= self.edge_count) & self.lane_ok & ~self.motion
+            (x.amin(-1) >= goal) & (self.crossed.sum(-1) >= self.edge_count) & ~self.escaped & ~self.motion
         )
         tracking = torch.exp(-state["linear_error"].square() / self.p["tracking_sigma"])
         # Recovery already grades height; do not grade it again through the speed score.
@@ -340,7 +372,7 @@ class StairCourse:
         stable &= (state["roll"].abs() < self.p["finish_tilt_rad"]) & (state["pitch"].abs() < self.p["finish_tilt_rad"])
         stable &= state["angular_velocity"][:, :2].abs().amax(-1) < self.p["finish_angular_rad_s"]
         # Past crossings are diagnostic history: recovery must occur beyond the last edge now.
-        cleared = (reached.sum(-1) >= self.edge_count) & self.lane_ok & ~self.motion
+        cleared = (reached.sum(-1) >= self.edge_count) & ~self.escaped & ~self.motion
         self.traverse_hold.copy_(torch.where(cleared & recovered, self.traverse_hold + dt, 0.0))
         self.traversed |= self.traverse_hold >= self.p["traversal_hold_s"]
         stopped = stable & self.arrived & (state["heading_velocity"].norm(dim=-1) < self.p["finish_speed_m_s"])
@@ -358,31 +390,39 @@ class StairCourse:
             & (yaw_mean >= self.p["tracking_promote"])
         )
         self.progress.copy_(
-            torch.where(self.lane_ok & ~self.arrived & ~self.motion & (self.age > dt), center - self.last_x, 0.0)
+            torch.where(~self.escaped & ~self.arrived & ~self.motion & (self.age > dt), center - self.last_x, 0.0)
         )
         self.last_x.copy_(center)
 
     def curriculum(
-        self, ids: torch.Tensor, terminated: torch.Tensor, out_of_bounds: torch.Tensor
+        self, ids: torch.Tensor, terminated: torch.Tensor, neutral_exit: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        ran = self.age[ids] > 0
+        valid = ran & ~neutral_exit
+        counts = torch.stack(
+            (
+                ran,
+                valid,
+                self.success[ids] & valid & ~terminated,
+                self.traversed[ids] & valid & ~terminated,
+                self.finished[ids] & valid & ~terminated,
+                neutral_exit & ran,
+            ),
+            -1,
+        ).float()
+        self.reset_counts.index_add_(0, self.group[ids], counts)
         eligible = (
-            ((self.age[ids] >= self.p["minimum_episode_s"]) | self.traversed[ids])
-            & (self.age[ids] > 0)
-            & ~out_of_bounds
+            ((self.age[ids] >= self.p["minimum_episode_s"]) | self.traversed[ids]) & (self.age[ids] > 0) & ~neutral_exit
         )
         average = self.track_sum[ids] / self.track_count[ids].clamp_min(1)
         up = eligible & self.success[ids] & ~terminated
-        down = (
-            eligible
-            & ~up
-            & (terminated | self.escaped[ids] | ((self.track_count[ids] > 0) & (average < self.p["tracking_demote"])))
-        )
+        down = eligible & ~up & (terminated | ((self.track_count[ids] > 0) & (average < self.p["tracking_demote"])))
         # Premature physical failure is evidence even when the minimum normal evaluation duration was not reached.
-        down |= (self.age[ids] > 0) & ~out_of_bounds & (terminated | self.escaped[ids])
+        down |= (self.age[ids] > 0) & ~neutral_exit & terminated
         group, level = self.group[ids], self.training_level[ids]
         cell = group * self.terrain["rows"] + level
         current_speed = (self.episode_speed_fraction[ids] - self.speed_fraction[group, level]).abs() < 1e-6
-        counted = ~self.motion[ids] & current_speed
+        counted = ~self.motion[ids] & current_speed & ~neutral_exit
         self.completed.view(-1).scatter_add_(0, cell, ((eligible | down) & counted).float())
         self.passed.view(-1).scatter_add_(0, cell, (up & counted).float())
         ready = self.completed >= self.p["speed_window_episodes"]
@@ -406,7 +446,10 @@ class StairCourse:
             (
                 (self.last_x / length)[:, None],
                 (self.crossed.sum(-1) / self.edge_count.clamp_min(1))[:, None],
-                ((state["wheel_position_w"][:, :, 1].mean(-1) - origin[:, 1]) / self.p["lane_half_width_m"])[:, None],
+                (
+                    (state["wheel_position_w"][:, :, 1].mean(-1) - origin[:, 1])
+                    / (self.terrain["tile_size_m"][1] / 2 - self.terrain["boundary_margin_m"])
+                )[:, None],
                 (self.hold / self.p["finish_hold_s"])[:, None],
                 self.flight_time,
                 self.support_z - state["wheel_position_w"][:, :, 2],

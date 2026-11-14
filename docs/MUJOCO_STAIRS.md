@@ -1,5 +1,7 @@
 # 键鼠驾驶台阶策略
 
+2026-11-14 revision 6：中性出界、取消中心走廊、扩大井字/坡面/粗糙覆盖及受限随机出生，以 [STAIRS_BOUNDARIES_20261114.md](STAIRS_BOUNDARIES_20261114.md) 为准。纯出界不扣终止分、不进成功率分子分母、不升降课程；物理失败优先。此版本尚未在Isaac/GPU运行。
+
 入口 `tools/play_stairs.py` / `tools/play_stairs.ps1`。复用相邻 `../sim2sim/sim2sim.py` 的
 Actor、闭链/弹簧、PD、摩擦中值与观测/动作延迟；不改旧 `play.py` 和 landing 播放器。
 需要该sim2sim目录、`runs/scut_experience/scene.xml`及它引用的网格资产；本机使用mjlab Python环境。

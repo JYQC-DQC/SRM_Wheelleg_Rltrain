@@ -1,5 +1,7 @@
 # 平地起立训练的经验教训（2026-11-10 至 11-12）
 
+2026-11-14 revision 6：中性出界、取消中心走廊、扩大井字/坡面/粗糙覆盖及受限随机出生，以 [STAIRS_BOUNDARIES_20261114.md](STAIRS_BOUNDARIES_20261114.md) 为准。纯出界不扣终止分、不进成功率分子分母、不升降课程；物理失败优先。此版本尚未在Isaac/GPU运行。
+
 ## 2026-11-14：地形混训的约束范围
 
 此前stairs只区分motion/traverse，导致井字、缓坡、粗糙地形整回合套用台阶弱约束；
@@ -197,3 +199,5 @@ PPO随机回合长度不能用于路线完成窗口；首次路线现在独立�
 stairs必须同时设disturbance_phase=2，否则只填phase2_start_iteration=4000不会生效。
 前4000轮弱扰动，随后3000轮渐增；碰撞事件不能在起点前提前施加。Actor初始化新运行从0计数，resume沿用轮号。
 该P1共用计划也影响阶段2的recovery，flat/landing阶段1不受影响。
+
+边界审查补充：必须同时核对done标志、PPO timeout补偿、课程scatter计数和日志分母。只把escaped从termination挪到timeout会遗漏课程降级。随机出生只移动root，不能移动terrain origin，否则边缘/扫描/课程坐标一起错位。

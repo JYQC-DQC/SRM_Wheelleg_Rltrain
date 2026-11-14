@@ -772,6 +772,8 @@ class WheelLegEnv(DirectRLEnv):
             timeout |= self.out_of_bounds
         if self.stair_course is not None:
             self.stair_course.update(s, self.terrain.env_origins, dt, terminated, t.settings["reward_parameters"])
+            # Outer map exits must not retain a success latched on the last in-bounds observation.
+            self.stair_course.success &= ~self.out_of_bounds
             # PPO may randomize episode_length_buf; a course must still receive its full traversal time.
             timeout = (
                 (self.stair_course.age >= self.max_episode_length_s)
@@ -781,7 +783,9 @@ class WheelLegEnv(DirectRLEnv):
             )
             if not self.cfg.evaluation:
                 timeout |= self.stair_course.traversed
-            terminated |= self.stair_course.escaped
+            # A map boundary is not a control failure. Physical failures take precedence over bootstrapping.
+            timeout |= self.stair_course.escaped
+            timeout &= ~terminated
         if self.jump is not None:
             stable = (s["roll"].abs() < t.stage["landing_tilt_rad"]) & (s["pitch"].abs() < t.stage["landing_tilt_rad"])
             stable &= (s["linear_error"].abs() < t.stage["landing_speed_error_m_s"]) & ~terminated
@@ -1096,6 +1100,9 @@ class WheelLegEnv(DirectRLEnv):
         if self.stair_course is not None:
             self.extras["evaluation"]["stair_success"] = self.stair_course.success.detach().clone()
             self.extras["evaluation"]["stair_escaped"] = self.stair_course.escaped.detach().clone()
+            self.extras["evaluation"]["stair_neutral_exit"] = (
+                ((self.stair_course.escaped | self.out_of_bounds) & ~s["terminated"]).detach().clone()
+            )
             self.extras["evaluation"]["stair_traversed"] = self.stair_course.traversed.detach().clone()
             self.extras["evaluation"]["stair_stopped"] = self.stair_course.finished.detach().clone()
             if self.cfg.evaluation:
@@ -1345,14 +1352,13 @@ class WheelLegEnv(DirectRLEnv):
             for value in self.reward_sums.values():
                 value[env_ids] = 0
         if self.stair_course is not None and not self.cfg.evaluation:
-            up, down = self.stair_course.curriculum(
-                env_ids, self.reset_terminated[env_ids], self.out_of_bounds[env_ids]
-            )
+            neutral_exit = (self.stair_course.escaped[env_ids] | self.out_of_bounds[env_ids]) & ~self.reset_terminated[
+                env_ids
+            ]
+            up, down = self.stair_course.curriculum(env_ids, self.reset_terminated[env_ids], neutral_exit)
             if "log" not in self.extras:
                 self.extras["log"] = {}
-            self.extras["log"]["Stairs/task_success"] = self.stair_course.success[env_ids].float().mean()
-            self.extras["log"]["Stairs/traversed"] = self.stair_course.traversed[env_ids].float().mean()
-            self.extras["log"]["Stairs/stopped"] = self.stair_course.finished[env_ids].float().mean()
+            # Success ratios are emitted by the runner from counts, excluding neutral exits from both sides.
             self.extras["log"]["Stairs/escaped"] = self.stair_course.escaped[env_ids].float().mean()
             self.extras["log"]["Stairs/tracking_return"] = (
                 self.stair_course.track_sum[env_ids] / self.stair_course.track_count[env_ids].clamp_min(1)
@@ -1365,13 +1371,6 @@ class WheelLegEnv(DirectRLEnv):
             for k, name in enumerate(self.stair_course.names):
                 selected = env_ids[self.stair_course.group[env_ids] == k]
                 if len(selected):
-                    self.extras["log"][f"Stairs/{name}/task_success"] = (
-                        self.stair_course.success[selected].float().mean()
-                    )
-                    self.extras["log"][f"Stairs/{name}/traversed"] = (
-                        self.stair_course.traversed[selected].float().mean()
-                    )
-                    self.extras["log"][f"Stairs/{name}/stopped"] = self.stair_course.finished[selected].float().mean()
                     self.extras["log"][f"Stairs/{name}/frontier_level"] = (
                         self.stair_course.training_level[selected].float().mean()
                     )
@@ -1438,6 +1437,15 @@ class WheelLegEnv(DirectRLEnv):
         self.spawn_check_mask[env_ids] = True
         root = self.robot.data.default_root_state[env_ids].clone()
         root[:, :3] += self.terrain.env_origins[env_ids]
+        if self.stair_course is not None and (not self.cfg.evaluation or self.cfg.evaluation_random_reset):
+            # Keep the terrain origin fixed: edges, scans and curriculum remain in tile coordinates.
+            # grid/rough offsets are validated to stay on the flat approach, so no surface-height guess is needed.
+            for kind, bounds in t.stage["spawn_xy_jitter_m"].items():
+                for group, name in enumerate(self.stair_course.names):
+                    if t.stage["terrain"]["profiles"][name]["kind"] == kind:
+                        selected = self.stair_course.group[env_ids] == group
+                        for axis, key in enumerate(("x", "y")):
+                            root[:, axis] += torch.where(selected, uniform(bounds[key], (n,), self.device), 0.0)
         q, qd = self.robot.data.default_joint_pos[env_ids].clone(), self.robot.data.default_joint_vel[env_ids].clone()
         self.recovery_episode[env_ids] = False
         air = torch.zeros(n, dtype=torch.bool, device=self.device)

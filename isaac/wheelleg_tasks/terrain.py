@@ -5,7 +5,7 @@ import trimesh
 from isaaclab.terrains import SubTerrainBaseCfg
 from isaaclab.utils import configclass
 
-from wheelleg.stairs import step_layout
+from wheelleg.stairs import grid_layout, step_layout
 
 
 def steps_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
@@ -110,10 +110,13 @@ def course_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         xs = np.linspace(0, sx, round(sx / resolution) + 1)
         ys = np.linspace(0, sy, round(sy / resolution) + 1)
         z = np.zeros((len(xs), len(ys)))
-        inside = (xs >= p["entry_x_m"]) & (xs <= p["exit_x_m"])
+        surface_start, surface_end = p["surface_x_range_m"]
+        inside = (xs >= surface_start) & (xs <= surface_end)
         if kind == "slope":
             angle = p["slope_angle_range_rad"][0] + difficulty * np.ptp(p["slope_angle_range_rad"])
-            z[:] = (np.minimum(xs - p["entry_x_m"], p["exit_x_m"] - xs).clip(0) * np.tan(angle))[:, None]
+            # Widen coverage without raising the peak at an unchanged difficulty row.
+            rise_run = np.minimum(xs - surface_start, surface_end - xs).clip(0, (p["exit_x_m"] - p["entry_x_m"]) / 2)
+            z[:] = (rise_run * np.tan(angle))[:, None]
         else:
             # Small uniform surface noise, clear approach and exit pads; no unsupported ray API needed.
             rng = np.random.default_rng(np.random.SeedSequence([p["seed"], round(difficulty * 1000000)]))
@@ -131,25 +134,10 @@ def course_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         box(0, sx, 0, sy, -p["ground_thickness_m"], 0)
         spawn_height = 0.0
         if kind == "grid":
-            # Adapted from SCUT height_field.py:431-498: split bars at crossings to avoid overlapping tops.
-            rng = np.random.default_rng(np.random.SeedSequence([p["seed"], round(difficulty * 1000000)]))
-            grid = p["grid"]
-            width = rng.uniform(*grid["width_range_m"])
-            # Height follows the row; only narrow width/spacing variation remains random.
-            height = grid["height_range_m"][0] + difficulty * np.ptp(grid["height_range_m"])
-            spacing_x, spacing_y = rng.uniform(*grid["spacing_range_m"], size=2)
-            cx, cy = (p["entry_x_m"] + p["exit_x_m"]) / 2, sy / 2
-            vertical = [
-                (cx + sign * spacing_x / 2 - width / 2, cx + sign * spacing_x / 2 + width / 2) for sign in (-1, 1)
-            ]
-            for x0, x1 in vertical:
-                box(x0, x1, cy - grid["half_span_m"], cy + grid["half_span_m"], 0, height)
-            for y in (cy - spacing_y / 2, cy + spacing_y / 2):
-                start = p["entry_x_m"]
-                for x0, x1 in vertical:
-                    box(start, x0, y - width / 2, y + width / 2, 0, height)
-                    start = x1
-                box(start, p["exit_x_m"], y - width / 2, y + width / 2, 0, height)
+            # Shared geometry keeps the training and sim2sim obstacle coverage identical.
+            rectangles, height = grid_layout(p, difficulty)
+            for x0, x1, y0, y1 in rectangles:
+                box(x0, x1, y0, y1, 0, height)
     spawn_x = sx / 2 if profile["command_mode"] == "motion" else p["spawn_x_m"]
     return meshes, np.array((spawn_x, sy / 2, spawn_height))
 

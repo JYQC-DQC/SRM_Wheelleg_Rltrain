@@ -21,13 +21,15 @@ class WheelLegRunner(OnPolicyRunner):
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task == "p1-stairs":
-            contract["stair_course_revision"] = 5
+            contract["stair_course_revision"] = 6
             contract["stair_course_features"] = STAIR_FEATURES
             contract["stair_scan"] = [
                 cfg.stage["course"][k] for k in ("scan_half_length_m", "scan_half_width_m", "scan_resolution_m")
             ]
             contract["stair_terrain"] = mutable(cfg.stage["terrain"])
             contract["stair_course"] = mutable(cfg.stage["course"])
+            contract["stair_spawn_xy"] = mutable(cfg.stage["spawn_xy_jitter_m"])
+            contract["stair_spawn_footprint_margin_m"] = cfg.stage["spawn_footprint_margin_m"]
             contract["stair_passive_joint_limits_rad"] = mutable(cfg.shared["stairs_passive_joint_limits_rad"])
             contract["stair_assist"] = [
                 cfg.shared["spring_extension_height_m"],
@@ -60,6 +62,23 @@ class WheelLegRunner(OnPolicyRunner):
         if env.stair_course is None:
             self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
         if env.stair_course is not None:
+            counts = env.stair_course.reset_counts.detach().cpu()
+            for label, row in [
+                ("Stairs", counts.sum(0)),
+                *[(f"Stairs/{name}", counts[k]) for k, name in enumerate(env.stair_course.names)],
+            ]:
+                total, valid, successes, crossings, stops, neutral = row.tolist()
+                self.writer.add_scalar(f"{label}/completed_episodes", total, iteration)
+                self.writer.add_scalar(f"{label}/eligible_episodes", valid, iteration)
+                self.writer.add_scalar(f"{label}/success_count", successes, iteration)
+                self.writer.add_scalar(f"{label}/neutral_exit_count", neutral, iteration)
+                if total:
+                    self.writer.add_scalar(f"{label}/neutral_exit_rate", neutral / total, iteration)
+                if valid:
+                    for metric, value in (("task_success", successes), ("traversed", crossings), ("stopped", stops)):
+                        self.writer.add_scalar(f"{label}/{metric}", value / valid, iteration)
+            # Replace inference-mode storage, as with the safety counters below.
+            env.stair_course.reset_counts = torch.zeros_like(env.stair_course.reset_counts)
             for k, name in enumerate(env.stair_course.names):
                 if env.training.stage["terrain"]["profiles"][name]["command_mode"] != "motion":
                     selected = env.stair_course.group == k

@@ -1,5 +1,7 @@
 # 最新框架运行 SCUT 华南虎参考模型
 
+2026-11-14 revision 6：中性出界、取消中心走廊、扩大井字/坡面/粗糙覆盖及受限随机出生，以 [STAIRS_BOUNDARIES_20261114.md](STAIRS_BOUNDARIES_20261114.md) 为准。纯出界不扣终止分、不进成功率分子分母、不升降课程；物理失败优先。此版本尚未在Isaac/GPU运行。
+
 2026-11-14：当前stairs参数与来源以[STAIRS_REVISION_20261114.md](STAIRS_REVISION_20261114.md)为准。
 revision 5将stairs平地高度扩至实际弹簧站姿高度减1cm（模板0.43885688m），
 按flat/up-down-mixed/grid/slope/rough分区约束；导轮释放及减罚仅限台阶。

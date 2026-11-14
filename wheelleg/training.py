@@ -463,8 +463,6 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "small_turn_range_rad_s",
             "segment_duration_s",
             "height_duration_s",
-            "lane_half_width_m",
-            "backtrack_limit_m",
             "edge_clearance_m",
             "finish_hold_s",
             "finish_tilt_rad",
@@ -614,6 +612,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "finish_x_m",
             "ground_thickness_m",
             "surface_resolution_m",
+            "surface_x_range_m",
             "seed",
             "grid",
         ):
@@ -703,8 +702,39 @@ def _validate_training(cfg: TrainingConfig) -> None:
             cells = 2 * course[key] / course["scan_resolution_m"]
             if abs(cells - round(cells)) > 1e-6:
                 raise ValueError(f"{prefix}.course.{key}: scan extent must be divisible by resolution")
-        if not course["lane_half_width_m"] < terrain["grid"]["half_span_m"] < sy / 2:
-            raise ValueError(f"{prefix}.terrain.grid.half_span_m must cover the route and stay inside tile")
+        if not sy / 2 - terrain["boundary_margin_m"] < terrain["grid"]["half_span_m"] < sy / 2:
+            raise ValueError(f"{prefix}.terrain.grid.half_span_m must cover the usable region and stay inside tile")
+        surface = terrain["surface_x_range_m"]
+        if len(surface) != 2 or any(type(v) not in (int, float) or not isfinite(v) for v in surface):
+            raise ValueError(f"{prefix}.terrain.surface_x_range_m requires two finite coordinates")
+        if not terrain["spawn_x_m"] < surface[0] < surface[1] < terrain["finish_x_m"]:
+            raise ValueError(f"{prefix}.terrain.surface_x_range_m must leave clear spawn and finish pads")
+        if "spawn_xy_jitter_m" not in cfg.stage or set(cfg.stage["spawn_xy_jitter_m"]) != {"flat", "grid", "rough"}:
+            raise ValueError(f"{prefix}.spawn_xy_jitter_m requires flat, grid and rough")
+        if "spawn_footprint_margin_m" not in cfg.stage:
+            raise ValueError(f"{prefix}.spawn_footprint_margin_m is required")
+        footprint = cfg.stage["spawn_footprint_margin_m"]
+        if footprint is not None and (type(footprint) not in (int, float) or not isfinite(footprint) or footprint <= 0):
+            raise ValueError(f"{prefix}.spawn_footprint_margin_m must be positive")
+        for kind, jitter in cfg.stage["spawn_xy_jitter_m"].items():
+            if set(jitter) != {"x", "y"}:
+                raise ValueError(f"{prefix}.spawn_xy_jitter_m.{kind} requires x and y")
+            for axis, pair in jitter.items():
+                if (
+                    len(pair) != 2
+                    or any(type(v) not in (int, float) or not isfinite(v) for v in pair)
+                    or pair[0] > pair[1]
+                ):
+                    raise ValueError(f"{prefix}.spawn_xy_jitter_m.{kind}.{axis}: finite ordered pair required")
+            x0, x1 = jitter["x"]
+            y0, y1 = jitter["y"]
+            origin = sx / 2 if kind == "flat" else terrain["spawn_x_m"]
+            xmin = terrain["boundary_margin_m"] if kind == "flat" else course["edge_clearance_m"]
+            xmax = sx - terrain["boundary_margin_m"] if kind == "flat" else surface[0] - terrain["surface_resolution_m"]
+            if footprint is not None and (origin + x0 - footprint <= xmin or origin + x1 + footprint >= xmax):
+                raise ValueError(f"{prefix}.spawn_xy_jitter_m.{kind}.x must keep the robot inside its clear spawn pad")
+            if footprint is not None and min(sy / 2 + y0, sy / 2 - y1) <= footprint + terrain["boundary_margin_m"]:
+                raise ValueError(f"{prefix}.spawn_xy_jitter_m.{kind}.y is too close to the tile boundary")
         if terrain["grid"]["width_range_m"][1] >= terrain["grid"]["spacing_range_m"][0]:
             raise ValueError(f"{prefix}.terrain.grid: bars must be narrower than their separation")
         grid_span = sum((terrain["grid"]["spacing_range_m"][1], terrain["grid"]["width_range_m"][1]))

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wheelleg.stairs import step_layout
+from wheelleg.stairs import grid_layout, step_layout
 
 
 def build_course(flat_model: Path, output: Path, terrain: dict, friction: float) -> list[dict]:
@@ -60,15 +60,21 @@ def build_course(flat_model: Path, output: Path, terrain: dict, friction: float)
                 xs = np.linspace(0, sx, round(sx / res) + 1)
                 ys = np.linspace(0, sy, round(sy / res) + 1)
                 z = np.zeros((len(xs), len(ys)))
+                surface_start, surface_end = (
+                    terrain["surface_x_range_m"]
+                    if "surface_x_range_m" in terrain
+                    else (terrain["entry_x_m"], terrain["exit_x_m"])
+                )
                 if kind == "slope":
                     angle = terrain["slope_angle_range_rad"][0] + difficulty * np.ptp(terrain["slope_angle_range_rad"])
-                    z[:] = (np.minimum(xs - terrain["entry_x_m"], terrain["exit_x_m"] - xs).clip(0) * np.tan(angle))[
-                        :, None
-                    ]
+                    rise_run = np.minimum(xs - surface_start, surface_end - xs).clip(
+                        0, (terrain["exit_x_m"] - terrain["entry_x_m"]) / 2
+                    )
+                    z[:] = (rise_run * np.tan(angle))[:, None]
                 else:
                     rng = np.random.default_rng(np.random.SeedSequence([terrain["seed"], round(difficulty * 1000000)]))
                     amplitude = terrain["rough_noise_range_m"][0] + difficulty * np.ptp(terrain["rough_noise_range_m"])
-                    inside = (xs >= terrain["entry_x_m"]) & (xs <= terrain["exit_x_m"])
+                    inside = (xs >= surface_start) & (xs <= surface_end)
                     z[inside] = rng.uniform(-amplitude, amplitude, (inside.sum(), len(ys)))
                 low, span = float(z.min()), float(np.ptp(z))
                 if span == 0:
@@ -100,32 +106,9 @@ def build_course(flat_model: Path, output: Path, terrain: dict, friction: float)
             else:
                 box(tag, (0, sx, 0, sy, -terrain["ground_thickness_m"], 0), offset, color)
                 if kind == "grid":
-                    # Same randomization/split intersections as isaac/wheelleg_tasks/terrain.py.
-                    rng = np.random.default_rng(np.random.SeedSequence([terrain["seed"], round(difficulty * 1000000)]))
-                    g = terrain["grid"]
-                    width = rng.uniform(*g["width_range_m"])
-                    height = (
-                        g["height_range_m"][0] + difficulty * np.ptp(g["height_range_m"])
-                        if "command_mode" in profile
-                        else rng.uniform(*g["height_range_m"])
-                    )
-                    spacing_x, spacing_y = rng.uniform(*g["spacing_range_m"], size=2)
-                    cx, cy = (terrain["entry_x_m"] + terrain["exit_x_m"]) / 2, sy / 2
-                    vertical = [
-                        (cx + s * spacing_x / 2 - width / 2, cx + s * spacing_x / 2 + width / 2) for s in (-1, 1)
-                    ]
-                    for i, (a, b) in enumerate(vertical):
-                        box(
-                            f"{tag}_v{i}",
-                            (a, b, cy - g["half_span_m"], cy + g["half_span_m"], 0, height),
-                            offset,
-                            color,
-                        )
-                    for j, y in enumerate((cy - spacing_y / 2, cy + spacing_y / 2)):
-                        start = terrain["entry_x_m"]
-                        for i, (a, b) in enumerate([*vertical, (terrain["exit_x_m"], terrain["exit_x_m"])]):
-                            box(f"{tag}_h{j}_{i}", (start, a, y - width / 2, y + width / 2, 0, height), offset, color)
-                            start = b
+                    rectangles, height = grid_layout(terrain, difficulty)
+                    for i, (x0, x1, y0, y1) in enumerate(rectangles):
+                        box(f"{tag}_bar{i}", (x0, x1, y0, y1, 0, height), offset, color)
             tiles.append(
                 dict(
                     profile=name,
