@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-FEATURES = 21
+FEATURES = 24
 
 
 def advance_height_assist(
@@ -213,6 +213,14 @@ class StairCourse:
         self.track_sum = torch.zeros(count, device=device)
         self.track_count = torch.zeros(count, device=device)
         self.last_x = torch.zeros(count, device=device)
+        self.route_last_x = torch.zeros(count, device=device)
+        self.route_active = torch.zeros(count, dtype=torch.bool, device=device)
+        self.progress = torch.zeros(count, device=device)
+        self.route_time = torch.zeros(count, device=device)
+        self.route_distance = torch.zeros(count, device=device)
+        self.stuck = torch.zeros(count, dtype=torch.bool, device=device)
+        self.route_active_seconds = torch.zeros(count, device=device)
+        self.stuck_seconds = torch.zeros(count, device=device)
         self.seen_support = torch.zeros(count, 2, dtype=torch.bool, device=device)
         self.contact = torch.zeros_like(self.seen_support)
         self.flight_time = torch.zeros(count, 2, device=device)
@@ -233,12 +241,27 @@ class StairCourse:
         self.episode_speed_fraction = torch.zeros(count, device=device)
         # Per-rollout counts: resets, eligible, successes, crossings, stops, neutral exits.
         self.reset_counts = torch.zeros(len(self.names), 6, device=device)
+        flat = self.p["flat_curriculum"]
+        self.flat_levels = torch.tensor(flat["levels"], device=device)
+        self.flat_level = torch.zeros((), dtype=torch.long, device=device)
+        self.flat_completed = torch.zeros((), device=device)
+        self.flat_passed = torch.zeros((), device=device)
+        self.flat_latest_pass = torch.zeros((), device=device)
+        self.episode_flat_level = torch.zeros(count, dtype=torch.long, device=device)
+        self.flat_error_sum = torch.zeros(count, 3, device=device)
+        self.flat_command_sum = torch.zeros(count, 2, device=device)
+        self.flat_sample_count = torch.zeros(count, device=device)
 
     def reset(self, ids: torch.Tensor, terrain_types: torch.Tensor, origin: torch.Tensor, tick: int) -> None:
         self.group[ids] = self.column_groups[terrain_types]
         self.terrain_type[ids] = terrain_types
         self.episode_speed_fraction[ids] = self.speed_fraction[self.group[ids], self.training_level[ids]]
         self.motion[ids] = self.motion_groups[self.group[ids]]
+        # Freeze the command envelope for each episode; old-stage finishes cannot grade a new stage.
+        self.episode_flat_level[ids] = self.flat_level
+        self.episode_speed_fraction[ids] = torch.where(
+            self.motion[ids], self.flat_levels[self.flat_level, 0], self.episode_speed_fraction[ids]
+        )
         self.free_commands[ids] = self.free_groups[self.group[ids]]
         self.steps[ids] = self.step_groups[self.group[ids]]
         self.heading[ids] = (~self.motion[ids] & ~self.free_commands[ids]) & (
@@ -255,6 +278,9 @@ class StairCourse:
             self.edge_count[selected] = len(edges)
         for field in (
             self.age,
+            self.flat_error_sum,
+            self.flat_command_sum,
+            self.flat_sample_count,
             self.surface_time,
             self.diagnostics,
             self.crossed,
@@ -266,6 +292,14 @@ class StairCourse:
             self.track_sum,
             self.track_count,
             self.last_x,
+            self.route_last_x,
+            self.route_active,
+            self.progress,
+            self.route_time,
+            self.route_distance,
+            self.stuck,
+            self.route_active_seconds,
+            self.stuck_seconds,
             self.seen_support,
             self.contact,
             self.flight_time,
@@ -362,6 +396,13 @@ class StairCourse:
             & ~self.free_commands
         )
         tracking = torch.exp(-state["linear_error"].square() / self.p["tracking_sigma"])
+        # Curriculum grading only: a stopped robot must not pass a low-speed traversal.
+        route = ~self.motion & ~self.free_commands
+        tolerance = self.p["route_tracking_error_floor_m_s"] + (
+            self.p["route_tracking_relative_error"] * state["tracked_command"][:, 0].abs()
+        )
+        tolerance = tolerance.clamp_max(self.p["tracking_sigma"] ** 0.5)
+        tracking = torch.where(route, torch.exp(-(state["linear_error"] / tolerance).square()), tracking)
         # Recovery already grades height; do not grade it again through the speed score.
         tracking = torch.where(terminated, 0.0, tracking)
         yaw_tracking = torch.exp(-state["angular_error"].square() / reward_parameters["angular_sigma"])
@@ -386,6 +427,13 @@ class StairCourse:
         self.track_sum += torch.where(counted, tracking, 0.0)
         self.yaw_track_sum += torch.where(counted, yaw_tracking, 0.0)
         self.track_count += counted
+        flat_counted = counted & self.motion
+        errors = torch.stack(
+            (state["linear_error"].abs(), state["angular_error"].abs(), state["height_error"].abs()), -1
+        )
+        self.flat_error_sum += torch.where(flat_counted[:, None], errors, 0.0)
+        self.flat_command_sum += torch.where(flat_counted[:, None], state["tracked_command"].abs(), 0.0)
+        self.flat_sample_count += flat_counted
         stable = state["wheel_contact"].all(-1) & ~terminated & ~self.escaped
         stable &= state["undesired_force"].amax(-1) <= reward_parameters["contact_force_n"]
         recovered = stable & (state["height_error"].abs() <= self.p["traversal_height_error_m"])
@@ -410,15 +458,46 @@ class StairCourse:
             self.traversed | (self.motion & recovered & (self.age >= self.p["minimum_episode_s"])),
         )
         yaw_mean = self.yaw_track_sum / self.track_count.clamp_min(1)
+        promote = torch.where(self.free_commands, self.p["free_tracking_promote"], self.p["tracking_promote"])
         self.success.copy_(
-            task_done
-            & ~terminated
-            & ~self.escaped
-            & (self.track_count > 0)
-            & (mean >= self.p["tracking_promote"])
-            & (yaw_mean >= self.p["tracking_promote"])
+            task_done & ~terminated & ~self.escaped & (self.track_count > 0) & (mean >= promote) & (yaw_mean >= promote)
         )
+        flat = self.p["flat_curriculum"]
+        samples = self.flat_sample_count.clamp_min(1)[:, None]
+        allowed = self.flat_error_sum.new_tensor(flat["error_thresholds"]).expand_as(self.flat_error_sum).clone()
+        allowed[:, :2] += flat["relative_error"] * self.flat_command_sum / samples
+        flat_success = (self.flat_error_sum / samples <= allowed).all(-1)
+        flat_success &= task_done & ~terminated & ~self.escaped & (self.flat_sample_count > 0)
+        self.success.copy_(torch.where(self.motion, flat_success, self.success))
+        self.update_route_motion(state, dt, terminated, reward_parameters)
         self.last_x.copy_(center)
+
+    def update_route_motion(self, state: dict, dt: float, terminated: torch.Tensor, parameters: dict) -> None:
+        # Only traverse commands have world +x as their task direction. Reverse driving (yaw=pi, vx<0) qualifies.
+        vx, wz = state["tracked_command"].unbind(-1)
+        alignment = state["yaw"].cos() * vx.sign()
+        requested_x = vx * state["yaw"].cos()
+        enabled = ~self.motion & ~self.free_commands & ~self.arrived & ~self.traversed & ~self.escaped & ~terminated
+        enabled &= (self.age > self.p["tracking_warmup_s"]) & (vx.abs() > parameters["stand_deadzone"])
+        enabled &= (alignment >= self.p["route_alignment_min"]) & (wz.abs() <= self.p["route_yaw_limit_rad_s"])
+        enabled &= ~self.flying & ~self.guide_support & (self.cushion <= 0)
+        x = state["root_position_w"][:, 0]
+        # Prime on entry/resume; never score teleports or include time spent in an excluded phase.
+        counted = enabled & self.route_active
+        delta = torch.where(counted, x - self.route_last_x, 0.0)
+        cap = requested_x.clamp_min(0) * dt
+        self.progress.copy_(torch.minimum(torch.maximum(delta, -cap), cap))
+        self.route_time.copy_(torch.where(counted, self.route_time + dt, 0.0))
+        self.route_distance.copy_(torch.where(counted, self.route_distance + delta, 0.0))
+        ready = self.route_time >= self.p["route_stuck_window_s"] - dt * 0.5
+        moved = self.route_distance >= self.p["route_stuck_distance_m"]
+        self.stuck.copy_(torch.where(ready, ~moved, self.stuck & ~moved) & counted)
+        self.route_active_seconds += counted * dt
+        self.stuck_seconds += self.stuck * dt
+        self.route_time[ready] = 0
+        self.route_distance[ready] = 0
+        self.route_active.copy_(enabled)
+        self.route_last_x.copy_(x)
 
     def curriculum(
         self, ids: torch.Tensor, terminated: torch.Tensor, neutral_exit: torch.Tensor
@@ -437,12 +516,24 @@ class StairCourse:
             -1,
         ).float()
         self.reset_counts.index_add_(0, self.group[ids], counts)
+        flat = self.p["flat_curriculum"]
+        flat_counted = valid & self.motion[ids] & (self.episode_flat_level[ids] == self.flat_level)
+        self.flat_completed += flat_counted.sum()
+        self.flat_passed += (flat_counted & self.success[ids] & ~terminated).sum()
+        if self.flat_completed >= flat["min_completed_episodes"]:
+            self.flat_latest_pass.copy_(self.flat_passed / self.flat_completed)
+            delta = (self.flat_latest_pass >= flat["promote_rate"]).long()
+            delta -= (self.flat_latest_pass < flat["demote_rate"]).long()
+            self.flat_level.copy_((self.flat_level + delta).clamp(0, len(self.flat_levels) - 1))
+            self.flat_completed.zero_()
+            self.flat_passed.zero_()
         eligible = (
             ((self.age[ids] >= self.p["minimum_episode_s"]) | self.traversed[ids]) & (self.age[ids] > 0) & ~neutral_exit
         )
         average = self.track_sum[ids] / self.track_count[ids].clamp_min(1)
         up = eligible & self.success[ids] & ~terminated
-        down = eligible & ~up & (terminated | ((self.track_count[ids] > 0) & (average < self.p["tracking_demote"])))
+        demote = torch.where(self.free_commands[ids], self.p["free_tracking_demote"], self.p["tracking_demote"])
+        down = eligible & ~up & (terminated | ((self.track_count[ids] > 0) & (average < demote)))
         # Premature physical failure is evidence even when the minimum normal evaluation duration was not reached.
         down |= (self.age[ids] > 0) & ~neutral_exit & terminated
         group, level = self.group[ids], self.training_level[ids]
@@ -491,6 +582,9 @@ class StairCourse:
                 (self.yaw_track_sum / self.track_count.clamp_min(1))[:, None],
                 self.free_commands.float()[:, None],
                 (self.surface_time / self.p["free_surface_min_s"])[:, None],
+                (self.route_time / self.p["route_stuck_window_s"])[:, None],
+                (self.route_distance / self.p["route_stuck_distance_m"])[:, None],
+                self.stuck.float()[:, None],
             ),
             -1,
         ).clamp(-1, 1)

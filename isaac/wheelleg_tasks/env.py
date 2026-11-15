@@ -121,6 +121,8 @@ class WheelLegEnv(DirectRLEnv):
         self.commands = Commands(t, n, d)
         self.stair_course = StairCourse(n, t.stage, d) if t.task == "p1-stairs" else None
         self.commands.course = self.stair_course
+        if self.stair_course is not None and cfg.evaluation:
+            self.stair_course.flat_level.fill_(len(self.stair_course.flat_levels) - 1)
         # 改自 SCUT V14/env_cfg.py:1662-1668: 落地及之后的阶段把平滑惩罚降到约 1/5，给落地缓冲留出动作空间。
         self.reward_weights = dict(t.settings["rewards"])
         if self.family == "p1":
@@ -651,6 +653,7 @@ class WheelLegEnv(DirectRLEnv):
         second_difference = self.raw_action - 2 * self.previous_action + self.previous_previous_action
         return dict(
             tracked_command=tracked[:, [0, 2]],
+            root_position_w=data.root_pos_w,
             leg_action_second_difference=second_difference[:, self.legs],
             wheel_action_second_difference=second_difference[:, self.wheel_channels],
             velocity=data.root_lin_vel_b,
@@ -1014,6 +1017,9 @@ class WheelLegEnv(DirectRLEnv):
                 terms.update(self.landing_reward.terms(s, t.shared["wheel_radius_m"], self.step_dt))
         if self.stair_course is not None:
             p = t.stage["course"]
+            # Displacement already integrates dt; stuck is a continuous per-second cost.
+            terms["progress"] = p["route_progress_weight"] * self.stair_course.progress
+            terms["stuck"] = p["route_stuck_weight"] * self.step_dt * self.stair_course.stuck
             terms["stair_impact"] = p["impact_weight"] * self.stair_course.impact
             # No survival bounty in flight: bounded wheel-speed matching, disabled as soon as wheels touch.
             error = s["wheel_velocity"] * t.shared["wheel_radius_m"] - s["heading_velocity"][:, 0:1]
@@ -1403,6 +1409,14 @@ class WheelLegEnv(DirectRLEnv):
                     self.extras["log"][f"Stairs/{name}/physical_failure"] = (
                         self.reset_terminated[selected].float().mean()
                     )
+                    active_seconds = self.stair_course.route_active_seconds[selected].sum()
+                    self.extras["log"][f"Stairs/{name}/route_active_seconds"] = self.stair_course.route_active_seconds[
+                        selected
+                    ].mean()
+                    if active_seconds > 0:
+                        self.extras["log"][f"Stairs/{name}/route_stuck_ratio"] = (
+                            self.stair_course.stuck_seconds[selected].sum() / active_seconds
+                        )
                     self.extras["log"][f"Stairs/{name}/surface_active_seconds"] = self.stair_course.surface_time[
                         selected
                     ].mean()

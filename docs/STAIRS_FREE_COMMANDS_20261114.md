@@ -1,5 +1,9 @@
 # stairs自由转向调整
 
+2026-11-15追加：已按用户要求放宽grid/rough专用跟踪门槛；最新数值和左右转高度差审查见 [STAIRS_FREE_THRESHOLDS_20261115.md](STAIRS_FREE_THRESHOLDS_20261115.md)。优先于下文旧门槛及“未修改门槛”的历史说明；尚未更新云端。
+
+2026-11-15 revision 8：新增 stairs 平地独立八级课程，按4096个有效完成回合窗口升降，先扩高度再扩运动强度，最终仍覆盖最高可用站姿。设计、SCUT井字/粗糙判据对照和验证边界见 [STAIRS_FLAT_CURRICULUM_20261115.md](STAIRS_FLAT_CURRICULUM_20261115.md)。本次未修改井字/粗糙判据，未更新云端训练。
+
 本页为revision 7，优先于revision 6中“非平地只有小转向、仍有+x奖励/卡住惩罚”的历史说明。
 
 ## 仅井字和粗糙地形的自由指令

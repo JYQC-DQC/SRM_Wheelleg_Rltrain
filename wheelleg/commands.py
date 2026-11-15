@@ -97,8 +97,12 @@ class Commands:
                     )
                     speed = uniform((-bounds[1], bounds[1]), (len(selected),), self.device)
                     yaw = uniform(profile["yaw_range_rad_s"], (len(selected),), self.device)
+                    envelope = course.flat_levels[course.episode_flat_level[selected]]
+                    speed *= envelope[:, 0]
+                    yaw *= envelope[:, 1]
                     small = uniform(course.p["small_turn_range_rad_s"], (len(selected),), self.device)
                     small *= torch.where(torch.rand(len(selected), device=self.device) < 0.5, -1.0, 1.0)
+                    small *= envelope[:, 1]
                     yaw = torch.where(
                         torch.rand(len(selected), device=self.device) < course.p["small_turn_probability"], small, yaw
                     )
@@ -165,6 +169,11 @@ class Commands:
                         bounds[0],
                         self.cfg.shared["spring_extension_height_m"] - self.cfg.stage["step_height_margin_m"],
                     )
+                    fraction = self.course.flat_levels[self.course.episode_flat_level[selected], 2]
+                    self.target_height[selected, 0] = (
+                        bounds[0] + torch.rand(len(selected), device=self.device) * (bounds[1] - bounds[0]) * fraction
+                    )
+                    continue
                 self.target_height[selected, 0] = uniform(bounds, (len(selected),), self.device)
             self.height_remaining[ids] = uniform(p["height_duration_s"], (len(ids),), self.device)
             return

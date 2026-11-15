@@ -684,6 +684,23 @@ stages:
     step_height_hold_s: 0.3
     course:
       episode_length_s: 30.0
+      # Independent flat curriculum: vx/wz/height-range fractions (design values).
+      flat_curriculum:
+        levels:
+        - [0.20, 0.20, 0.45]
+        - [0.20, 0.20, 0.70]
+        - [0.35, 0.35, 0.70]
+        - [0.35, 0.35, 1.00]
+        - [0.50, 0.50, 1.00]
+        - [0.70, 0.70, 1.00]
+        - [0.85, 0.85, 1.00]
+        - [1.00, 1.00, 1.00]
+        min_completed_episodes: 4096
+        promote_rate: 0.60
+        demote_rate: 0.20
+        # Mean absolute error floors: m/s, rad/s, m; relative allowance for vx/wz.
+        error_thresholds: [0.15, 0.25, 0.06]
+        relative_error: 0.25
       initial_speed_fraction: 0.4
       minimum_speed_fraction: 0.3
       speed_increment: 0.05
@@ -691,6 +708,15 @@ stages:
       speed_promote_rate: 0.6
       speed_demote_rate: 0.3
       tracking_sigma: 0.5
+      # Route-only shaping: design values; not applied to flat/free commands.
+      route_progress_weight: 1.0  # per metre; displacement already includes dt
+      route_stuck_weight: -1.0  # per second after a failed motion window
+      route_stuck_window_s: 1.0
+      route_stuck_distance_m: 0.05
+      route_alignment_min: 0.8660254037844386  # within 30 degrees of commanded world +x travel
+      route_yaw_limit_rad_s: 0.3  # exclude substantial turning, including heading corrections
+      route_tracking_error_floor_m_s: 0.15
+      route_tracking_relative_error: 0.35
       tracking_promote: 0.6
       tracking_demote: 0.4
       minimum_episode_s: 2.0
@@ -737,8 +763,11 @@ stages:
       # Stand, straight, spin, combined; one policy and one episode stream.
       free_segment_probabilities: [0.15, 0.35, 0.20, 0.30]
       free_surface_min_s: 3.0
-      free_tracking_error_floor: [0.1, 0.1]  # m/s, rad/s; curriculum only, not reward weights.
-      free_tracking_relative_error: 0.25
+      # Free terrain curriculum: tolerate obstacle disturbances, retain rejection of stationary vx=0.25.
+      free_tracking_error_floor: [0.15, 0.30]  # m/s, rad/s; curriculum only.
+      free_tracking_relative_error: 0.35
+      free_tracking_promote: 0.50
+      free_tracking_demote: 0.25
       motion_segment_probabilities:
       - 0.25
       - 0.25

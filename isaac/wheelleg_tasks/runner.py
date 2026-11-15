@@ -21,7 +21,7 @@ class WheelLegRunner(OnPolicyRunner):
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task == "p1-stairs":
-            contract["stair_course_revision"] = 7
+            contract["stair_course_revision"] = 9
             contract["stair_course_features"] = STAIR_FEATURES
             contract["stair_scan"] = [
                 cfg.stage["course"][k] for k in ("scan_half_length_m", "scan_half_width_m", "scan_resolution_m")
@@ -62,6 +62,17 @@ class WheelLegRunner(OnPolicyRunner):
         if env.stair_course is None:
             self.writer.add_scalar("Curriculum/command_fraction", env.commands.command_fraction, iteration)
         if env.stair_course is not None:
+            course = env.stair_course
+            self.writer.add_scalar("Stairs/flat/command_level", course.flat_level.item(), iteration)
+            self.writer.add_scalar("Stairs/flat/window_pass_rate", course.flat_latest_pass.item(), iteration)
+            self.writer.add_scalar("Stairs/flat/window_completed", course.flat_completed.item(), iteration)
+            envelope = course.flat_levels[course.flat_level]
+            for column, name in enumerate(("vx_fraction", "wz_fraction", "height_fraction")):
+                self.writer.add_scalar(f"Stairs/flat/{name}", envelope[column].item(), iteration)
+            profile = env.training.stage["terrain"]["profiles"]["flat"]
+            low = profile["height_range_m"][0]
+            ceiling = env.training.shared["spring_extension_height_m"] - env.training.stage["step_height_margin_m"]
+            self.writer.add_scalar("Stairs/flat/height_max_m", low + (ceiling - low) * envelope[2].item(), iteration)
             counts = env.stair_course.reset_counts.detach().cpu()
             for label, row in [
                 ("Stairs", counts.sum(0)),
@@ -135,6 +146,10 @@ class WheelLegRunner(OnPolicyRunner):
                 k: getattr(env.stair_course, k).cpu() for k in ("speed_fraction", "completed", "passed", "latest_pass")
             }
             extra["stair_terrain_levels"] = env.stair_course.training_level.cpu()
+            extra["stair_flat_curriculum"] = {
+                k: getattr(env.stair_course, k).cpu()
+                for k in ("flat_level", "flat_completed", "flat_passed", "flat_latest_pass")
+            }
         if hasattr(self.alg, "estimator_optimizer"):
             extra["estimator_optimizer"] = self.alg.estimator_optimizer.state_dict()
         super().save(path, extra)
@@ -183,6 +198,8 @@ class WheelLegRunner(OnPolicyRunner):
             for k in ("speed_fraction", "completed", "passed", "latest_pass"):
                 getattr(env.stair_course, k).copy_(infos["stair_course"][k].to(env.device))
             saved = infos["stair_terrain_levels"].to(env.device)
+            for k in ("flat_level", "flat_completed", "flat_passed", "flat_latest_pass"):
+                getattr(env.stair_course, k).copy_(infos["stair_flat_curriculum"][k].to(env.device))
             env.stair_course.training_level.copy_(saved)
             env.terrain.terrain_levels.copy_(saved)
             env.terrain.env_origins.copy_(env.terrain.terrain_origins[saved, env.terrain.terrain_types])

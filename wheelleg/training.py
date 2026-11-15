@@ -435,6 +435,43 @@ def _validate_training(cfg: TrainingConfig) -> None:
             if key not in cfg.stage:
                 raise ValueError(f"{prefix}.{key} is required; regenerate stairs configuration")
         course, terrain = cfg.stage["course"], cfg.stage["terrain"]
+        if "flat_curriculum" not in course:
+            raise ValueError(f"{prefix}.course.flat_curriculum is required")
+        flat = course["flat_curriculum"]
+        for key in (
+            "levels",
+            "min_completed_episodes",
+            "promote_rate",
+            "demote_rate",
+            "error_thresholds",
+            "relative_error",
+        ):
+            if key not in flat:
+                raise ValueError(f"{prefix}.course.flat_curriculum.{key} is required")
+        levels = flat["levels"]
+        if not levels or any(
+            len(row) != 3 or any(type(v) not in (int, float) or not isfinite(v) or not 0 < v <= 1 for v in row)
+            for row in levels
+        ):
+            raise ValueError(f"{prefix}.course.flat_curriculum.levels: vx/wz/height fractions must be in (0,1]")
+        if tuple(levels[-1]) != (1, 1, 1) or any(
+            any(a > b for a, b in zip(previous, current)) for previous, current in zip(levels, levels[1:])
+        ):
+            raise ValueError(f"{prefix}.course.flat_curriculum.levels must be monotonic and end at [1,1,1]")
+        minimum = flat["min_completed_episodes"]
+        if type(minimum) is not int or minimum < cfg.settings["num_envs"]:
+            raise ValueError(f"{prefix}.course.flat_curriculum.min_completed_episodes must be >= training.num_envs")
+        rates = (flat["demote_rate"], flat["promote_rate"])
+        if any(type(v) not in (int, float) or not isfinite(v) for v in rates) or not 0 <= rates[0] < rates[1] <= 1:
+            raise ValueError(f"{prefix}.course.flat_curriculum: expected 0 <= demote_rate < promote_rate <= 1")
+        errors = flat["error_thresholds"]
+        if len(errors) != 3 or any(type(v) not in (int, float) or not isfinite(v) or v <= 0 for v in errors):
+            raise ValueError(
+                f"{prefix}.course.flat_curriculum.error_thresholds: positive vx/wz/height tolerances required"
+            )
+        relative = flat["relative_error"]
+        if type(relative) not in (int, float) or not isfinite(relative) or relative < 0:
+            raise ValueError(f"{prefix}.course.flat_curriculum.relative_error must be finite and nonnegative")
         if "guide_body_regex" not in course or type(course["guide_body_regex"]) is not str:
             raise ValueError(f"{prefix}.course.guide_body_regex: required body-name regular expression")
         required = (
@@ -446,6 +483,14 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "speed_promote_rate",
             "speed_demote_rate",
             "tracking_sigma",
+            "route_progress_weight",
+            "route_stuck_weight",
+            "route_stuck_window_s",
+            "route_stuck_distance_m",
+            "route_alignment_min",
+            "route_yaw_limit_rad_s",
+            "route_tracking_error_floor_m_s",
+            "route_tracking_relative_error",
             "tracking_promote",
             "tracking_demote",
             "minimum_episode_s",
@@ -506,7 +551,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
             else:
                 if type(value) not in (int, float) or not isfinite(value):
                     raise ValueError(f"{prefix}.course.{key}: expected finite number")
-                if key == "impact_weight":
+                if key in ("impact_weight", "route_stuck_weight"):
                     invalid = value >= 0
                 elif key in ("reverse_probability", "yaw_jitter_rad", "speed_demote_rate", "tracking_demote"):
                     invalid = value < 0
@@ -514,6 +559,10 @@ def _validate_training(cfg: TrainingConfig) -> None:
                     invalid = value <= 0
                 if invalid:
                     raise ValueError(f"{prefix}.course.{key}: invalid sign or zero")
+        if course["route_alignment_min"] > 1:
+            raise ValueError(f"{prefix}.course.route_alignment_min must be in (0,1]")
+        if course["route_stuck_window_s"] >= course["episode_length_s"]:
+            raise ValueError(f"{prefix}.course.route_stuck_window_s must be shorter than the episode")
         if (
             not 0 < course["minimum_speed_fraction"] < 1
             or not course["minimum_speed_fraction"] <= course["initial_speed_fraction"] <= 1
@@ -543,6 +592,11 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 type(v) not in (int, float) or not isfinite(v) or v <= 0 for v in values
             ):
                 raise ValueError(f"{prefix}.course.{key}: positive finite tolerances required")
+        for key in ("free_tracking_promote", "free_tracking_demote"):
+            if key not in course or type(course[key]) not in (int, float) or not isfinite(course[key]):
+                raise ValueError(f"{prefix}.course.{key}: finite threshold required")
+        if not 0 <= course["free_tracking_demote"] < course["free_tracking_promote"] <= 1:
+            raise ValueError(f"{prefix}.course: expected 0 <= free_tracking_demote < free_tracking_promote <= 1")
         if (
             any(type(v) not in (int, float) or not isfinite(v) or v <= 0 for v in free_probabilities)
             or abs(sum(free_probabilities) - 1) > 1e-6

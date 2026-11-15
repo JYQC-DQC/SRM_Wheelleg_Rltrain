@@ -1,5 +1,11 @@
 # 平地起立训练的经验教训（2026-11-10 至 11-12）
 
+2026-11-15 revision 9：仅traverse且指令沿+x的小转向路段恢复进展/stuck，并收紧路线低速课程评分；flat/free不受影响。条件、权重与critic 378维合同见 [STAIRS_ROUTE_SHAPING_20261115.md](STAIRS_ROUTE_SHAPING_20261115.md)。尚未部署云端，优先于下文“stairs删除进展/stuck”的历史说明。
+
+2026-11-15追加：已按用户要求放宽grid/rough专用跟踪门槛；最新数值和左右转高度差审查见 [STAIRS_FREE_THRESHOLDS_20261115.md](STAIRS_FREE_THRESHOLDS_20261115.md)。优先于下文旧门槛及“未修改门槛”的历史说明；尚未更新云端。
+
+2026-11-15 revision 8：新增 stairs 平地独立八级课程，按4096个有效完成回合窗口升降，先扩高度再扩运动强度，最终仍覆盖最高可用站姿。设计、SCUT井字/粗糙判据对照和验证边界见 [STAIRS_FLAT_CURRICULUM_20261115.md](STAIRS_FLAT_CURRICULUM_20261115.md)。本次未修改井字/粗糙判据，未更新云端训练。
+
 2026-11-14 revision 7：stairs删除世界+x进展/卡住项，宽核高度权重2→1；仅井字和粗糙地形加入站立/直行/自转/组合。生效规则与停留风险见 [STAIRS_FREE_COMMANDS_20261114.md](STAIRS_FREE_COMMANDS_20261114.md)。本地改动未在Isaac/GPU运行，未更新云端。
 
 2026-11-14 revision 6：中性出界、取消中心走廊、扩大井字/坡面/粗糙覆盖及受限随机出生，以 [STAIRS_BOUNDARIES_20261114.md](STAIRS_BOUNDARIES_20261114.md) 为准。纯出界不扣终止分、不进成功率分子分母、不升降课程；物理失败优先。此版本尚未在Isaac/GPU运行。
