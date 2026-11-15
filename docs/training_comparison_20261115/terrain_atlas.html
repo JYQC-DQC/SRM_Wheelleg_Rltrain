@@ -1,0 +1,4594 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>地形对照图册</title><style>body{margin:0;background:#f3f5f9;color:#202b3a;font:16px/1.65 "Microsoft YaHei",sans-serif}nav{position:sticky;top:0;background:#15283e;padding:12px 3%;z-index:5}nav a{color:#cce4ff;margin-right:16px}main{max-width:1450px;margin:25px auto;background:white;padding:36px 45px;border-radius:12px}h1,h2,h3{color:#153654}h2{margin-top:45px;border-bottom:2px solid #dde6ef;padding-bottom:8px}table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto;margin:18px 0}th,td{border:1px solid #d7dfe8;padding:8px 10px;vertical-align:top;min-width:65px}th{background:#e7eff7}tr:nth-child(even){background:#f8fafc}a{color:#1766ac}img{max-width:100%;height:auto;border:1px solid #dce4ed}pre{background:#152333;color:#e7eff8;padding:18px;overflow:auto;font-size:12px}details{border:1px solid #dce4ed;border-radius:5px;padding:10px;margin:10px 0}summary{cursor:pointer;color:#1766ac;font-weight:bold}code{font-family:Consolas,monospace}footer{padding:20px;color:#556}</style><nav><a href="index.html">总览</a><a href="terrain_atlas.html">地形图册</a><a href="ours.html">我们</a><a href="scut.html">华南虎</a><a href="fudan.html">复旦</a><a href="definitions.html">公式定义</a></nav><main><h1 id="_1">地形对照图册</h1>
+<p><a href="index.html">返回总览</a></p>
+<p>全部参数示意图，非仿真截图。轴为米，竖向视觉比例放大；随机纹理/API几何不精确复现。粉点为名义出生区域，非所有随机出生。d=1为配置端点，不保证课程实际采样。tunnel缺参不代填；复旦历史地形实现未保存时明确标注。</p>
+<table>
+<thead>
+<tr>
+<th>图号</th>
+<th>学校</th>
+<th>类型</th>
+<th>使用配置数</th>
+<th>证据备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T001</td>
+<td>我们</td>
+<td>无限平面</td>
+<td>1</td>
+<td>仅显示8×8米窗口，非有限地块</td>
+</tr>
+<tr>
+<td>T002</td>
+<td>我们</td>
+<td>stairs / flat</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T003</td>
+<td>我们</td>
+<td>stairs / up_one</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T004</td>
+<td>我们</td>
+<td>stairs / down_one</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T005</td>
+<td>我们</td>
+<td>stairs / mixed_one</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T006</td>
+<td>我们</td>
+<td>stairs / mixed_fast</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T007</td>
+<td>我们</td>
+<td>stairs / up_two</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T008</td>
+<td>我们</td>
+<td>stairs / down_two</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T009</td>
+<td>我们</td>
+<td>stairs / mixed_two</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T010</td>
+<td>我们</td>
+<td>stairs / grid</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T011</td>
+<td>我们</td>
+<td>stairs / slope</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T012</td>
+<td>我们</td>
+<td>stairs / rough</td>
+<td>1</td>
+<td>非平地从接近平台进入；平地从中心区域出生</td>
+</tr>
+<tr>
+<td>T013</td>
+<td>我们</td>
+<td>recovery / flat</td>
+<td>1</td>
+<td>内置Hf粗糙仅画类型示意</td>
+</tr>
+<tr>
+<td>T014</td>
+<td>我们</td>
+<td>recovery / one</td>
+<td>1</td>
+<td>内置Hf粗糙仅画类型示意</td>
+</tr>
+<tr>
+<td>T015</td>
+<td>我们</td>
+<td>recovery / two</td>
+<td>1</td>
+<td>内置Hf粗糙仅画类型示意</td>
+</tr>
+<tr>
+<td>T016</td>
+<td>我们</td>
+<td>recovery / slope</td>
+<td>1</td>
+<td>内置Hf粗糙仅画类型示意</td>
+</tr>
+<tr>
+<td>T017</td>
+<td>我们</td>
+<td>recovery / bumps</td>
+<td>1</td>
+<td>内置Hf粗糙仅画类型示意</td>
+</tr>
+<tr>
+<td>T018</td>
+<td>我们</td>
+<td>recovery / rough</td>
+<td>1</td>
+<td>内置Hf粗糙仅画类型示意</td>
+</tr>
+<tr>
+<td>T019</td>
+<td>我们</td>
+<td>spin / flat</td>
+<td>1</td>
+<td>坡道出生在坡面；rough为类型示意</td>
+</tr>
+<tr>
+<td>T020</td>
+<td>我们</td>
+<td>spin / slope</td>
+<td>1</td>
+<td>坡道出生在坡面；rough为类型示意</td>
+</tr>
+<tr>
+<td>T021</td>
+<td>我们</td>
+<td>spin / rough</td>
+<td>1</td>
+<td>坡道出生在坡面；rough为类型示意</td>
+</tr>
+<tr>
+<td>T022</td>
+<td>我们</td>
+<td>跳隧道横梁及护栏</td>
+<td>1</td>
+<td>横梁x仅为排版；接近距离、护栏厚度待定，故不画出生点</td>
+</tr>
+<tr>
+<td>T023</td>
+<td>华南虎</td>
+<td>无限平面</td>
+<td>3</td>
+<td>仅显示9×9米窗口</td>
+</tr>
+<tr>
+<td>T024</td>
+<td>华南虎</td>
+<td>tiny_step_rot</td>
+<td>7</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T025</td>
+<td>华南虎</td>
+<td>slope_for_rm_low</td>
+<td>7</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T026</td>
+<td>华南虎</td>
+<td>inv_slope_for_rm_low</td>
+<td>9</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T027</td>
+<td>华南虎</td>
+<td>stair_slope_for_rm_low</td>
+<td>7</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T028</td>
+<td>华南虎</td>
+<td>stair_slope_for_rm_mid</td>
+<td>1</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T029</td>
+<td>华南虎</td>
+<td>inv_stair_slope_for_rm_low</td>
+<td>9</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T030</td>
+<td>华南虎</td>
+<td>inv_stair_slope_for_rm_mid</td>
+<td>1</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T031</td>
+<td>华南虎</td>
+<td>plane_for_rm_rot</td>
+<td>9</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T032</td>
+<td>华南虎</td>
+<td>random_uniform_for_rm</td>
+<td>8</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T033</td>
+<td>华南虎</td>
+<td>tiny_step</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T034</td>
+<td>华南虎</td>
+<td>slope_for_rm_high</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T035</td>
+<td>华南虎</td>
+<td>high_stair_for_rm</td>
+<td>1</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T036</td>
+<td>华南虎</td>
+<td>stair_slope_for_rm_high</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T037</td>
+<td>华南虎</td>
+<td>inv_stair_slope_for_rm_high</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T038</td>
+<td>华南虎</td>
+<td>random_uniform_for_rm</td>
+<td>1</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T039</td>
+<td>华南虎</td>
+<td>cliff_inv_stair_slope_short_for_rm</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T040</td>
+<td>华南虎</td>
+<td>low_speed_stair_for_rm</td>
+<td>1</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T041</td>
+<td>华南虎</td>
+<td>high_speed_stair_for_rm</td>
+<td>1</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T042</td>
+<td>华南虎</td>
+<td>stair_slope_for_rm_mid</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T043</td>
+<td>华南虎</td>
+<td>inv_stair_slope_for_rm_mid</td>
+<td>2</td>
+<td>按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</td>
+</tr>
+<tr>
+<td>T044</td>
+<td>复旦</td>
+<td>平地</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T045</td>
+<td>复旦</td>
+<td>光滑凸坡</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T046</td>
+<td>复旦</td>
+<td>光滑凹坡</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T047</td>
+<td>复旦</td>
+<td>粗糙凸坡</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T048</td>
+<td>复旦</td>
+<td>粗糙凹坡</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T049</td>
+<td>复旦</td>
+<td>下阶凹地形</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T050</td>
+<td>复旦</td>
+<td>上阶凸地形</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T051</td>
+<td>复旦</td>
+<td>离散障碍</td>
+<td>1</td>
+<td>历史未保存terrain.py，按现有工具示意，不能证明历史网格</td>
+</tr>
+<tr>
+<td>T052</td>
+<td>复旦</td>
+<td>踏石（未启用）</td>
+<td>1</td>
+<td>生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值</td>
+</tr>
+<tr>
+<td>T053</td>
+<td>复旦</td>
+<td>沟槽（未启用）</td>
+<td>1</td>
+<td>生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值</td>
+</tr>
+<tr>
+<td>T054</td>
+<td>复旦</td>
+<td>坑（未启用）</td>
+<td>1</td>
+<td>生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_2">台阶</h2>
+<p><img alt="台阶" src="images/compare_stairs.jpg" /></p>
+<h2 id="_3">粗糙与粗糙坡</h2>
+<p><img alt="粗糙与粗糙坡" src="images/compare_rough.jpg" /></p>
+<h2 id="_4">坡道</h2>
+<p><img alt="坡道" src="images/compare_slope.jpg" /></p>
+<h2 id="_5">井字与离散障碍：复旦不是同款井字</h2>
+<p><img alt="井字与离散障碍：复旦不是同款井字" src="images/compare_grid.jpg" /></p>
+<h2 id="t001">T001 我们 / 无限平面</h2>
+<p><img alt="T001" src="images/T001.png" /></p>
+<p><strong>说明：</strong> 仅显示8×8米窗口，非有限地块</p>
+<p><strong>使用配置：</strong> p1-flat / p1-landing / p3-jump</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/env_cfg.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td>{}</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t002-stairs-flat">T002 我们 / stairs / flat</h2>
+<p><img alt="T002" src="images/T002.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs flat</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>flat</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>0</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.0, 2.7]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>motion</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-5.0, 5.0]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.2, 0.43885688]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.0, 2.7]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t003-stairs-up_one">T003 我们 / stairs / up_one</h2>
+<p><img alt="T003" src="images/T003.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs up_one</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>up</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>1</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.5, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.3, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t004-stairs-down_one">T004 我们 / stairs / down_one</h2>
+<p><img alt="T004" src="images/T004.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs down_one</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>down</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>1</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.5, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.3, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t005-stairs-mixed_one">T005 我们 / stairs / mixed_one</h2>
+<p><img alt="T005" src="images/T005.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs mixed_one</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>mixed</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>1</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.5, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.3, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t006-stairs-mixed_fast">T006 我们 / stairs / mixed_fast</h2>
+<p><img alt="T006" src="images/T006.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs mixed_fast</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>mixed</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>1</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[1.5, 2.7]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.6, 1.0]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t007-stairs-up_two">T007 我们 / stairs / up_two</h2>
+<p><img alt="T007" src="images/T007.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs up_two</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>up</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>2</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.5, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.3, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t008-stairs-down_two">T008 我们 / stairs / down_two</h2>
+<p><img alt="T008" src="images/T008.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs down_two</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>down</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>2</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.5, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.3, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t009-stairs-mixed_two">T009 我们 / stairs / mixed_two</h2>
+<p><img alt="T009" src="images/T009.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs mixed_two</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>mixed</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>2</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.5, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.3, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t010-stairs-grid">T010 我们 / stairs / grid</h2>
+<p><img alt="T010" src="images/T010.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs grid</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>grid</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>0</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.3, 1.2]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>free</td>
+</tr>
+<tr>
+<td>profile.free_yaw_limit_range_rad_s</td>
+<td>[0.5, 2.0]</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.3, 0.3]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.38]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.25, 0.5]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t011-stairs-slope">T011 我们 / stairs / slope</h2>
+<p><img alt="T011" src="images/T011.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs slope</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>slope</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>0</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.4, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>traverse</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.24, 0.34]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.25, 0.6]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t012-stairs-rough">T012 我们 / stairs / rough</h2>
+<p><img alt="T012" src="images/T012.png" /></p>
+<p><strong>说明：</strong> 非平地从接近平台进入；平地从中心区域出生</p>
+<p><strong>使用配置：</strong> p1-stairs rough</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py:course_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>profile.proportion</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>profile.kind</td>
+<td>rough</td>
+</tr>
+<tr>
+<td>profile.step_count</td>
+<td>0</td>
+</tr>
+<tr>
+<td>profile.speed_range_m_s</td>
+<td>[0.3, 1.5]</td>
+</tr>
+<tr>
+<td>profile.command_mode</td>
+<td>free</td>
+</tr>
+<tr>
+<td>profile.free_yaw_limit_range_rad_s</td>
+<td>[0.5, 2.0]</td>
+</tr>
+<tr>
+<td>profile.heading_yaw_limit_rad_s</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>profile.yaw_range_rad_s</td>
+<td>[-0.3, 0.3]</td>
+</tr>
+<tr>
+<td>profile.height_range_m</td>
+<td>[0.22, 0.38]</td>
+</tr>
+<tr>
+<td>profile.start_speed_range_m_s</td>
+<td>[0.25, 0.5]</td>
+</tr>
+<tr>
+<td>geometry.tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>geometry.rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>geometry.columns</td>
+<td>20</td>
+</tr>
+<tr>
+<td>geometry.step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>geometry.step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>geometry.rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>geometry.rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>geometry.border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>geometry.boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>geometry.spawn_x_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>geometry.entry_x_m</td>
+<td>2.4</td>
+</tr>
+<tr>
+<td>geometry.surface_x_range_m</td>
+<td>[2.0, 6.2]</td>
+</tr>
+<tr>
+<td>geometry.exit_x_m</td>
+<td>5.6</td>
+</tr>
+<tr>
+<td>geometry.finish_x_m</td>
+<td>6.6</td>
+</tr>
+<tr>
+<td>geometry.ground_thickness_m</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>geometry.seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>geometry.surface_resolution_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>geometry.grid.width_range_m</td>
+<td>[0.08, 0.12]</td>
+</tr>
+<tr>
+<td>geometry.grid.height_range_m</td>
+<td>[0.025, 0.045]</td>
+</tr>
+<tr>
+<td>geometry.grid.spacing_range_m</td>
+<td>[0.55, 0.7]</td>
+</tr>
+<tr>
+<td>geometry.grid.half_span_m</td>
+<td>3.8</td>
+</tr>
+<tr>
+<td>geometry.rough_proportion</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t013-recovery-flat">T013 我们 / recovery / flat</h2>
+<p><img alt="T013" src="images/T013.png" /></p>
+<p><strong>说明：</strong> 内置Hf粗糙仅画类型示意</p>
+<p><strong>使用配置：</strong> p1-recovery flat</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>bump_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>bump_height_range_m</td>
+<td>[0.01, 0.07]</td>
+</tr>
+<tr>
+<td>bump_spacing_m</td>
+<td>0.24</td>
+</tr>
+<tr>
+<td>bump_width_m</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t014-recovery-one">T014 我们 / recovery / one</h2>
+<p><img alt="T014" src="images/T014.png" /></p>
+<p><strong>说明：</strong> 内置Hf粗糙仅画类型示意</p>
+<p><strong>使用配置：</strong> p1-recovery one</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>bump_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>bump_height_range_m</td>
+<td>[0.01, 0.07]</td>
+</tr>
+<tr>
+<td>bump_spacing_m</td>
+<td>0.24</td>
+</tr>
+<tr>
+<td>bump_width_m</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t015-recovery-two">T015 我们 / recovery / two</h2>
+<p><img alt="T015" src="images/T015.png" /></p>
+<p><strong>说明：</strong> 内置Hf粗糙仅画类型示意</p>
+<p><strong>使用配置：</strong> p1-recovery two</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>bump_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>bump_height_range_m</td>
+<td>[0.01, 0.07]</td>
+</tr>
+<tr>
+<td>bump_spacing_m</td>
+<td>0.24</td>
+</tr>
+<tr>
+<td>bump_width_m</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t016-recovery-slope">T016 我们 / recovery / slope</h2>
+<p><img alt="T016" src="images/T016.png" /></p>
+<p><strong>说明：</strong> 内置Hf粗糙仅画类型示意</p>
+<p><strong>使用配置：</strong> p1-recovery slope</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>bump_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>bump_height_range_m</td>
+<td>[0.01, 0.07]</td>
+</tr>
+<tr>
+<td>bump_spacing_m</td>
+<td>0.24</td>
+</tr>
+<tr>
+<td>bump_width_m</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t017-recovery-bumps">T017 我们 / recovery / bumps</h2>
+<p><img alt="T017" src="images/T017.png" /></p>
+<p><strong>说明：</strong> 内置Hf粗糙仅画类型示意</p>
+<p><strong>使用配置：</strong> p1-recovery bumps</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>bump_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>bump_height_range_m</td>
+<td>[0.01, 0.07]</td>
+</tr>
+<tr>
+<td>bump_spacing_m</td>
+<td>0.24</td>
+</tr>
+<tr>
+<td>bump_width_m</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t018-recovery-rough">T018 我们 / recovery / rough</h2>
+<p><img alt="T018" src="images/T018.png" /></p>
+<p><strong>说明：</strong> 内置Hf粗糙仅画类型示意</p>
+<p><strong>使用配置：</strong> p1-recovery rough</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/terrain.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[8.0, 8.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>step_height_range_m</td>
+<td>[0.02, 0.24]</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>bump_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[0.0, 0.4363323129985824]</td>
+</tr>
+<tr>
+<td>bump_height_range_m</td>
+<td>[0.01, 0.07]</td>
+</tr>
+<tr>
+<td>bump_spacing_m</td>
+<td>0.24</td>
+</tr>
+<tr>
+<td>bump_width_m</td>
+<td>0.12</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t019-spin-flat">T019 我们 / spin / flat</h2>
+<p><img alt="T019" src="images/T019.png" /></p>
+<p><strong>说明：</strong> 坡道出生在坡面；rough为类型示意</p>
+<p><strong>使用配置：</strong> p2-spin flat</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/env_cfg.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[9.0, 9.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>difficulty_range</td>
+<td>[0.0, 1.0]</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t020-spin-slope">T020 我们 / spin / slope</h2>
+<p><img alt="T020" src="images/T020.png" /></p>
+<p><strong>说明：</strong> 坡道出生在坡面；rough为类型示意</p>
+<p><strong>使用配置：</strong> p2-spin slope</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/env_cfg.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[9.0, 9.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>difficulty_range</td>
+<td>[0.0, 1.0]</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t021-spin-rough">T021 我们 / spin / rough</h2>
+<p><img alt="T021" src="images/T021.png" /></p>
+<p><strong>说明：</strong> 坡道出生在坡面；rough为类型示意</p>
+<p><strong>使用配置：</strong> p2-spin rough</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/env_cfg.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tile_size_m</td>
+<td>[9.0, 9.0]</td>
+</tr>
+<tr>
+<td>rows</td>
+<td>8</td>
+</tr>
+<tr>
+<td>columns</td>
+<td>10</td>
+</tr>
+<tr>
+<td>difficulty_range</td>
+<td>[0.0, 1.0]</td>
+</tr>
+<tr>
+<td>flat_proportion</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>rough_proportion</td>
+<td>0.3</td>
+</tr>
+<tr>
+<td>slope_proportion</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>rough_noise_range_m</td>
+<td>[0.0, 0.03]</td>
+</tr>
+<tr>
+<td>rough_noise_step_m</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>rough_downsampled_scale_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>heightfield_border_width_m</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>border_width_m</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>boundary_margin_m</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>slope_angle_range_rad</td>
+<td>[-0.1, 0.1]</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t022">T022 我们 / 跳隧道横梁及护栏</h2>
+<p><img alt="T022" src="images/T022.png" /></p>
+<p><strong>说明：</strong> 横梁x仅为排版；接近距离、护栏厚度待定，故不画出生点</p>
+<p><strong>使用配置：</strong> p3-tunnel</p>
+<p><strong>来源：</strong> isaac/wheelleg_tasks/env.py</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vx_range_m_s</td>
+<td>null（未配置/待填）</td>
+</tr>
+<tr>
+<td>beam_height_m</td>
+<td>0.27</td>
+</tr>
+<tr>
+<td>beam_length_m</td>
+<td>0.35</td>
+</tr>
+<tr>
+<td>beam_thickness_m</td>
+<td>0.02</td>
+</tr>
+<tr>
+<td>no_jump_beam_pose</td>
+<td>[0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0]</td>
+</tr>
+<tr>
+<td>lane_width_m</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>rail_height_m</td>
+<td>0.2</td>
+</tr>
+<tr>
+<td>lane_length_m</td>
+<td>2.9</td>
+</tr>
+<tr>
+<td>rail_thickness_m</td>
+<td>null（未配置/待填）</td>
+</tr>
+<tr>
+<td>approach_distance_m</td>
+<td>null（未配置/待填）</td>
+</tr>
+<tr>
+<td>trigger_distance_m</td>
+<td>null（未配置/待填）</td>
+</tr>
+<tr>
+<td>height_curriculum_m</td>
+<td>[0.1, 0.15, 0.2, 0.27, 0.3]</td>
+</tr>
+<tr>
+<td>clearance_margin_m</td>
+<td>0.03</td>
+</tr>
+<tr>
+<td>landing_margin_m</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>initial_yaw_range_rad</td>
+<td>[-0.0872664626, 0.0872664626]</td>
+</tr>
+<tr>
+<td>crossing_weight</td>
+<td>5.0</td>
+</tr>
+<tr>
+<td>obstacle_contact_weight</td>
+<td>-5.0</td>
+</tr>
+<tr>
+<td>top_contact_weight</td>
+<td>-10.0</td>
+</tr>
+<tr>
+<td>approach_jitter_m</td>
+<td>null（未配置/待填）</td>
+</tr>
+<tr>
+<td>height_jitter_m</td>
+<td>[-0.01, 0.01]</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t023">T023 华南虎 / 无限平面</h2>
+<p><img alt="T023" src="images/T023.png" /></p>
+<p><strong>说明：</strong> 仅显示9×9米窗口</p>
+<p><strong>使用配置：</strong> 26_infantry\flat_and_rotation\2026-07-19_09-14-50；26_infantry\flat_and_rotation\2026-07-19_21-16-33；26_infantry\flat_and_rotation\2026-07-29_23-20-03</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\flat_and_rotation\2026-07-19_09-14-50\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td>{}</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t024-tiny_step_rot">T024 华南虎 / tiny_step_rot</h2>
+<p><img alt="T024" src="images/T024.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / tiny_step_rot；26_infantry\rotation_translation\2026-07-28_23-17-10 / tiny_step_rot；26_infantry\rotation_translation\2026-07-29_18-15-16 / tiny_step_rot；26_infantry\rotation_translation\2026-07-30_14-44-58 / tiny_step_rot；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / tiny_step_rot；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / tiny_step_rot；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / tiny_step_rot</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>num_horizontal</td>
+<td>null</td>
+</tr>
+<tr>
+<td>num_horizontal_range</td>
+<td>["2", "4"]</td>
+</tr>
+<tr>
+<td>num_vertical</td>
+<td>null</td>
+</tr>
+<tr>
+<td>num_vertical_range</td>
+<td>["2", "4"]</td>
+</tr>
+<tr>
+<td>randomize_bar_count_difficulty</td>
+<td>true</td>
+</tr>
+<tr>
+<td>force_unequal_counts</td>
+<td>false</td>
+</tr>
+<tr>
+<td>force_even_counts</td>
+<td>true</td>
+</tr>
+<tr>
+<td>bar_width</td>
+<td>null</td>
+</tr>
+<tr>
+<td>bar_width_range</td>
+<td>["0.05", "0.2"]</td>
+</tr>
+<tr>
+<td>randomize_bar_width_difficulty</td>
+<td>true</td>
+</tr>
+<tr>
+<td>bar_height</td>
+<td>null</td>
+</tr>
+<tr>
+<td>bar_height_range</td>
+<td>["0.01", "0.03"]</td>
+</tr>
+<tr>
+<td>bar_length_ratio</td>
+<td>0.95</td>
+</tr>
+<tr>
+<td>ground_thickness</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t025-slope_for_rm_low">T025 华南虎 / slope_for_rm_low</h2>
+<p><img alt="T025" src="images/T025.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / slope_for_rm_low；26_infantry\rotation_translation\2026-07-28_23-17-10 / slope_for_rm_low；26_infantry\rotation_translation\2026-07-29_18-15-16 / slope_for_rm_low；26_infantry\rotation_translation\2026-07-30_14-44-58 / slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / slope_for_rm_low</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>slope_range</td>
+<td>["0.05", "0.15"]</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t026-inv_slope_for_rm_low">T026 华南虎 / inv_slope_for_rm_low</h2>
+<p><img alt="T026" src="images/T026.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / inv_slope_for_rm_low；26_infantry\rotation_translation\2026-07-28_23-17-10 / inv_slope_for_rm_low；26_infantry\rotation_translation\2026-07-29_18-15-16 / inv_slope_for_rm_low；26_infantry\rotation_translation\2026-07-30_14-44-58 / inv_slope_for_rm_low；26_infantry\rough_dash\2026-07-14_15-26-16 / inv_slope_for_rm_low；26_infantry\rough_dash\2026-07-19_19-15-07 / inv_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / inv_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / inv_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / inv_slope_for_rm_low</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>slope_range</td>
+<td>["0.05", "0.15"]</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t027-stair_slope_for_rm_low">T027 华南虎 / stair_slope_for_rm_low</h2>
+<p><img alt="T027" src="images/T027.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / stair_slope_for_rm_low；26_infantry\rotation_translation\2026-07-28_23-17-10 / stair_slope_for_rm_low；26_infantry\rotation_translation\2026-07-29_18-15-16 / stair_slope_for_rm_low；26_infantry\rotation_translation\2026-07-30_14-44-58 / stair_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / stair_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / stair_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / stair_slope_for_rm_low</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.005", "0.015"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t028-stair_slope_for_rm_mid">T028 华南虎 / stair_slope_for_rm_mid</h2>
+<p><img alt="T028" src="images/T028.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / stair_slope_for_rm_mid</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.015", "0.04"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t029-inv_stair_slope_for_rm_low">T029 华南虎 / inv_stair_slope_for_rm_low</h2>
+<p><img alt="T029" src="images/T029.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / inv_stair_slope_for_rm_low；26_infantry\rotation_translation\2026-07-28_23-17-10 / inv_stair_slope_for_rm_low；26_infantry\rotation_translation\2026-07-29_18-15-16 / inv_stair_slope_for_rm_low；26_infantry\rotation_translation\2026-07-30_14-44-58 / inv_stair_slope_for_rm_low；26_infantry\rough_dash\2026-07-14_15-26-16 / inv_stair_slope_for_rm_low；26_infantry\rough_dash\2026-07-19_19-15-07 / inv_stair_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / inv_stair_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / inv_stair_slope_for_rm_low；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / inv_stair_slope_for_rm_low</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.005", "0.015"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t030-inv_stair_slope_for_rm_mid">T030 华南虎 / inv_stair_slope_for_rm_mid</h2>
+<p><img alt="T030" src="images/T030.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / inv_stair_slope_for_rm_mid</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.015", "0.04"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t031-plane_for_rm_rot">T031 华南虎 / plane_for_rm_rot</h2>
+<p><img alt="T031" src="images/T031.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / plane_for_rm_rot；26_infantry\rotation_translation\2026-07-28_23-17-10 / plane_for_rm_rot；26_infantry\rotation_translation\2026-07-29_18-15-16 / plane_for_rm_rot；26_infantry\rotation_translation\2026-07-30_14-44-58 / plane_for_rm_rot；26_infantry\rough_dash\2026-07-14_15-26-16 / plane_for_rm；26_infantry\rough_dash\2026-07-19_19-15-07 / plane_for_rm；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / plane_for_rm_rot；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / plane_for_rm_rot；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / plane_for_rm_rot</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td>{}</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t032-random_uniform_for_rm">T032 华南虎 / random_uniform_for_rm</h2>
+<p><img alt="T032" src="images/T032.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rotation_translation\2026-07-28_00-39-42 / random_uniform_for_rm；26_infantry\rotation_translation\2026-07-28_23-17-10 / random_uniform_for_rm；26_infantry\rotation_translation\2026-07-29_18-15-16 / random_uniform_for_rm；26_infantry\rotation_translation\2026-07-30_14-44-58 / random_uniform_for_rm；26_infantry\rough_dash\2026-07-19_19-15-07 / random_uniform_for_rm；26_infantry\rough_rotation_stair\2026-07-23_10-19-59 / random_uniform_for_rm；26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / random_uniform_for_rm；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / random_uniform_for_rm</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>noise_range</td>
+<td>["0.0", "0.03"]</td>
+</tr>
+<tr>
+<td>noise_step</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>downsampled_scale</td>
+<td>0.2</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t033-tiny_step">T033 华南虎 / tiny_step</h2>
+<p><img alt="T033" src="images/T033.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / tiny_step；26_infantry\rough_dash\2026-07-19_19-15-07 / tiny_step</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>num_horizontal</td>
+<td>null</td>
+</tr>
+<tr>
+<td>num_horizontal_range</td>
+<td>["2", "4"]</td>
+</tr>
+<tr>
+<td>num_vertical</td>
+<td>null</td>
+</tr>
+<tr>
+<td>num_vertical_range</td>
+<td>["2", "4"]</td>
+</tr>
+<tr>
+<td>randomize_bar_count_difficulty</td>
+<td>true</td>
+</tr>
+<tr>
+<td>force_unequal_counts</td>
+<td>false</td>
+</tr>
+<tr>
+<td>force_even_counts</td>
+<td>true</td>
+</tr>
+<tr>
+<td>bar_width</td>
+<td>null</td>
+</tr>
+<tr>
+<td>bar_width_range</td>
+<td>["0.05", "0.2"]</td>
+</tr>
+<tr>
+<td>randomize_bar_width_difficulty</td>
+<td>true</td>
+</tr>
+<tr>
+<td>bar_height</td>
+<td>null</td>
+</tr>
+<tr>
+<td>bar_height_range</td>
+<td>["0.02", "0.06"]</td>
+</tr>
+<tr>
+<td>bar_length_ratio</td>
+<td>0.95</td>
+</tr>
+<tr>
+<td>ground_thickness</td>
+<td>0.05</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t034-slope_for_rm_high">T034 华南虎 / slope_for_rm_high</h2>
+<p><img alt="T034" src="images/T034.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / slope_for_rm_high；26_infantry\rough_dash\2026-07-19_19-15-07 / slope_for_rm_high</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>slope_range</td>
+<td>["0.15", "0.35"]</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t035-high_stair_for_rm">T035 华南虎 / high_stair_for_rm</h2>
+<p><img alt="T035" src="images/T035.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / high_stair_for_rm</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.15", "0.3"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>1.25</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>2.5</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t036-stair_slope_for_rm_high">T036 华南虎 / stair_slope_for_rm_high</h2>
+<p><img alt="T036" src="images/T036.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / stair_slope_for_rm_high；26_infantry\rough_dash\2026-07-19_19-15-07 / stair_slope_for_rm_high</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.015", "0.032"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t037-inv_stair_slope_for_rm_high">T037 华南虎 / inv_stair_slope_for_rm_high</h2>
+<p><img alt="T037" src="images/T037.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / inv_stair_slope_for_rm_high；26_infantry\rough_dash\2026-07-19_19-15-07 / inv_stair_slope_for_rm_high</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.015", "0.032"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t038-random_uniform_for_rm">T038 华南虎 / random_uniform_for_rm</h2>
+<p><img alt="T038" src="images/T038.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / random_uniform_for_rm</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>noise_range</td>
+<td>["0.0", "0.05"]</td>
+</tr>
+<tr>
+<td>noise_step</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>downsampled_scale</td>
+<td>0.2</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t039-cliff_inv_stair_slope_short_for_rm">T039 华南虎 / cliff_inv_stair_slope_short_for_rm</h2>
+<p><img alt="T039" src="images/T039.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-14_15-26-16 / cliff_inv_stair_slope_short_for_rm；26_infantry\rough_dash\2026-07-19_19-15-07 / cliff_inv_stair_slope_short_for_rm</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.025", "0.032"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>3.0</td>
+</tr>
+<tr>
+<td>height_offset</td>
+<td>null</td>
+</tr>
+<tr>
+<td>height_offset_range</td>
+<td>["0.3", "0.4"]</td>
+</tr>
+<tr>
+<td>height_offset_curriculum_scale_by_difficulty</td>
+<td>false</td>
+</tr>
+<tr>
+<td>height_offset_curriculum_num_levels</td>
+<td>11</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t040-low_speed_stair_for_rm">T040 华南虎 / low_speed_stair_for_rm</h2>
+<p><img alt="T040" src="images/T040.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-19_19-15-07 / low_speed_stair_for_rm</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-19_19-15-07\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.15", "0.35"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>1.5</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>3.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t041-high_speed_stair_for_rm">T041 华南虎 / high_speed_stair_for_rm</h2>
+<p><img alt="T041" src="images/T041.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_dash\2026-07-19_19-15-07 / high_speed_stair_for_rm</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-19_19-15-07\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.15", "0.4"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>1.5</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>3.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t042-stair_slope_for_rm_mid">T042 华南虎 / stair_slope_for_rm_mid</h2>
+<p><img alt="T042" src="images/T042.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / stair_slope_for_rm_mid；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / stair_slope_for_rm_mid</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_rotation_stair\2026-07-23_16-23-21\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.025", "0.04"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t043-inv_stair_slope_for_rm_mid">T043 华南虎 / inv_stair_slope_for_rm_mid</h2>
+<p><img alt="T043" src="images/T043.png" /></p>
+<p><strong>说明：</strong> 按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度</p>
+<p><strong>使用配置：</strong> 26_infantry\rough_rotation_stair\2026-07-23_16-23-21 / inv_stair_slope_for_rm_mid；26_infantry\rough_rotation_stair\2026-07-30_09-16-27 / inv_stair_slope_for_rm_mid</p>
+<p><strong>来源：</strong> D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_rotation_stair\2026-07-23_16-23-21\params\env.yaml</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>border_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+</tr>
+<tr>
+<td>slope_threshold</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>step_height_range</td>
+<td>["0.025", "0.04"]</td>
+</tr>
+<tr>
+<td>step_width</td>
+<td>0.1</td>
+</tr>
+<tr>
+<td>platform_width</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>inverted</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t044">T044 复旦 / 平地</h2>
+<p><img alt="T044" src="images/T044.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t045">T045 复旦 / 光滑凸坡</h2>
+<p><img alt="T045" src="images/T045.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t046">T046 复旦 / 光滑凹坡</h2>
+<p><img alt="T046" src="images/T046.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t047">T047 复旦 / 粗糙凸坡</h2>
+<p><img alt="T047" src="images/T047.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t048">T048 复旦 / 粗糙凹坡</h2>
+<p><img alt="T048" src="images/T048.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t049">T049 复旦 / 下阶凹地形</h2>
+<p><img alt="T049" src="images/T049.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t050">T050 复旦 / 上阶凸地形</h2>
+<p><img alt="T050" src="images/T050.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t051">T051 复旦 / 离散障碍</h2>
+<p><img alt="T051" src="images/T051.png" /></p>
+<p><strong>说明：</strong> 历史未保存terrain.py，按现有工具示意，不能证明历史网格</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t052">T052 复旦 / 踏石（未启用）</h2>
+<p><img alt="T052" src="images/T052.png" /></p>
+<p><strong>说明：</strong> 生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t053">T053 复旦 / 沟槽（未启用）</h2>
+<p><img alt="T053" src="images/T053.png" /></p>
+<p><strong>说明：</strong> 生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="t054">T054 复旦 / 坑（未启用）</h2>
+<p><img alt="T054" src="images/T054.png" /></p>
+<p><strong>说明：</strong> 生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值</p>
+<p><strong>使用配置：</strong> plane历史trimesh；当前plane/jump均用plane</p>
+<p><strong>来源：</strong> plane/wheel_legged_gym/utils/terrain.py:make_terrain</p>
+<details>
+<summary>完整绘图参数</summary>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>原值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>difficulty</td>
+<td>0 / 0.5 / 1 (参数端点)</td>
+</tr>
+<tr>
+<td>slope</td>
+<td>0.5*d (粗糙坡再乘0.5)</td>
+</tr>
+<tr>
+<td>step_height_m</td>
+<td>0.05+0.18*d</td>
+</tr>
+<tr>
+<td>step_width_m</td>
+<td>0.7</td>
+</tr>
+<tr>
+<td>noise_amplitude_m</td>
+<td>0.05+0.05*d</td>
+</tr>
+<tr>
+<td>obstacle_count</td>
+<td>20</td>
+</tr>
+<tr>
+<td>obstacle_width_m</td>
+<td>[1, 2]</td>
+</tr>
+<tr>
+<td>stone_gap_depth_display_m</td>
+<td>-0.35，仅显示示意，不是配置值</td>
+</tr>
+</tbody>
+</table>
+</details></main><footer>2026-11-15 · 本地静态审计 · 非训练验收</footer></html>

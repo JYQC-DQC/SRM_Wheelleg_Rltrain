@@ -1,0 +1,3846 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Heading与两校逐阶段、逐地形指令范围</title><style>body{margin:0;background:#f3f5f9;color:#202b3a;font:16px/1.65 "Microsoft YaHei",sans-serif}nav{position:sticky;top:0;background:#15283e;padding:12px 3%;z-index:5}nav a{color:#cce4ff;margin-right:16px}main{max-width:1450px;margin:25px auto;background:white;padding:36px 45px;border-radius:12px}h1,h2,h3{color:#153654}h2{margin-top:45px;border-bottom:2px solid #dde6ef;padding-bottom:8px}table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto;margin:18px 0}th,td{border:1px solid #d7dfe8;padding:8px 10px;vertical-align:top;min-width:65px}th{background:#e7eff7}tr:nth-child(even){background:#f8fafc}a{color:#1766ac}img{max-width:100%;height:auto;border:1px solid #dce4ed}pre{background:#152333;color:#e7eff8;padding:18px;overflow:auto;font-size:12px}details{border:1px solid #dce4ed;border-radius:5px;padding:10px;margin:10px 0}summary{cursor:pointer;color:#1766ac;font-weight:bold}code{font-family:Consolas,monospace}footer{padding:20px;color:#556}</style><nav><a href="index.html">总览</a><a href="terrain_atlas.html">地形图册</a><a href="ours.html">我们</a><a href="scut.html">华南虎</a><a href="fudan.html">复旦</a><a href="definitions.html">公式定义</a></nav><main><h1 id="heading">Heading与两校逐阶段、逐地形指令范围</h1>
+<p><a href="index.html">返回总览</a></p>
+<p>单位：vx m/s，wz rad/s，高度 m。所有范围是采样配置/课程边界，不是实测达到值；±[a,b]表示两个不含零的正负区间。阶段指已发现训练分支，不强行构造串行流程。</p>
+<h2 id="1-heading">1. heading是什么</h2>
+<p>heading是目标朝向角ψ<em>，yaw-rate是转动速度ωz。SCUT普通heading模式使用 ω</em>=clip(5×wrap(ψ<em>−ψ),−2π,2π)，把朝向误差转换成每步角速度命令；Actor主要跟踪这个ω</em>。目标朝向到达后命令趋近0；直接ω*=1rad/s则持续转动。heading保持朝向，不自动保持XY路径，也不是运动方向或云台参考系平移的同义词。</p>
+<p>SCUT rel_heading_envs=0.5不是一半时间必定航向控制：standing清零，特殊模式跳过普通heading，地形覆盖及轴向重置继续参与。台阶ang_vel_z_non_heading=±0.1只约束非heading采样，不能套给heading闭环。</p>
+<p>复旦当前plane/jump及48份历史配置全部heading_command=False。现有代码有1.5×朝向误差、限幅±5的可选分支，但默认num_commands=3，而该分支访问commands[:,3]；不能直接打开布尔开关就认为合同可用，需同步检查命令维度和采样。转速跟踪里出现heading范围占位不代表启用。</p>
+<p>源码：SCUT manager/mdp/isaaclab/commands.py:580附近；复旦plane/envs/base/legged_robot.py:647、732附近。</p>
+<h2 id="2-scut12">2. SCUT全部12份保存配置</h2>
+<p>表格显示普通/地形覆盖值（继承已展开），特殊模式另列。非空lin_vel_x或ang_vel_z_non_heading覆盖可能压过对应特殊采样轴；disable_special_mode=true则禁用整种特殊模式。heading列为闭环最大包络，不是均匀抽样。高度列为常规目标，不含airborne/step-up或gimbal-spin的临时覆盖。</p>
+<h3 id="s01-26_infantryflat_and_rotation2026-07-19_09-14-50">S01 26_infantry\flat_and_rotation\2026-07-19_09-14-50</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>plane</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\flat_and_rotation\2026-07-19_09-14-50\params\env.yaml</p>
+<h3 id="s02-26_infantryflat_and_rotation2026-07-19_21-16-33">S02 26_infantry\flat_and_rotation\2026-07-19_21-16-33</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>plane</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\flat_and_rotation\2026-07-19_21-16-33\params\env.yaml</p>
+<h3 id="s03-26_infantryflat_and_rotation2026-07-29_23-20-03">S03 26_infantry\flat_and_rotation\2026-07-29_23-20-03</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>plane</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\flat_and_rotation\2026-07-29_23-20-03\params\env.yaml</p>
+<h3 id="s04-26_infantryrotation_translation2026-07-28_00-39-42">S04 26_infantry\rotation_translation\2026-07-28_00-39-42</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_mid</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.38"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_mid</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.2</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.3</td>
+<td>{"lin_vel_x": ["0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["7.5398223686155035", "11.309733552923255"], ["-11.309733552923255", "-7.5398223686155035"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>旋转平移激活时独立目标：{"enabled": "true", "special_mode_name": "gimbal_spin_translate", "lin_vel_yaw_speed_range": [["0.0", "0.7"]], "lin_vel_yaw_speed_deadzone": "0.05", "lin_vel_yaw_heading_range": ["-3.141592653589793", "3.141592653589793"], "lin_vel_yaw_height_range": ["0.2", "0.4"], "zero_heading_in_deadzone": "false", "require_heading_control": "true", "project_to_body_command": "false"}。其平移速度是参考系水平模长，不是body vx。高度可独立覆盖地形常规高度。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_00-39-42\params\env.yaml</p>
+<h3 id="s05-26_infantryrotation_translation2026-07-28_23-17-10">S05 26_infantry\rotation_translation\2026-07-28_23-17-10</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.2</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.2</td>
+<td>{"lin_vel_x": ["0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["7.5398223686155035", "11.309733552923255"], ["-11.309733552923255", "-7.5398223686155035"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>旋转平移激活时独立目标：{"enabled": "true", "special_mode_name": "gimbal_spin_translate", "lin_vel_yaw_speed_range": [["0.0", "0.75"]], "lin_vel_yaw_speed_deadzone": "0.05", "lin_vel_yaw_heading_range": ["-3.141592653589793", "3.141592653589793"], "lin_vel_yaw_height_range": ["0.2", "0.4"], "zero_heading_in_deadzone": "false", "use_sampled_heading_obs": "false", "require_heading_control": "true", "project_to_body_command": "false"}。其平移速度是参考系水平模长，不是body vx。高度可独立覆盖地形常规高度。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-28_23-17-10\params\env.yaml</p>
+<h3 id="s06-26_infantryrotation_translation2026-07-29_18-15-16">S06 26_infantry\rotation_translation\2026-07-29_18-15-16</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.2</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.2</td>
+<td>{"lin_vel_x": ["0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["7.5398223686155035", "11.309733552923255"], ["-11.309733552923255", "-7.5398223686155035"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>旋转平移激活时独立目标：{"enabled": "true", "special_mode_name": "gimbal_spin_translate", "lin_vel_yaw_speed_range": [["0.0", "0.75"]], "lin_vel_yaw_speed_deadzone": "0.05", "lin_vel_yaw_heading_range": ["-3.141592653589793", "3.141592653589793"], "lin_vel_yaw_height_range": ["0.2", "0.4"], "zero_heading_in_deadzone": "false", "use_sampled_heading_obs": "false", "require_heading_control": "true", "project_to_body_command": "false"}。其平移速度是参考系水平模长，不是body vx。高度可独立覆盖地形常规高度。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-29_18-15-16\params\env.yaml</p>
+<h3 id="s07-26_infantryrotation_translation2026-07-30_14-44-58">S07 26_infantry\rotation_translation\2026-07-30_14-44-58</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.2</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.2</td>
+<td>{"lin_vel_x": ["0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["7.5398223686155035", "11.309733552923255"], ["-11.309733552923255", "-7.5398223686155035"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>旋转平移激活时独立目标：{"enabled": "true", "special_mode_name": "gimbal_spin_translate", "lin_vel_yaw_speed_range": [["0.0", "0.75"]], "lin_vel_yaw_speed_deadzone": "0.05", "lin_vel_yaw_heading_range": ["-3.141592653589793", "3.141592653589793"], "lin_vel_yaw_height_range": ["0.2", "0.4"], "zero_heading_in_deadzone": "false", "use_sampled_heading_obs": "false", "require_heading_control": "true", "project_to_body_command": "false"}。其平移速度是参考系水平模长，不是body vx。高度可独立覆盖地形常规高度。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rotation_translation\2026-07-30_14-44-58\params\env.yaml</p>
+<h3 id="s08-26_infantryrough_dash2026-07-14_15-26-16">S08 26_infantry\rough_dash\2026-07-14_15-26-16</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>true</td>
+</tr>
+<tr>
+<td>slope_for_rm_high</td>
+<td>[["-2.5", "2.5"]]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>false（未按地形禁止）</td>
+<td>true</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>high_stair_for_rm</td>
+<td>[["1.5", "2.7"], ["-2.7", "-1.5"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_high</td>
+<td>[["-2.5", "2.5"]]</td>
+<td>["-3.141592653589793", "3.141592653589793"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>false（未按地形禁止）</td>
+<td>true</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_high</td>
+<td>[["1.5", "2.7"], ["-2.7", "-1.5"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>plane_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["0.18", "0.43"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>cliff_inv_stair_slope_short_for_rm</td>
+<td>[["2.0", "2.7"], ["-2.7", "-2.0"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-4.71238898038469", "4.71238898038469"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["0.0", "6.283185307179586"], ["-6.283185307179586", "-0.0"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>airborne开启：目标高度、命令重采样和出生后限幅还会改变上述常规范围；完整字段见SCUT附录。D空中出生3s内常限vx±2.5、wz±π/2；step-up可临时抬高且封顶0.4m。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-14_15-26-16\params\env.yaml</p>
+<h3 id="s09-26_infantryrough_dash2026-07-19_19-15-07">S09 26_infantry\rough_dash\2026-07-19_19-15-07</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>low_speed_stair_for_rm</td>
+<td>[["0.5", "1.5"], ["-1.5", "-0.5"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.34"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>tiny_step</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.32"]]</td>
+<td>false（未按地形禁止）</td>
+<td>true</td>
+</tr>
+<tr>
+<td>slope_for_rm_high</td>
+<td>[["-2.5", "2.5"]]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>false（未按地形禁止）</td>
+<td>true</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>high_speed_stair_for_rm</td>
+<td>[["1.5", "2.7"], ["-2.7", "-1.5"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.34"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_high</td>
+<td>[["-2.5", "2.5"]]</td>
+<td>["-3.141592653589793", "3.141592653589793"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>false（未按地形禁止）</td>
+<td>true</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_high</td>
+<td>[["1.5", "2.7"], ["-2.7", "-1.5"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>plane_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>cliff_inv_stair_slope_short_for_rm</td>
+<td>[["2.0", "2.7"], ["-2.7", "-2.0"]]</td>
+<td>["-0.1", "0.1"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.32"]]</td>
+<td>true</td>
+<td>true</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.2</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.1</td>
+<td>{"lin_vel_x": ["0.0", "0.0"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": ["0.0", "0.0"]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>airborne开启：目标高度、命令重采样和出生后限幅还会改变上述常规范围；完整字段见SCUT附录。D空中出生3s内常限vx±2.5、wz±π/2；step-up可临时抬高且封顶0.4m。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_dash\2026-07-19_19-15-07\params\env.yaml</p>
+<h3 id="s10-26_infantryrough_rotation_stair2026-07-23_10-19-59">S10 26_infantry\rough_rotation_stair\2026-07-23_10-19-59</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_rotation_stair\2026-07-23_10-19-59\params\env.yaml</p>
+<h3 id="s11-26_infantryrough_rotation_stair2026-07-23_16-23-21">S11 26_infantry\rough_rotation_stair\2026-07-23_16-23-21</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_mid</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.38"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.38"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_mid</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_rotation_stair\2026-07-23_16-23-21\params\env.yaml</p>
+<h3 id="s12-26_infantryrough_rotation_stair2026-07-30_09-16-27">S12 26_infantry\rough_rotation_stair\2026-07-30_09-16-27</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>普通vx/地形覆盖</th>
+<th>非heading wz</th>
+<th>heading闭环包络</th>
+<th>常规高度</th>
+<th>禁特殊模式</th>
+<th>禁空中出生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiny_step_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>stair_slope_for_rm_mid</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.38"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_low</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.24", "0.38"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>inv_stair_slope_for_rm_mid</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["0.2", "0.42"]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>plane_for_rm_rot</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.2", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+<tr>
+<td>random_uniform_for_rm</td>
+<td>["-2.7", "2.7"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>["-6.283185307179586", "6.283185307179586"]</td>
+<td>[["0.22", "0.42"]]</td>
+<td>false（未按地形禁止）</td>
+<td>继承全局开关</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>特殊模式序号</th>
+<th>非standing配置比例</th>
+<th>速度/转速采样</th>
+<th>高度覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["6.283185307179586", "10.210176124166829"], ["-10.210176124166829", "-6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.15</td>
+<td>{"lin_vel_x": ["-0.1", "0.1"], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["10.210176124166829", "14.137166941154069"], ["-14.137166941154069", "-10.210176124166829"]]}</td>
+<td>null</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.3</td>
+<td>{"lin_vel_x": [["2.0", "3.0"], ["-3.0", "-2.0"]], "lin_vel_y": ["0.0", "0.0"], "ang_vel_z": [["-6.283185307179586", "6.283185307179586"]]}</td>
+<td>null</td>
+</tr>
+</tbody>
+</table>
+<p>特殊模式入场最短回合时间：5.0s；指令采样周期：["5.0", "15.0"]s。standing配置比例：0.1；heading配置比例：0.5。</p>
+<p>来源：D:\WHEEL_LEG_RL\wheeled-legged_RL\pretrained\26_infantry\rough_rotation_stair\2026-07-30_09-16-27\params\env.yaml</p>
+<h2 id="3">3. 复旦逐配置、逐实际地形</h2>
+<p>初始命令通常在各地形共用同一范围，之后按每环境课程进度改变；不是SCUT那样每种地形固定一套覆盖值。表格中的课程配置上限不等于每个回合立刻采用、也不证明检查点已经到达。</p>
+<p>新stairs v1/v2/v3实现按配置比例动态分类：basic=flat/smooth_slope/rough_slope/stairs_down；advanced=stairs_up/discrete等。早期实现按固定列号分类，注释的上下阶名称与生成器顺序存在不一致；这些版本不能保证按地形名称正确映射课程。表中初始范围可直接核实，旧版basic/advanced上限仅保留配置口径，不虚构逐地形运行结果。</p>
+<h3 id="f01-planecurrent">F01 plane/current</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\wheel_legged_gym\envs\base\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\wheel_legged_gym\envs\base\legged_robot.py</p>
+<h3 id="f02-planewheel_legged25_20_10_02_angz">F02 plane/wheel_legged\25_20_1.0_0.2_angz+</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-7, 7]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+\legged_robot.py</p>
+<h3 id="f03-planewheel_legged25_20_10_02_angz">F03 plane/wheel_legged\25_20_1.0_0.2_angz++</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-10, 10]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz++\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz++\legged_robot.py</p>
+<h3 id="f04-planewheel_legged25_20_10_02_angz">F04 plane/wheel_legged\25_20_1.0_0.2_angz+++</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-13, 13]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+++\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+++\legged_robot.py</p>
+<h3 id="f05-planewheel_legged25_20_10_02_angz_zengjiajiangli">F05 plane/wheel_legged\25_20_1.0_0.2_angz+++_zengjiajiangli</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[0, 0]</td>
+<td>[-13, 13]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+++_zengjiajiangli\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+++_zengjiajiangli\legged_robot.py</p>
+<h3 id="f06-planewheel_legged25_20_10_02_angz">F06 plane/wheel_legged\25_20_1.0_0.2_angz+++继续训练但是调小范围了</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+++继续训练但是调小范围了\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_angz+++继续训练但是调小范围了\legged_robot.py</p>
+<h3 id="f07-planewheel_legged25_20_10_02_orientation">F07 plane/wheel_legged\25_20_1.0_0.2_orientation+</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2, 2]</td>
+<td>[-2, 2]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_orientation+\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_orientation+\legged_robot.py</p>
+<h3 id="f08-planewheel_legged25_20_10_02_orientation_suiji">F08 plane/wheel_legged\25_20_1.0_0.2_orientation+_suiji</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_orientation+_suiji\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_orientation+_suiji\legged_robot.py</p>
+<h3 id="f09-planewheel_legged25_20_10_02_orientation_suiji">F09 plane/wheel_legged\25_20_1.0_0.2_orientation+_suiji继续训练了很久</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_orientation+_suiji继续训练了很久\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_20_1.0_0.2_orientation+_suiji继续训练了很久\legged_robot.py</p>
+<h3 id="f10-planewheel_legged25_40_50_02">F10 plane/wheel_legged\25_40_5.0_0.2</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2, 2]</td>
+<td>[-4, 4]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_40_5.0_0.2\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_40_5.0_0.2\legged_robot.py</p>
+<h3 id="f11-planewheel_legged25_40_50_02_recover">F11 plane/wheel_legged\25_40_5.0_0.2_recover</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2, 2]</td>
+<td>[-4, 4]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_40_5.0_0.2_recover\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\25_40_5.0_0.2_recover\legged_robot.py</p>
+<h3 id="f12-planewheel_legged60102">F12 plane/wheel_legged\6010.2</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2\legged_robot.py</p>
+<h3 id="f13-planewheel_legged60102terrain_proportions020200030300">F13 plane/wheel_legged\6010.2加入随机地形terrain_proportions0.20.20.00.30.30.0</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.20.20.00.30.30.0\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.20.20.00.30.30.0\legged_robot.py</p>
+<h3 id="f14-planewheel_legged60102terrain_proportions020200030300">F14 plane/wheel_legged\6010.2加入随机地形terrain_proportions0.20.20.00.30.30.0加大了惩罚</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.20.20.00.30.30.0加大了惩罚\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.20.20.00.30.30.0加大了惩罚\legged_robot.py</p>
+<h3 id="f15-planewheel_legged60102terrain_proportions050201010100">F15 plane/wheel_legged\6010.2加入随机地形terrain_proportions0.50.20.10.10.10.0</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>粗糙坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.50.20.10.10.10.0\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.50.20.10.10.10.0\legged_robot.py</p>
+<h3 id="f16-planewheel_legged60102terrain_proportions050201010100">F16 plane/wheel_legged\6010.2加入随机地形terrain_proportions0.50.20.10.10.10.0加大了惩罚</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>粗糙坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.14, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.50.20.10.10.10.0加大了惩罚\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\6010.2加入随机地形terrain_proportions0.50.20.10.10.10.0加大了惩罚\legged_robot.py</p>
+<h3 id="f17-planewheel_leggedhistory10latent16_pd201002terrian">F17 plane/wheel_legged\history10latent16_pd201.00.2terrian</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.1, 2.1]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\history10latent16_pd201.00.2terrian\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\history10latent16_pd201.00.2terrian\legged_robot.py</p>
+<h3 id="f18-planewheel_leggedhistory10latent16_pd602002terrian">F18 plane/wheel_legged\history10latent16_pd602.00.2terrian</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\history10latent16_pd602.00.2terrian\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\history10latent16_pd602.00.2terrian\legged_robot.py</p>
+<h3 id="f19-planewheel_leggedlinx_scales30pd101002_randizationnormal">F19 plane/wheel_legged\linx_scales=3.0pd=101.00.2_randization=normal</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=101.00.2_randization=normal\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=101.00.2_randization=normal\legged_robot.py</p>
+<h3 id="f20-planewheel_leggedlinx_scales30pd201002_randizationnormal">F20 plane/wheel_legged\linx_scales=3.0pd=201.00.2_randization=normal</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=201.00.2_randization=normal\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=201.00.2_randization=normal\legged_robot.py</p>
+<h3 id="f21-planewheel_leggedlinx_scales30pd515025_randizationnormal_new">F21 plane/wheel_legged\linx_scales=3.0pd=51.50.25_randization=normal_new</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=51.50.25_randization=normal_new\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=51.50.25_randization=normal_new\legged_robot.py</p>
+<h3 id="f22-planewheel_leggedlinx_scales30pd515025_randizationnormal_new_suijidixing">F22 plane/wheel_legged\linx_scales=3.0pd=51.50.25_randization=normal_new_suijidixing</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+<tr>
+<td>离散障碍</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=51.50.25_randization=normal_new_suijidixing\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=51.50.25_randization=normal_new_suijidixing\legged_robot.py</p>
+<h3 id="f23-planewheel_leggedlinx_scales30pd61002_randizationnormal">F23 plane/wheel_legged\linx_scales=3.0pd=61.00.2_randization=normal</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=61.00.2_randization=normal\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=3.0pd=61.00.2_randization=normal\legged_robot.py</p>
+<h3 id="f24-planewheel_leggedlinx_scales40pd101002_randizationnormal">F24 plane/wheel_legged\linx_scales=4.0pd=101.00.2_randization=normal</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=4.0pd=101.00.2_randization=normal\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=4.0pd=101.00.2_randization=normal\legged_robot.py</p>
+<h3 id="f25-planewheel_leggedlinx_scales50pd151002_randizationhard">F25 plane/wheel_legged\linx_scales=5.0pd=151.00.2_randization=hard</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=5.0pd=151.00.2_randization=hard\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=5.0pd=151.00.2_randization=hard\legged_robot.py</p>
+<h3 id="f26-planewheel_leggedlinx_scales50pd151002_randizationmid">F26 plane/wheel_legged\linx_scales=5.0pd=151.00.2_randization=mid</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=5.0pd=151.00.2_randization=mid\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=5.0pd=151.00.2_randization=mid\legged_robot.py</p>
+<h3 id="f27-planewheel_leggedlinx_scales50pd151002_randizationnormal">F27 plane/wheel_legged\linx_scales=5.0pd=151.00.2_randization=normal</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.09, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=5.0pd=151.00.2_randization=normal\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\linx_scales=5.0pd=151.00.2_randization=normal\legged_robot.py</p>
+<h3 id="f28-planewheel_leggedrecover_from_lied_on_ground">F28 plane/wheel_legged\recover_from_lied_on_ground</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground\legged_robot.py</p>
+<h3 id="f29-planewheel_leggedrecover_from_lied_on_ground_yuntai">F29 plane/wheel_legged\recover_from_lied_on_ground_yuntai</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.07, 0.12]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai\legged_robot.py</p>
+<h3 id="f30-planewheel_leggedrecover_from_lied_on_ground_yuntai_height_jiajiajia">F30 plane/wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajia</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajia\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajia\legged_robot.py</p>
+<h3 id="f31-planewheel_leggedrecover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia">F31 plane/wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2, 2]</td>
+<td>[0.1, 0.3]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia\legged_robot.py</p>
+<h3 id="f32-planewheel_leggedrecover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajia">F32 plane/wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajia</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-6, 6]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajia\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajia\legged_robot.py</p>
+<h3 id="f33-planewheel_leggedrecover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajia">F33 plane/wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajia</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-11, 11]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajia\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajia\legged_robot.py</p>
+<h3 id="f34-planewheel_leggedrecover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajia">F34 plane/wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajia</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-15, 15]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajia\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajia\legged_robot.py</p>
+<h3 id="f35-planewheel_leggedrecover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajiajiajiajia">F35 plane/wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajiajiajiajia</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-18, 18]</td>
+<td>[0.1, 0.2]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajiajiajiajia\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\recover_from_lied_on_ground_yuntai_height_jiajiajiajiajiajia_angz_jiajiajiajiajiajiajiajiajiajiajiajia\legged_robot.py</p>
+<h3 id="f36-planewheel_legged1">F36 plane/wheel_legged\上台阶1</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.1, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶1\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶1\legged_robot.py</p>
+<h3 id="f37-planewheel_legged2">F37 plane/wheel_legged\上台阶2</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.23, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.23, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶2\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶2\legged_robot.py</p>
+<h3 id="f38-planewheel_legged3">F38 plane/wheel_legged\上台阶3</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>下台阶</td>
+<td>[-2.3, 2.3]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.23, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.3, 2.3]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.23, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3\legged_robot.py</p>
+<h3 id="f39-planewheel_legged3_angz">F39 plane/wheel_legged\上台阶3_angz+</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>下台阶</td>
+<td>[-2.3, 2.3]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.17, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.3, 2.3]</td>
+<td>[-5.0, 5.0]</td>
+<td>[0.17, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+\legged_robot.py</p>
+<h3 id="f40-planewheel_legged3_angzv1">F40 plane/wheel_legged\上台阶3_angz+添加随机地形，进一步训练v1</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+添加随机地形，进一步训练v1\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+添加随机地形，进一步训练v1\legged_robot.py</p>
+<h3 id="f41-planewheel_legged3_angzv2">F41 plane/wheel_legged\上台阶3_angz+添加随机地形，进一步训练v2</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：5.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+添加随机地形，进一步训练v2\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+添加随机地形，进一步训练v2\legged_robot.py</p>
+<h3 id="f42-planewheel_legged3_angzv3_">F42 plane/wheel_legged\上台阶3_angz+添加随机地形，进一步训练v3_速度上限拉大因为原本发现飞坡速度不够</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-4.0, 4.0]</td>
+<td>[0.09, 0.33]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.8</td>
+<td>6.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.8</td>
+<td>6.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+添加随机地形，进一步训练v3_速度上限拉大因为原本发现飞坡速度不够\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\上台阶3_angz+添加随机地形，进一步训练v3_速度上限拉大因为原本发现飞坡速度不够\legged_robot.py</p>
+<h3 id="f43-planewheel_legged-50thetarecover">F43 plane/wheel_legged\腿熊特殊版本 把力矩上限调整50发现解决了站起来失力问题但是由于奖励离地theta导致会小碎步recover</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>粗糙坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊特殊版本 把力矩上限调整50发现解决了站起来失力问题但是由于奖励离地theta导致会小碎步recover\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊特殊版本 把力矩上限调整50发现解决了站起来失力问题但是由于奖励离地theta导致会小碎步recover\legged_robot.py</p>
+<h3 id="f44-planewheel_leggedrecover">F44 plane/wheel_legged\腿熊第一版本recover</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.5</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.5</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第一版本recover\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第一版本recover\legged_robot.py</p>
+<h3 id="f45-planewheel_leggedrecover">F45 plane/wheel_legged\腿熊第三版本加入随机地形继续训练很久recover</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第三版本加入随机地形继续训练很久recover\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第三版本加入随机地形继续训练很久recover\legged_robot.py</p>
+<h3 id="f46-planewheel_leggedrecover">F46 plane/wheel_legged\腿熊第二版本加入随机地形recover</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.11, 0.31]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第二版本加入随机地形recover\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第二版本加入随机地形recover\legged_robot.py</p>
+<h3 id="f47-planewheel_legged">F47 plane/wheel_legged\腿熊第五版本</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>粗糙坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第五版本\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第五版本\legged_robot.py</p>
+<h3 id="f48-planewheel_legged30recover">F48 plane/wheel_legged\腿熊第四版本随机地形分布改进难度降低发现力矩限制在30不太行因为车太重了recover</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>光滑坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>粗糙坡（含正负）</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>下台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+<tr>
+<td>上台阶</td>
+<td>[-2.0, 2.0]</td>
+<td>[-2.0, 2.0]</td>
+<td>[0.13, 0.35]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：True；采样间隔：10.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>2.5</td>
+<td>4.0</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第四版本随机地形分布改进难度降低发现力矩限制在30不太行因为车太重了recover\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\plane\logs\wheel_legged\腿熊第四版本随机地形分布改进难度降低发现力矩限制在30不太行因为车太重了recover\legged_robot.py</p>
+<h3 id="f49-jumpcurrent">F49 jump/current</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.1, 2.1]</td>
+<td>[-2, 2]</td>
+<td>[0.12, 0.15]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：20.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\jump\wheel_legged_gym\envs\base\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\jump\wheel_legged_gym\envs\base\legged_robot.py</p>
+<h3 id="f50-jumpwheel_leggedp60502">F50 jump/wheel_legged\p60.50.2目前测试下来最好的</h3>
+<table>
+<thead>
+<tr>
+<th>实际地形</th>
+<th>初始vx</th>
+<th>初始wz</th>
+<th>高度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无限平地</td>
+<td>[-2.1, 2.1]</td>
+<td>[-2, 2]</td>
+<td>[0.12, 0.15]</td>
+</tr>
+</tbody>
+</table>
+<p>命令课程开启：False；采样间隔：20.0s；heading=False。</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>vx绝对上限配置</th>
+<th>wz绝对上限配置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>basic</td>
+<td>2.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+<tr>
+<td>advanced</td>
+<td>1.5</td>
+<td>无独立字段；不能擅自推断yaw会升级</td>
+</tr>
+</tbody>
+</table>
+<p>若curriculum=false，上述上限字段不作为采样扩张依据。姿态初始化/起身/跳跃奖励中的高度目标不等于此命令height。</p>
+<p>来源：D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\jump\logs\wheel_legged\p60.50.2目前测试下来最好的\legged_robot_config.py；D:\WHEEL_LEG_RL\fudan_rl_wheel_leg\jump\logs\wheel_legged\p60.50.2目前测试下来最好的\legged_robot.py</p></main><footer>2026-11-15 · 本地静态审计 · 非训练验收</footer></html>

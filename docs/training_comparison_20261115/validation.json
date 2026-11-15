@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-15",
+  "html_pages": 6,
+  "terrain_cards": 54,
+  "comparison_plates": 4,
+  "scut_snapshots": 12,
+  "fudan_current_and_historical_configs": 50,
+  "source_files": 239,
+  "broken_relative_links": [],
+  "checks": "static parsing, source references, image decoding, visual spot check",
+  "not_run": [
+    "pytest",
+    "Isaac/GPU",
+    "MuJoCo dynamics"
+  ],
+  "training_code_changed_this_task": false
+}

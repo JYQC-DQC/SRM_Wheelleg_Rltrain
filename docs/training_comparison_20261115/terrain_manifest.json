@@ -1,0 +1,5449 @@
+[
+  {
+    "id": "T001",
+    "team": "我们",
+    "name": "无限平面",
+    "kind": "flat",
+    "size": [
+      8,
+      8
+    ],
+    "params": {},
+    "source": "isaac/wheelleg_tasks/env_cfg.py",
+    "usage": [
+      "p1-flat / p1-landing / p3-jump"
+    ],
+    "note": "仅显示8×8米窗口，非有限地块",
+    "image": "images/T001.png"
+  },
+  {
+    "id": "T002",
+    "team": "我们",
+    "name": "stairs / flat",
+    "kind": "ours_flat",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.3,
+        "kind": "flat",
+        "step_count": 0,
+        "speed_range_m_s": [
+          0.0,
+          2.7
+        ],
+        "command_mode": "motion",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -5.0,
+          5.0
+        ],
+        "height_range_m": [
+          0.2,
+          0.43885688
+        ],
+        "start_speed_range_m_s": [
+          0.0,
+          2.7
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs flat"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T002.png"
+  },
+  {
+    "id": "T003",
+    "team": "我们",
+    "name": "stairs / up_one",
+    "kind": "ours_up",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.1,
+        "kind": "up",
+        "step_count": 1,
+        "speed_range_m_s": [
+          0.5,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.3,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs up_one"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T003.png"
+  },
+  {
+    "id": "T004",
+    "team": "我们",
+    "name": "stairs / down_one",
+    "kind": "ours_down",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.1,
+        "kind": "down",
+        "step_count": 1,
+        "speed_range_m_s": [
+          0.5,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.3,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs down_one"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T004.png"
+  },
+  {
+    "id": "T005",
+    "team": "我们",
+    "name": "stairs / mixed_one",
+    "kind": "ours_mixed",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.05,
+        "kind": "mixed",
+        "step_count": 1,
+        "speed_range_m_s": [
+          0.5,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.3,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs mixed_one"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T005.png"
+  },
+  {
+    "id": "T006",
+    "team": "我们",
+    "name": "stairs / mixed_fast",
+    "kind": "ours_mixed",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.05,
+        "kind": "mixed",
+        "step_count": 1,
+        "speed_range_m_s": [
+          1.5,
+          2.7
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.6,
+          1.0
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs mixed_fast"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T006.png"
+  },
+  {
+    "id": "T007",
+    "team": "我们",
+    "name": "stairs / up_two",
+    "kind": "ours_up",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.05,
+        "kind": "up",
+        "step_count": 2,
+        "speed_range_m_s": [
+          0.5,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.3,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs up_two"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T007.png"
+  },
+  {
+    "id": "T008",
+    "team": "我们",
+    "name": "stairs / down_two",
+    "kind": "ours_down",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.05,
+        "kind": "down",
+        "step_count": 2,
+        "speed_range_m_s": [
+          0.5,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.3,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs down_two"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T008.png"
+  },
+  {
+    "id": "T009",
+    "team": "我们",
+    "name": "stairs / mixed_two",
+    "kind": "ours_mixed",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.1,
+        "kind": "mixed",
+        "step_count": 2,
+        "speed_range_m_s": [
+          0.5,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 1.0,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.22,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.3,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs mixed_two"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T009.png"
+  },
+  {
+    "id": "T010",
+    "team": "我们",
+    "name": "stairs / grid",
+    "kind": "ours_grid",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.1,
+        "kind": "grid",
+        "step_count": 0,
+        "speed_range_m_s": [
+          0.3,
+          1.2
+        ],
+        "command_mode": "free",
+        "free_yaw_limit_range_rad_s": [
+          0.5,
+          2.0
+        ],
+        "heading_yaw_limit_rad_s": 0.5,
+        "yaw_range_rad_s": [
+          -0.3,
+          0.3
+        ],
+        "height_range_m": [
+          0.22,
+          0.38
+        ],
+        "start_speed_range_m_s": [
+          0.25,
+          0.5
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs grid"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T010.png"
+  },
+  {
+    "id": "T011",
+    "team": "我们",
+    "name": "stairs / slope",
+    "kind": "ours_slope",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.05,
+        "kind": "slope",
+        "step_count": 0,
+        "speed_range_m_s": [
+          0.4,
+          1.5
+        ],
+        "command_mode": "traverse",
+        "heading_yaw_limit_rad_s": 0.5,
+        "yaw_range_rad_s": [
+          -0.1,
+          0.1
+        ],
+        "height_range_m": [
+          0.24,
+          0.34
+        ],
+        "start_speed_range_m_s": [
+          0.25,
+          0.6
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs slope"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T011.png"
+  },
+  {
+    "id": "T012",
+    "team": "我们",
+    "name": "stairs / rough",
+    "kind": "ours_rough",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "terrain": {
+        "tile_size_m": [
+          8.0,
+          8.0
+        ],
+        "rows": 8,
+        "columns": 20,
+        "step_height_range_m": [
+          0.02,
+          0.24
+        ],
+        "step_width_m": 0.8,
+        "slope_angle_range_rad": [
+          0.0,
+          0.4363323129985824
+        ],
+        "rough_noise_range_m": [
+          0.0,
+          0.03
+        ],
+        "rough_noise_step_m": 0.005,
+        "rough_downsampled_scale_m": 0.2,
+        "heightfield_border_width_m": 1.0,
+        "border_width_m": 5.0,
+        "boundary_margin_m": 0.5,
+        "spawn_x_m": 0.8,
+        "entry_x_m": 2.4,
+        "surface_x_range_m": [
+          2.0,
+          6.2
+        ],
+        "exit_x_m": 5.6,
+        "finish_x_m": 6.6,
+        "ground_thickness_m": 0.1,
+        "seed": 42,
+        "surface_resolution_m": 0.2,
+        "grid": {
+          "width_range_m": [
+            0.08,
+            0.12
+          ],
+          "height_range_m": [
+            0.025,
+            0.045
+          ],
+          "spacing_range_m": [
+            0.55,
+            0.7
+          ],
+          "half_span_m": 3.8
+        },
+        "profiles": {
+          "flat": {
+            "proportion": 0.3,
+            "kind": "flat",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.0,
+              2.7
+            ],
+            "command_mode": "motion",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -5.0,
+              5.0
+            ],
+            "height_range_m": [
+              0.2,
+              0.43885688
+            ],
+            "start_speed_range_m_s": [
+              0.0,
+              2.7
+            ]
+          },
+          "up_one": {
+            "proportion": 0.1,
+            "kind": "up",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_one": {
+            "proportion": 0.1,
+            "kind": "down",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_one": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_fast": {
+            "proportion": 0.05,
+            "kind": "mixed",
+            "step_count": 1,
+            "speed_range_m_s": [
+              1.5,
+              2.7
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.6,
+              1.0
+            ]
+          },
+          "up_two": {
+            "proportion": 0.05,
+            "kind": "up",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "down_two": {
+            "proportion": 0.05,
+            "kind": "down",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "mixed_two": {
+            "proportion": 0.1,
+            "kind": "mixed",
+            "step_count": 2,
+            "speed_range_m_s": [
+              0.5,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 1.0,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.22,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.3,
+              0.6
+            ]
+          },
+          "grid": {
+            "proportion": 0.1,
+            "kind": "grid",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.2
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          },
+          "slope": {
+            "proportion": 0.05,
+            "kind": "slope",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.4,
+              1.5
+            ],
+            "command_mode": "traverse",
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.1,
+              0.1
+            ],
+            "height_range_m": [
+              0.24,
+              0.34
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.6
+            ]
+          },
+          "rough": {
+            "proportion": 0.05,
+            "kind": "rough",
+            "step_count": 0,
+            "speed_range_m_s": [
+              0.3,
+              1.5
+            ],
+            "command_mode": "free",
+            "free_yaw_limit_range_rad_s": [
+              0.5,
+              2.0
+            ],
+            "heading_yaw_limit_rad_s": 0.5,
+            "yaw_range_rad_s": [
+              -0.3,
+              0.3
+            ],
+            "height_range_m": [
+              0.22,
+              0.38
+            ],
+            "start_speed_range_m_s": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "rough_proportion": 0.05
+      },
+      "profile": {
+        "proportion": 0.05,
+        "kind": "rough",
+        "step_count": 0,
+        "speed_range_m_s": [
+          0.3,
+          1.5
+        ],
+        "command_mode": "free",
+        "free_yaw_limit_range_rad_s": [
+          0.5,
+          2.0
+        ],
+        "heading_yaw_limit_rad_s": 0.5,
+        "yaw_range_rad_s": [
+          -0.3,
+          0.3
+        ],
+        "height_range_m": [
+          0.22,
+          0.38
+        ],
+        "start_speed_range_m_s": [
+          0.25,
+          0.5
+        ]
+      }
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py:course_terrain",
+    "usage": [
+      "p1-stairs rough"
+    ],
+    "note": "非平地从接近平台进入；平地从中心区域出生",
+    "image": "images/T012.png"
+  },
+  {
+    "id": "T013",
+    "team": "我们",
+    "name": "recovery / flat",
+    "kind": "recovery_flat",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "tile_size_m": [
+        8.0,
+        8.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "flat_proportion": 0.3,
+      "step_height_range_m": [
+        0.02,
+        0.24
+      ],
+      "step_width_m": 0.8,
+      "slope_proportion": 0.1,
+      "bump_proportion": 0.1,
+      "slope_angle_range_rad": [
+        0.0,
+        0.4363323129985824
+      ],
+      "bump_height_range_m": [
+        0.01,
+        0.07
+      ],
+      "bump_spacing_m": 0.24,
+      "bump_width_m": 0.12,
+      "rough_proportion": 0.1,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py",
+    "usage": [
+      "p1-recovery flat"
+    ],
+    "note": "内置Hf粗糙仅画类型示意",
+    "image": "images/T013.png"
+  },
+  {
+    "id": "T014",
+    "team": "我们",
+    "name": "recovery / one",
+    "kind": "recovery_one",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "tile_size_m": [
+        8.0,
+        8.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "flat_proportion": 0.3,
+      "step_height_range_m": [
+        0.02,
+        0.24
+      ],
+      "step_width_m": 0.8,
+      "slope_proportion": 0.1,
+      "bump_proportion": 0.1,
+      "slope_angle_range_rad": [
+        0.0,
+        0.4363323129985824
+      ],
+      "bump_height_range_m": [
+        0.01,
+        0.07
+      ],
+      "bump_spacing_m": 0.24,
+      "bump_width_m": 0.12,
+      "rough_proportion": 0.1,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py",
+    "usage": [
+      "p1-recovery one"
+    ],
+    "note": "内置Hf粗糙仅画类型示意",
+    "image": "images/T014.png"
+  },
+  {
+    "id": "T015",
+    "team": "我们",
+    "name": "recovery / two",
+    "kind": "recovery_two",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "tile_size_m": [
+        8.0,
+        8.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "flat_proportion": 0.3,
+      "step_height_range_m": [
+        0.02,
+        0.24
+      ],
+      "step_width_m": 0.8,
+      "slope_proportion": 0.1,
+      "bump_proportion": 0.1,
+      "slope_angle_range_rad": [
+        0.0,
+        0.4363323129985824
+      ],
+      "bump_height_range_m": [
+        0.01,
+        0.07
+      ],
+      "bump_spacing_m": 0.24,
+      "bump_width_m": 0.12,
+      "rough_proportion": 0.1,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py",
+    "usage": [
+      "p1-recovery two"
+    ],
+    "note": "内置Hf粗糙仅画类型示意",
+    "image": "images/T015.png"
+  },
+  {
+    "id": "T016",
+    "team": "我们",
+    "name": "recovery / slope",
+    "kind": "recovery_slope",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "tile_size_m": [
+        8.0,
+        8.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "flat_proportion": 0.3,
+      "step_height_range_m": [
+        0.02,
+        0.24
+      ],
+      "step_width_m": 0.8,
+      "slope_proportion": 0.1,
+      "bump_proportion": 0.1,
+      "slope_angle_range_rad": [
+        0.0,
+        0.4363323129985824
+      ],
+      "bump_height_range_m": [
+        0.01,
+        0.07
+      ],
+      "bump_spacing_m": 0.24,
+      "bump_width_m": 0.12,
+      "rough_proportion": 0.1,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py",
+    "usage": [
+      "p1-recovery slope"
+    ],
+    "note": "内置Hf粗糙仅画类型示意",
+    "image": "images/T016.png"
+  },
+  {
+    "id": "T017",
+    "team": "我们",
+    "name": "recovery / bumps",
+    "kind": "recovery_bumps",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "tile_size_m": [
+        8.0,
+        8.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "flat_proportion": 0.3,
+      "step_height_range_m": [
+        0.02,
+        0.24
+      ],
+      "step_width_m": 0.8,
+      "slope_proportion": 0.1,
+      "bump_proportion": 0.1,
+      "slope_angle_range_rad": [
+        0.0,
+        0.4363323129985824
+      ],
+      "bump_height_range_m": [
+        0.01,
+        0.07
+      ],
+      "bump_spacing_m": 0.24,
+      "bump_width_m": 0.12,
+      "rough_proportion": 0.1,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py",
+    "usage": [
+      "p1-recovery bumps"
+    ],
+    "note": "内置Hf粗糙仅画类型示意",
+    "image": "images/T017.png"
+  },
+  {
+    "id": "T018",
+    "team": "我们",
+    "name": "recovery / rough",
+    "kind": "recovery_rough",
+    "size": [
+      8.0,
+      8.0
+    ],
+    "params": {
+      "tile_size_m": [
+        8.0,
+        8.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "flat_proportion": 0.3,
+      "step_height_range_m": [
+        0.02,
+        0.24
+      ],
+      "step_width_m": 0.8,
+      "slope_proportion": 0.1,
+      "bump_proportion": 0.1,
+      "slope_angle_range_rad": [
+        0.0,
+        0.4363323129985824
+      ],
+      "bump_height_range_m": [
+        0.01,
+        0.07
+      ],
+      "bump_spacing_m": 0.24,
+      "bump_width_m": 0.12,
+      "rough_proportion": 0.1,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5
+    },
+    "source": "isaac/wheelleg_tasks/terrain.py",
+    "usage": [
+      "p1-recovery rough"
+    ],
+    "note": "内置Hf粗糙仅画类型示意",
+    "image": "images/T018.png"
+  },
+  {
+    "id": "T019",
+    "team": "我们",
+    "name": "spin / flat",
+    "kind": "spin_flat",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "tile_size_m": [
+        9.0,
+        9.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "difficulty_range": [
+        0.0,
+        1.0
+      ],
+      "flat_proportion": 0.5,
+      "rough_proportion": 0.3,
+      "slope_proportion": 0.2,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5,
+      "slope_angle_range_rad": [
+        -0.1,
+        0.1
+      ]
+    },
+    "source": "isaac/wheelleg_tasks/env_cfg.py",
+    "usage": [
+      "p2-spin flat"
+    ],
+    "note": "坡道出生在坡面；rough为类型示意",
+    "image": "images/T019.png"
+  },
+  {
+    "id": "T020",
+    "team": "我们",
+    "name": "spin / slope",
+    "kind": "spin_slope",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "tile_size_m": [
+        9.0,
+        9.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "difficulty_range": [
+        0.0,
+        1.0
+      ],
+      "flat_proportion": 0.5,
+      "rough_proportion": 0.3,
+      "slope_proportion": 0.2,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5,
+      "slope_angle_range_rad": [
+        -0.1,
+        0.1
+      ]
+    },
+    "source": "isaac/wheelleg_tasks/env_cfg.py",
+    "usage": [
+      "p2-spin slope"
+    ],
+    "note": "坡道出生在坡面；rough为类型示意",
+    "image": "images/T020.png"
+  },
+  {
+    "id": "T021",
+    "team": "我们",
+    "name": "spin / rough",
+    "kind": "spin_rough",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "tile_size_m": [
+        9.0,
+        9.0
+      ],
+      "rows": 8,
+      "columns": 10,
+      "difficulty_range": [
+        0.0,
+        1.0
+      ],
+      "flat_proportion": 0.5,
+      "rough_proportion": 0.3,
+      "slope_proportion": 0.2,
+      "rough_noise_range_m": [
+        0.0,
+        0.03
+      ],
+      "rough_noise_step_m": 0.005,
+      "rough_downsampled_scale_m": 0.2,
+      "heightfield_border_width_m": 1.0,
+      "border_width_m": 5.0,
+      "boundary_margin_m": 0.5,
+      "slope_angle_range_rad": [
+        -0.1,
+        0.1
+      ]
+    },
+    "source": "isaac/wheelleg_tasks/env_cfg.py",
+    "usage": [
+      "p2-spin rough"
+    ],
+    "note": "坡道出生在坡面；rough为类型示意",
+    "image": "images/T021.png"
+  },
+  {
+    "id": "T022",
+    "team": "我们",
+    "name": "跳隧道横梁及护栏",
+    "kind": "tunnel",
+    "size": [
+      2.9,
+      0.8
+    ],
+    "params": {
+      "vx_range_m_s": null,
+      "beam_height_m": 0.27,
+      "beam_length_m": 0.35,
+      "beam_thickness_m": 0.02,
+      "no_jump_beam_pose": [
+        0.0,
+        0.0,
+        -1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "lane_width_m": 0.8,
+      "rail_height_m": 0.2,
+      "lane_length_m": 2.9,
+      "rail_thickness_m": null,
+      "approach_distance_m": null,
+      "trigger_distance_m": null,
+      "height_curriculum_m": [
+        0.1,
+        0.15,
+        0.2,
+        0.27,
+        0.3
+      ],
+      "clearance_margin_m": 0.03,
+      "landing_margin_m": 0.05,
+      "initial_yaw_range_rad": [
+        -0.0872664626,
+        0.0872664626
+      ],
+      "crossing_weight": 5.0,
+      "obstacle_contact_weight": -5.0,
+      "top_contact_weight": -10.0,
+      "approach_jitter_m": null,
+      "height_jitter_m": [
+        -0.01,
+        0.01
+      ]
+    },
+    "source": "isaac/wheelleg_tasks/env.py",
+    "usage": [
+      "p3-tunnel"
+    ],
+    "note": "横梁x仅为排版；接近距离、护栏厚度待定，故不画出生点",
+    "image": "images/T022.png"
+  },
+  {
+    "id": "T023",
+    "team": "华南虎",
+    "name": "无限平面",
+    "kind": "flat",
+    "size": [
+      9,
+      9
+    ],
+    "params": {},
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\flat_and_rotation\\2026-07-19_09-14-50\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\flat_and_rotation\\2026-07-19_09-14-50",
+      "26_infantry\\flat_and_rotation\\2026-07-19_21-16-33",
+      "26_infantry\\flat_and_rotation\\2026-07-29_23-20-03"
+    ],
+    "note": "仅显示9×9米窗口",
+    "image": "images/T023.png"
+  },
+  {
+    "id": "T024",
+    "team": "华南虎",
+    "name": "tiny_step_rot",
+    "kind": "mesh_grid_bars_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "num_horizontal": "null",
+      "num_horizontal_range": [
+        "2",
+        "4"
+      ],
+      "num_vertical": "null",
+      "num_vertical_range": [
+        "2",
+        "4"
+      ],
+      "randomize_bar_count_difficulty": "true",
+      "force_unequal_counts": "false",
+      "force_even_counts": "true",
+      "bar_width": "null",
+      "bar_width_range": [
+        "0.05",
+        "0.2"
+      ],
+      "randomize_bar_width_difficulty": "true",
+      "bar_height": "null",
+      "bar_height_range": [
+        "0.01",
+        "0.03"
+      ],
+      "bar_length_ratio": "0.95",
+      "ground_thickness": "0.05"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / tiny_step_rot",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / tiny_step_rot",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / tiny_step_rot",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / tiny_step_rot",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / tiny_step_rot",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / tiny_step_rot",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / tiny_step_rot"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T024.png"
+  },
+  {
+    "id": "T025",
+    "team": "华南虎",
+    "name": "slope_for_rm_low",
+    "kind": "pyramid_sloped_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "slope_range": [
+        "0.05",
+        "0.15"
+      ],
+      "platform_width": "0.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / slope_for_rm_low"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T025.png"
+  },
+  {
+    "id": "T026",
+    "team": "华南虎",
+    "name": "inv_slope_for_rm_low",
+    "kind": "pyramid_sloped_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "slope_range": [
+        "0.05",
+        "0.15"
+      ],
+      "platform_width": "0.0",
+      "inverted": "true"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / inv_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / inv_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / inv_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / inv_slope_for_rm_low",
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / inv_slope_for_rm_low",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / inv_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / inv_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / inv_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / inv_slope_for_rm_low"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T026.png"
+  },
+  {
+    "id": "T027",
+    "team": "华南虎",
+    "name": "stair_slope_for_rm_low",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.005",
+        "0.015"
+      ],
+      "step_width": "0.1",
+      "platform_width": "1.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / stair_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / stair_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / stair_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / stair_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / stair_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / stair_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / stair_slope_for_rm_low"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T027.png"
+  },
+  {
+    "id": "T028",
+    "team": "华南虎",
+    "name": "stair_slope_for_rm_mid",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.015",
+        "0.04"
+      ],
+      "step_width": "0.1",
+      "platform_width": "1.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / stair_slope_for_rm_mid"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T028.png"
+  },
+  {
+    "id": "T029",
+    "team": "华南虎",
+    "name": "inv_stair_slope_for_rm_low",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.005",
+        "0.015"
+      ],
+      "step_width": "0.1",
+      "platform_width": "2.0",
+      "inverted": "true"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / inv_stair_slope_for_rm_low",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / inv_stair_slope_for_rm_low"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T029.png"
+  },
+  {
+    "id": "T030",
+    "team": "华南虎",
+    "name": "inv_stair_slope_for_rm_mid",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.015",
+        "0.04"
+      ],
+      "step_width": "0.1",
+      "platform_width": "1.0",
+      "inverted": "true"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / inv_stair_slope_for_rm_mid"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T030.png"
+  },
+  {
+    "id": "T031",
+    "team": "华南虎",
+    "name": "plane_for_rm_rot",
+    "kind": "flat_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {},
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / plane_for_rm_rot",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / plane_for_rm_rot",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / plane_for_rm_rot",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / plane_for_rm_rot",
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / plane_for_rm",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / plane_for_rm",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / plane_for_rm_rot",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / plane_for_rm_rot",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / plane_for_rm_rot"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T031.png"
+  },
+  {
+    "id": "T032",
+    "team": "华南虎",
+    "name": "random_uniform_for_rm",
+    "kind": "random_uniform_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "noise_range": [
+        "0.0",
+        "0.03"
+      ],
+      "noise_step": "0.005",
+      "downsampled_scale": "0.2"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rotation_translation\\2026-07-28_00-39-42\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rotation_translation\\2026-07-28_00-39-42 / random_uniform_for_rm",
+      "26_infantry\\rotation_translation\\2026-07-28_23-17-10 / random_uniform_for_rm",
+      "26_infantry\\rotation_translation\\2026-07-29_18-15-16 / random_uniform_for_rm",
+      "26_infantry\\rotation_translation\\2026-07-30_14-44-58 / random_uniform_for_rm",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / random_uniform_for_rm",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_10-19-59 / random_uniform_for_rm",
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / random_uniform_for_rm",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / random_uniform_for_rm"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T032.png"
+  },
+  {
+    "id": "T033",
+    "team": "华南虎",
+    "name": "tiny_step",
+    "kind": "mesh_grid_bars_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "num_horizontal": "null",
+      "num_horizontal_range": [
+        "2",
+        "4"
+      ],
+      "num_vertical": "null",
+      "num_vertical_range": [
+        "2",
+        "4"
+      ],
+      "randomize_bar_count_difficulty": "true",
+      "force_unequal_counts": "false",
+      "force_even_counts": "true",
+      "bar_width": "null",
+      "bar_width_range": [
+        "0.05",
+        "0.2"
+      ],
+      "randomize_bar_width_difficulty": "true",
+      "bar_height": "null",
+      "bar_height_range": [
+        "0.02",
+        "0.06"
+      ],
+      "bar_length_ratio": "0.95",
+      "ground_thickness": "0.05"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / tiny_step",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / tiny_step"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T033.png"
+  },
+  {
+    "id": "T034",
+    "team": "华南虎",
+    "name": "slope_for_rm_high",
+    "kind": "pyramid_sloped_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "2.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "slope_range": [
+        "0.15",
+        "0.35"
+      ],
+      "platform_width": "2.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / slope_for_rm_high",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / slope_for_rm_high"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T034.png"
+  },
+  {
+    "id": "T035",
+    "team": "华南虎",
+    "name": "high_stair_for_rm",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "0.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.15",
+        "0.3"
+      ],
+      "step_width": "1.25",
+      "platform_width": "2.5",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / high_stair_for_rm"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T035.png"
+  },
+  {
+    "id": "T036",
+    "team": "华南虎",
+    "name": "stair_slope_for_rm_high",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.015",
+        "0.032"
+      ],
+      "step_width": "0.1",
+      "platform_width": "1.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / stair_slope_for_rm_high",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / stair_slope_for_rm_high"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T036.png"
+  },
+  {
+    "id": "T037",
+    "team": "华南虎",
+    "name": "inv_stair_slope_for_rm_high",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.015",
+        "0.032"
+      ],
+      "step_width": "0.1",
+      "platform_width": "2.0",
+      "inverted": "true"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / inv_stair_slope_for_rm_high",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / inv_stair_slope_for_rm_high"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T037.png"
+  },
+  {
+    "id": "T038",
+    "team": "华南虎",
+    "name": "random_uniform_for_rm",
+    "kind": "random_uniform_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "noise_range": [
+        "0.0",
+        "0.05"
+      ],
+      "noise_step": "0.005",
+      "downsampled_scale": "0.2"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / random_uniform_for_rm"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T038.png"
+  },
+  {
+    "id": "T039",
+    "team": "华南虎",
+    "name": "cliff_inv_stair_slope_short_for_rm",
+    "kind": "cliff_inverted_pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "2.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.025",
+        "0.032"
+      ],
+      "step_width": "0.1",
+      "platform_width": "3.0",
+      "height_offset": "null",
+      "height_offset_range": [
+        "0.3",
+        "0.4"
+      ],
+      "height_offset_curriculum_scale_by_difficulty": "false",
+      "height_offset_curriculum_num_levels": "11"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-14_15-26-16\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-14_15-26-16 / cliff_inv_stair_slope_short_for_rm",
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / cliff_inv_stair_slope_short_for_rm"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T039.png"
+  },
+  {
+    "id": "T040",
+    "team": "华南虎",
+    "name": "low_speed_stair_for_rm",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "0.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.15",
+        "0.35"
+      ],
+      "step_width": "1.5",
+      "platform_width": "3.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-19_19-15-07\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / low_speed_stair_for_rm"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T040.png"
+  },
+  {
+    "id": "T041",
+    "team": "华南虎",
+    "name": "high_speed_stair_for_rm",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "0.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.15",
+        "0.4"
+      ],
+      "step_width": "1.5",
+      "platform_width": "3.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_dash\\2026-07-19_19-15-07\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_dash\\2026-07-19_19-15-07 / high_speed_stair_for_rm"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T041.png"
+  },
+  {
+    "id": "T042",
+    "team": "华南虎",
+    "name": "stair_slope_for_rm_mid",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.025",
+        "0.04"
+      ],
+      "step_width": "0.1",
+      "platform_width": "1.0",
+      "inverted": "false"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / stair_slope_for_rm_mid",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / stair_slope_for_rm_mid"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T042.png"
+  },
+  {
+    "id": "T043",
+    "team": "华南虎",
+    "name": "inv_stair_slope_for_rm_mid",
+    "kind": "pyramid_stairs_terrain",
+    "size": [
+      9.0,
+      9.0
+    ],
+    "params": {
+      "border_width": "1.0",
+      "horizontal_scale": "0.1",
+      "vertical_scale": "0.005",
+      "slope_threshold": "0.5",
+      "step_height_range": [
+        "0.025",
+        "0.04"
+      ],
+      "step_width": "0.1",
+      "platform_width": "1.0",
+      "inverted": "true"
+    },
+    "source": "D:\\WHEEL_LEG_RL\\wheeled-legged_RL\\pretrained\\26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21\\params\\env.yaml",
+    "usage": [
+      "26_infantry\\rough_rotation_stair\\2026-07-23_16-23-21 / inv_stair_slope_for_rm_mid",
+      "26_infantry\\rough_rotation_stair\\2026-07-30_09-16-27 / inv_stair_slope_for_rm_mid"
+    ],
+    "note": "按参数重建形状示意；非Isaac碰撞网格，坡度不当弧度",
+    "image": "images/T043.png"
+  },
+  {
+    "id": "T044",
+    "team": "复旦",
+    "name": "平地",
+    "kind": "fudan_0",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T044.png"
+  },
+  {
+    "id": "T045",
+    "team": "复旦",
+    "name": "光滑凸坡",
+    "kind": "fudan_1",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T045.png"
+  },
+  {
+    "id": "T046",
+    "team": "复旦",
+    "name": "光滑凹坡",
+    "kind": "fudan_2",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T046.png"
+  },
+  {
+    "id": "T047",
+    "team": "复旦",
+    "name": "粗糙凸坡",
+    "kind": "fudan_3",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T047.png"
+  },
+  {
+    "id": "T048",
+    "team": "复旦",
+    "name": "粗糙凹坡",
+    "kind": "fudan_4",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T048.png"
+  },
+  {
+    "id": "T049",
+    "team": "复旦",
+    "name": "下阶凹地形",
+    "kind": "fudan_5",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T049.png"
+  },
+  {
+    "id": "T050",
+    "team": "复旦",
+    "name": "上阶凸地形",
+    "kind": "fudan_6",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T050.png"
+  },
+  {
+    "id": "T051",
+    "team": "复旦",
+    "name": "离散障碍",
+    "kind": "fudan_7",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "历史未保存terrain.py，按现有工具示意，不能证明历史网格",
+    "image": "images/T051.png"
+  },
+  {
+    "id": "T052",
+    "team": "复旦",
+    "name": "踏石（未启用）",
+    "kind": "fudan_8",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值",
+    "image": "images/T052.png"
+  },
+  {
+    "id": "T053",
+    "team": "复旦",
+    "name": "沟槽（未启用）",
+    "kind": "fudan_9",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值",
+    "image": "images/T053.png"
+  },
+  {
+    "id": "T054",
+    "team": "复旦",
+    "name": "坑（未启用）",
+    "kind": "fudan_10",
+    "size": [
+      8,
+      8
+    ],
+    "params": {
+      "difficulty": "0 / 0.5 / 1 (参数端点)",
+      "slope": "0.5*d (粗糙坡再乘0.5)",
+      "step_height_m": "0.05+0.18*d",
+      "step_width_m": 0.7,
+      "noise_amplitude_m": "0.05+0.05*d",
+      "obstacle_count": 20,
+      "obstacle_width_m": [
+        1,
+        2
+      ],
+      "stone_gap_depth_display_m": "-0.35，仅显示示意，不是配置值"
+    },
+    "source": "plane/wheel_legged_gym/utils/terrain.py:make_terrain",
+    "usage": [
+      "plane历史trimesh；当前plane/jump均用plane"
+    ],
+    "note": "生成分支存在，但所查配置均未启用；踏石间隙示意深度非配置值",
+    "image": "images/T054.png"
+  }
+]
