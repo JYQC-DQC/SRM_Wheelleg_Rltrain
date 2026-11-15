@@ -215,6 +215,8 @@ class StairCourse:
         self.last_x = torch.zeros(count, device=device)
         self.route_last_x = torch.zeros(count, device=device)
         self.route_active = torch.zeros(count, dtype=torch.bool, device=device)
+        self.route_paused = torch.zeros_like(self.route_active)
+        self.window_stuck = torch.zeros_like(self.route_active)
         self.progress = torch.zeros(count, device=device)
         self.route_time = torch.zeros(count, device=device)
         self.route_distance = torch.zeros(count, device=device)
@@ -294,6 +296,8 @@ class StairCourse:
             self.last_x,
             self.route_last_x,
             self.route_active,
+            self.route_paused,
+            self.window_stuck,
             self.progress,
             self.route_time,
             self.route_distance,
@@ -480,23 +484,29 @@ class StairCourse:
         enabled = ~self.motion & ~self.free_commands & ~self.arrived & ~self.traversed & ~self.escaped & ~terminated
         enabled &= (self.age > self.p["tracking_warmup_s"]) & (vx.abs() > parameters["stand_deadzone"])
         enabled &= (alignment >= self.p["route_alignment_min"]) & (wz.abs() <= self.p["route_yaw_limit_rad_s"])
-        enabled &= ~self.flying & ~self.guide_support & (self.cushion <= 0)
+        enabled &= ~self.flying & (self.cushion <= 0)
+        active = enabled & ~self.guide_support
         x = state["root_position_w"][:, 0]
         # Prime on entry/resume; never score teleports or include time spent in an excluded phase.
-        counted = enabled & self.route_active
+        counted = active & self.route_active
         delta = torch.where(counted, x - self.route_last_x, 0.0)
         cap = requested_x.clamp_min(0) * dt
         self.progress.copy_(torch.minimum(torch.maximum(delta, -cap), cap))
-        self.route_time.copy_(torch.where(counted, self.route_time + dt, 0.0))
-        self.route_distance.copy_(torch.where(counted, self.route_distance + delta, 0.0))
+        # Guide support pauses the window. Resume its clock on release, but exclude
+        # displacement across contact transitions just as for the progress reward.
+        timed = active & (self.route_active | self.route_paused)
+        self.route_time.copy_(torch.where(enabled, self.route_time + timed * dt, 0.0))
+        self.route_distance.copy_(torch.where(enabled, self.route_distance + delta, 0.0))
         ready = self.route_time >= self.p["route_stuck_window_s"] - dt * 0.5
         moved = self.route_distance >= self.p["route_stuck_distance_m"]
-        self.stuck.copy_(torch.where(ready, ~moved, self.stuck & ~moved) & counted)
-        self.route_active_seconds += counted * dt
+        self.window_stuck.copy_(torch.where(ready, ~moved, self.window_stuck & ~moved) & enabled)
+        self.stuck.copy_(self.window_stuck & timed)
+        self.route_active_seconds += timed * dt
         self.stuck_seconds += self.stuck * dt
         self.route_time[ready] = 0
         self.route_distance[ready] = 0
-        self.route_active.copy_(enabled)
+        self.route_active.copy_(active)
+        self.route_paused.copy_(enabled & self.guide_support)
         self.route_last_x.copy_(x)
 
     def curriculum(
