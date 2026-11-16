@@ -15,6 +15,11 @@ def main() -> None:
     parser.add_argument("--robot", type=Path, default=Path("config/robot.yaml"))
     parser.add_argument("--policy", type=Path)
     parser.add_argument("--check-only", action="store_true", help="List missing values without importing Isaac/Torch")
+    parser.add_argument(
+        "--allow-unvalidated-baseline",
+        action="store_true",
+        help="Explicitly bypass only the baseline-evaluation gate and record the override in run.json",
+    )
     parser.add_argument("--run-name")
     parser.add_argument("--num-envs", type=int)
     parser.add_argument("--iterations", type=int)
@@ -47,7 +52,7 @@ def main() -> None:
             )
         )
         return
-    cfg.require_ready()  # Fail before starting the simulator or creating a run.
+    cfg.require_ready(allow_unvalidated_baseline=args.allow_unvalidated_baseline)
     if not args.run_name or Path(args.run_name).name != args.run_name:
         parser.error("--run-name must be one directory name")
     from isaaclab.app import AppLauncher
@@ -78,6 +83,7 @@ def main() -> None:
         iterations=iterations,
         resume=str(args.resume) if args.resume else None,
         initialize_from=str(args.initialize_from) if args.initialize_from else None,
+        allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
         obs_version=cfg.policy.obs_version,

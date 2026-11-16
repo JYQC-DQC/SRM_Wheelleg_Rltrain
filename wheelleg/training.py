@@ -121,7 +121,7 @@ class TrainingConfig:
             + null_fields(stage, f"policy.stages.{TASKS[self.task].stage}")
         )
 
-    def require_ready(self, *, evaluation: bool = False) -> None:
+    def require_ready(self, *, evaluation: bool = False, allow_unvalidated_baseline: bool = False) -> None:
         missing = self.missing(evaluation=evaluation)
         if missing:
             raise ValueError("Training is not ready; fill measured/verified values:\n- " + "\n- ".join(missing))
@@ -136,7 +136,12 @@ class TrainingConfig:
         if transition["probability"] > 0 and not Path(transition["states_npz"]).is_file():
             raise ValueError("transition_reset.states_npz must name a real rollout state library")
         disturbance = self.settings["disturbance"]
-        if not evaluation and self.stage["disturbance_phase"] == 2 and not disturbance["baseline_evaluation_passed"]:
+        if (
+            not evaluation
+            and self.stage["disturbance_phase"] == 2
+            and not disturbance["baseline_evaluation_passed"]
+            and not allow_unvalidated_baseline
+        ):
             raise ValueError(
                 "Stage-2 disturbances require a passing P1 baseline evaluation; record it in the policy YAML"
             )
