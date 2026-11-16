@@ -571,7 +571,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 "max_slow_fraction": (0, 1),
                 "max_slow_duration_s": (0, course["episode_length_s"]),
             }
-            if not isinstance(speed, dict) or set(speed) != set(limits):
+            if not isinstance(speed, (dict, MappingProxyType)) or set(speed) != set(limits):
                 raise ValueError(f"{prefix}.course.edge_speed: expected {list(limits)}")
             for key, (low, high) in limits.items():
                 value = speed[key]
