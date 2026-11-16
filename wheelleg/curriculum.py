@@ -155,17 +155,38 @@ class JumpCurriculum:
         self.successes = torch.zeros_like(self.levels)
         self.anneal_start = torch.full_like(self.levels, -1)
         self.maximum_level = 0
+        self.latest_rate = torch.zeros_like(self.levels)
 
     def sample(self, count: int) -> tuple[torch.Tensor, torch.Tensor]:
+        if "curriculum_demote_rate" in self.settings:
+            bins = torch.full((count,), self.maximum_level, dtype=torch.long, device=self.levels.device)
+            return bins, self.levels[bins]
         bins = torch.randint(self.maximum_level + 1, (count,), device=self.levels.device)
         return bins, self.levels[bins]
 
     def record(self, bins: torch.Tensor, successful: torch.Tensor, iteration: float) -> None:
         if not bins.numel():
             return
+        if "curriculum_demote_rate" in self.settings:
+            current = bins == self.maximum_level
+            bins, successful = bins[current], successful[current]
         self.attempts.scatter_add_(0, bins, torch.ones_like(bins, dtype=torch.float))
         self.successes.scatter_add_(0, bins, successful.float())
         rate = self.successes / self.attempts.clamp_min(1)
+        if "curriculum_demote_rate" in self.settings:
+            level = self.maximum_level
+            if self.attempts[level] >= self.settings["curriculum_min_events"]:
+                self.latest_rate[level] = rate[level]
+                if rate[level] > self.settings["guidance_success_threshold"]:
+                    if self.anneal_start[level] < 0:
+                        self.anneal_start[level] = iteration
+                    self.maximum_level = min(level + 1, len(self.levels) - 1)
+                elif rate[level] < self.settings["curriculum_demote_rate"]:
+                    self.maximum_level = max(level - 1, 0)
+                # Fresh, non-overlapping windows; old successes cannot prevent demotion.
+                self.attempts.zero_()
+                self.successes.zero_()
+            return
         learned = (self.attempts >= self.settings["curriculum_min_events"]) & (
             rate >= self.settings["guidance_success_threshold"]
         )
@@ -185,6 +206,7 @@ class JumpCurriculum:
             successes=self.successes,
             anneal_start=self.anneal_start,
             maximum_level=self.maximum_level,
+            latest_rate=self.latest_rate,
         )
 
     def load_state_dict(self, state: dict) -> None:
@@ -192,3 +214,5 @@ class JumpCurriculum:
         self.successes.copy_(state["successes"])
         self.anneal_start.copy_(state["anneal_start"])
         self.maximum_level = state["maximum_level"]
+        if "latest_rate" in state:
+            self.latest_rate.copy_(state["latest_rate"])

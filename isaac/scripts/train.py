@@ -109,6 +109,10 @@ def main() -> None:
                 )
                 runner.current_learning_iteration += 1
                 env.training_iteration_offset = runner.current_learning_iteration
+                if args.task == "p3-tunnel" and "mix_switch_iteration" in cfg.stage["tunnel"]:
+                    # Initial construction precedes loading the absolute iteration.
+                    # Reapply the mix at episode reset before collecting resumed rollouts.
+                    env.reset()
                 if args.command_fraction is not None:
                     if env.command_curriculum is None:
                         raise ValueError("--command-fraction applies only to P1 tasks")
@@ -122,7 +126,10 @@ def main() -> None:
                     print(f"AIR_HEIGHT_RESET {env.air_height_curriculum.upper}")
             elif args.initialize_from:
                 initialize_actor(runner, args.initialize_from)
-            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+            # Mixed jump episodes use physical-age triggers and one full attempt.
+            # A randomized initial timeout can cut them off before takeoff.
+            mixed_jump = args.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]
+            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=not mixed_jump)
         except Exception:
             import traceback
 

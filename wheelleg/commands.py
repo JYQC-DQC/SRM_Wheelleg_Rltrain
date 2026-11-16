@@ -32,6 +32,17 @@ class Commands:
         self.command_fraction = cfg.settings["command_curriculum"]["initial_fraction"]
         self.free_started = torch.zeros(count, dtype=torch.bool, device=device)
         self.course = None  # Assigned by the stairs environment before the first reset.
+        self.tunnel_obstacle = None
+        if cfg.task == "p3-tunnel":
+            fraction = cfg.stage["tunnel"].get("obstacle_fraction", 1.0)
+            self.tunnel_obstacle = torch.arange(count, device=device) < round(count * fraction)
+
+    def set_tunnel_mix(self, ids: torch.Tensor, iteration: float) -> None:
+        p = self.cfg.stage["tunnel"]
+        fraction = p.get("obstacle_fraction", 1.0)
+        if iteration >= p.get("mix_switch_iteration", float("inf")):
+            fraction = p["obstacle_fraction_after_switch"]
+        self.tunnel_obstacle[ids] = ids < round(len(self.tunnel_obstacle) * fraction)
 
     def reset(self, ids: torch.Tensor) -> None:
         self.free_started[ids] = False
@@ -126,7 +137,8 @@ class Commands:
                     self.target[selected, 2] = uniform(profile["yaw_range_rad_s"], (len(selected),), self.device)
             return
         if self.cfg.task == "p3-tunnel":
-            self.target[ids, 0] = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
+            speed = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
+            self.target[ids, 0] = torch.where(self.tunnel_obstacle[ids], speed, 0.0)
             return
         if self.family == "p2":
             stage = self.cfg.stage

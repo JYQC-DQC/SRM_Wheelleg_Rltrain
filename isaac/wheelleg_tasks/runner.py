@@ -1,6 +1,8 @@
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
+from wheelleg.jump import FEATURES as JUMP_FEATURES
+from wheelleg.jump import TUNNEL_FEATURES
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.stairs import FEATURES as STAIR_FEATURES
 from wheelleg.stairs import SPEED_FEATURES
@@ -21,6 +23,13 @@ class WheelLegRunner(OnPolicyRunner):
             contract["history_frames"] = cfg.policy.history_frames
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
+        if cfg.task in ("p3-jump", "p3-tunnel"):
+            contract["jump_event_revision"] = 2
+            contract["jump_event_features"] = JUMP_FEATURES + (TUNNEL_FEATURES if cfg.task == "p3-tunnel" else 0)
+            contract["jump_event_stage"] = mutable(cfg.stage)
+        if cfg.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]:
+            contract["mixed_jump_revision"] = 2
+            contract["mixed_jump_stage"] = mutable(cfg.stage)
         if cfg.task == "p1-stairs":
             edge_speed = cfg.stage["course"].get("edge_speed")
             contract["stair_course_revision"] = 10 if edge_speed else 9
@@ -116,6 +125,17 @@ class WheelLegRunner(OnPolicyRunner):
         if env.command_curriculum is not None and env.command_curriculum.last_landing_rate is not None:
             rate = env.command_curriculum.last_landing_rate
             self.writer.add_scalar("Curriculum/command_landing_gate_rate", rate, iteration)
+        if env.training.task == "p3-tunnel" and "obstacle_fraction" in env.training.stage["tunnel"]:
+            curriculum = env.jump_curriculum
+            level = curriculum.maximum_level
+            self.writer.add_scalar("Jump/obstacle_fraction", env.commands.tunnel_obstacle.float().mean(), iteration)
+            self.writer.add_scalar("Jump/tunnel_level", level + 1, iteration)
+            self.writer.add_scalar(
+                "Jump/tunnel_height_m", env.training.stage["tunnel"]["height_curriculum_m"][level], iteration
+            )
+            self.writer.add_scalar("Jump/window_count", curriculum.attempts[level], iteration)
+            for index, rate in enumerate(curriculum.latest_rate):
+                self.writer.add_scalar(f"Jump/level{index + 1}/last_success_rate", rate, iteration)
         if env.air_height_curriculum is not None:
             curriculum = env.air_height_curriculum
             self.writer.add_scalar("Curriculum/air_height_max_m", curriculum.upper, iteration)

@@ -11,6 +11,8 @@ from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
 from isaaclab.terrains import HfRandomUniformTerrainCfg, TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
+from wheelleg.jump import FEATURES as JUMP_FEATURES
+from wheelleg.jump import TUNNEL_FEATURES
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.stairs import FEATURES as STAIR_FEATURES
 from wheelleg.stairs import SPEED_FEATURES
@@ -259,6 +261,8 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             else 81
         )
         + (LANDING_FEATURES if t.task == "p1-landing" else 0)
+        + (JUMP_FEATURES if t.task in ("p3-jump", "p3-tunnel") else 0)
+        + (TUNNEL_FEATURES if t.task == "p3-tunnel" else 0)
         + (
             STAIR_FEATURES + (SPEED_FEATURES if t.stage["course"].get("edge_speed") else 0)
             if t.task == "p1-stairs"

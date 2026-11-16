@@ -2,6 +2,8 @@
 
 import torch
 
+from .jump import jump_height_error
+
 
 def track_lin_vel(s, p):
     return torch.exp(-s["linear_error"].square() / p["linear_sigma"]) * s["tracking_mask"] * s["height_gate"]
@@ -162,8 +164,14 @@ def spin_speed_error(s, p):
 
 
 def jump_apex(s, p):
-    error = (s["jump"].height - (s["jump"].apex_z - s["jump"].start_z)).clamp_min(0)
-    return torch.exp(-error.square() / s["jump"].settings["apex_sigma"]) * s["jump"].apex_pulse
+    event = s["jump"]
+    error = jump_height_error(event.apex_z - event.start_z, event.height, event.settings)
+    return (
+        torch.exp(-error.square() / event.settings["apex_sigma"])
+        * event.apex_pulse
+        * ~event.invalid
+        * ~event.failure_paid
+    )
 
 
 def jump_landing(s, p):
@@ -274,6 +282,9 @@ EVENT_TERMS = frozenset(
         "jump_impact",
         "jump_asymmetric_landing",
         "tunnel_crossing",
+        "jump_air_torque_success",
+        "jump_air_center_success",
+        "jump_failure",
         "stair_impact",
         # Paid by wheelleg/landing_rewards.py as per-event totals.
         "landing_progress",

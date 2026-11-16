@@ -89,11 +89,17 @@ class TrainingConfig:
                 if self.task == "p1-stairs":
                     settings["evaluation"].pop("height_m")
         stage = dict(self.stage)
+        if (
+            self.robot.variant == "reference_simulation_only"
+            and self.asset.get("reference_preset") == "scut_v14_2"
+            and stage.get("simulation_height_limit_m") is not None
+        ):
+            stage.pop("feasible_height_m", None)
         if self.task == "p1-stairs":
             for key in tuple(stage):
                 if key.startswith("air_") and key != "air_reset_probability":
                     stage.pop(key)
-        if self.task == "p3-tunnel":
+        if self.task == "p3-tunnel" and "obstacle_fraction" not in self.stage["tunnel"]:
             stage.pop("height_range_m")
         if self.task != "p3-tunnel":
             asset.pop("collision_body_names")
@@ -981,17 +987,65 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if bounds is not None and (len(bounds) != 2 or bounds[0] > bounds[1]):
             raise ValueError(f"commands.{key}: expected [lower, upper]")
     if TASKS[cfg.task].policy == "p3":
+        for key in (
+            "takeoff_confirmation_s",
+            "takeoff_clearance_m",
+            "takeoff_upward_velocity_m_s",
+            "height_overshoot_tolerance_m",
+        ):
+            if key in cfg.stage:
+                value = cfg.stage[key]
+                if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                    raise ValueError(f"jump.{key} must be finite and positive")
+        if "failure_cost" in cfg.stage:
+            cost = cfg.stage["failure_cost"]
+            if type(cost) not in (int, float) or not isfinite(cost) or cost >= 0:
+                raise ValueError("jump.failure_cost must be finite and negative")
+        if cfg.stage.get("takeoff_confirmation_s", 0) >= cfg.stage["event_duration_s"]:
+            raise ValueError("Jump takeoff confirmation must fit inside the event duration")
+        if "height_overshoot_tolerance_m" in cfg.stage:
+            if cfg.stage["height_overshoot_tolerance_m"] <= cfg.stage["height_tolerance_m"]:
+                raise ValueError("Jump overshoot tolerance must exceed the undershoot tolerance")
         probabilities = cfg.stage["jump_count_probabilities"]
         if len(probabilities) != 3 or any(x < 0 for x in probabilities) or abs(sum(probabilities) - 1) > 1e-6:
             raise ValueError("Jump count probabilities must cover 0/1/2 events and sum to one")
         heights = cfg.stage["height_range_m"]
         feasible = cfg.stage["feasible_height_m"]
+        if cfg.stage.get("simulation_height_limit_m") is not None:
+            if cfg.robot.variant != "reference_simulation_only" or cfg.asset.get("reference_preset") != "scut_v14_2":
+                raise ValueError("simulation_height_limit_m applies only to the SCUT reference simulation")
+            limit = cfg.stage["simulation_height_limit_m"]
+            if type(limit) not in (int, float) or not isfinite(limit) or limit <= 0:
+                raise ValueError("simulation_height_limit_m must be finite and positive")
+            feasible = limit if feasible is None else min(feasible, limit)
         if heights is not None and (heights[0] <= 0 or heights[1] < heights[0]):
             raise ValueError("Jump height range must be positive and ordered")
         if cfg.task != "p3-tunnel" and heights is not None and feasible is not None and heights[1] > feasible:
             raise ValueError("Jump target exceeds measured feasible_height_m")
         if cfg.task == "p3-tunnel":
             p = cfg.stage["tunnel"]
+            if "obstacle_fraction" in p:
+                fraction = p["obstacle_fraction"]
+                if type(fraction) not in (int, float) or not isfinite(fraction) or not 0 < fraction < 1:
+                    raise ValueError("tunnel.obstacle_fraction must be in (0,1)")
+                schedule = ("mix_switch_iteration", "obstacle_fraction_after_switch")
+                if any(key in p for key in schedule):
+                    iteration, fraction_after = (p.get(key) for key in schedule)
+                    if type(iteration) is not int or iteration < 0:
+                        raise ValueError("tunnel.mix_switch_iteration must be a nonnegative integer")
+                    if (
+                        type(fraction_after) not in (int, float)
+                        or not isfinite(fraction_after)
+                        or not 0 < fraction_after < 1
+                    ):
+                        raise ValueError("tunnel.obstacle_fraction_after_switch must be in (0,1)")
+                demote = cfg.stage.get("curriculum_demote_rate")
+                if type(demote) not in (int, float) or not 0 <= demote < cfg.stage["guidance_success_threshold"] <= 1:
+                    raise ValueError("Tunnel curriculum requires demotion below promotion threshold")
+                if probabilities != (0.0, 1.0, 0.0):
+                    raise ValueError("Mixed tunnel episodes require exactly one jump")
+                if heights is not None and feasible is not None and heights[1] > feasible:
+                    raise ValueError("Stationary jump target exceeds measured feasible_height_m")
             vx = p["vx_range_m_s"]
             if vx is not None and (len(vx) != 2 or vx[0] <= 0 or vx[1] < vx[0]):
                 raise ValueError("tunnel.vx_range_m_s must be a positive, ordered forward-speed range")

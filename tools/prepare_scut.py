@@ -199,6 +199,7 @@ def main() -> None:
         )
         (args.output / "policy_meta.yaml").write_text(yaml.safe_dump(policy, sort_keys=False), encoding="utf-8")
         (args.output / "policy_p2.yaml").write_bytes((root / "config/reference/scut_p2.yaml").read_bytes())
+        (args.output / "policy_p3.yaml").write_bytes((root / "config/reference/scut_p3.yaml").read_bytes())
         (args.output / "reference_manifest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         from wheelleg.training import load_training
 
