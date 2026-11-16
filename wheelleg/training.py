@@ -559,6 +559,24 @@ def _validate_training(cfg: TrainingConfig) -> None:
                     invalid = value <= 0
                 if invalid:
                     raise ValueError(f"{prefix}.course.{key}: invalid sign or zero")
+        if "edge_speed" in course:
+            speed = course["edge_speed"]
+            limits = {
+                "approach_m": (0, float("inf")),
+                "departure_m": (0, float("inf")),
+                "min_command_m_s": (0, float("inf")),
+                "min_speed_fraction": (0, 1),
+                "penalty_weight": (0, float("inf")),
+                "guide_scale": (0, 1),
+                "max_slow_fraction": (0, 1),
+                "max_slow_duration_s": (0, course["episode_length_s"]),
+            }
+            if not isinstance(speed, dict) or set(speed) != set(limits):
+                raise ValueError(f"{prefix}.course.edge_speed: expected {list(limits)}")
+            for key, (low, high) in limits.items():
+                value = speed[key]
+                if type(value) not in (int, float) or not isfinite(value) or not low < value <= high:
+                    raise ValueError(f"{prefix}.course.edge_speed.{key}: expected finite value in ({low}, {high}]")
         if course["route_alignment_min"] > 1:
             raise ValueError(f"{prefix}.course.route_alignment_min must be in (0,1]")
         if course["route_stuck_window_s"] >= course["episode_length_s"]:

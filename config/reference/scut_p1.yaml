@@ -713,6 +713,16 @@ stages:
       route_stuck_weight: -1.0  # per second after a failed motion window
       route_stuck_window_s: 1.0
       route_stuck_distance_m: 0.05
+      # Design values for continuous traversal; height-dependent speed gating is retained.
+      edge_speed:
+        approach_m: 0.6
+        departure_m: 0.4
+        min_command_m_s: 0.2
+        min_speed_fraction: 0.75
+        penalty_weight: 0.5
+        guide_scale: 0.25
+        max_slow_fraction: 0.25
+        max_slow_duration_s: 0.5
       route_alignment_min: 0.8660254037844386  # within 30 degrees of commanded world +x travel
       route_yaw_limit_rad_s: 0.3  # exclude substantial turning, including heading corrections
       route_tracking_error_floor_m_s: 0.15

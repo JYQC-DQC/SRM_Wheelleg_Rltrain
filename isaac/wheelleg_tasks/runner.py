@@ -3,6 +3,7 @@ from rsl_rl.runners import OnPolicyRunner
 
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.stairs import FEATURES as STAIR_FEATURES
+from wheelleg.stairs import SPEED_FEATURES
 from wheelleg.training import mutable
 
 
@@ -21,8 +22,9 @@ class WheelLegRunner(OnPolicyRunner):
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task == "p1-stairs":
-            contract["stair_course_revision"] = 9
-            contract["stair_course_features"] = STAIR_FEATURES
+            edge_speed = cfg.stage["course"].get("edge_speed")
+            contract["stair_course_revision"] = 10 if edge_speed else 9
+            contract["stair_course_features"] = STAIR_FEATURES + (SPEED_FEATURES if edge_speed else 0)
             contract["stair_scan"] = [
                 cfg.stage["course"][k] for k in ("scan_half_length_m", "scan_half_width_m", "scan_resolution_m")
             ]

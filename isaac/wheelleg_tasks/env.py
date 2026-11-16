@@ -1020,6 +1020,13 @@ class WheelLegEnv(DirectRLEnv):
             # Displacement already integrates dt; stuck is a continuous per-second cost.
             terms["progress"] = p["route_progress_weight"] * self.stair_course.progress
             terms["stuck"] = p["route_stuck_weight"] * self.step_dt * self.stair_course.stuck
+            if self.stair_course.edge_speed:
+                terms["stair_underspeed"] = (
+                    -self.stair_course.edge_speed["penalty_weight"]
+                    * self.step_dt
+                    * self.stair_course.edge_speed_cost
+                    * s["height_gate"]
+                )
             terms["stair_impact"] = p["impact_weight"] * self.stair_course.impact
             # No survival bounty in flight: bounded wheel-speed matching, disabled as soon as wheels touch.
             error = s["wheel_velocity"] * t.shared["wheel_radius_m"] - s["heading_velocity"][:, 0:1]
@@ -1410,6 +1417,15 @@ class WheelLegEnv(DirectRLEnv):
                         self.reset_terminated[selected].float().mean()
                     )
                     active_seconds = self.stair_course.route_active_seconds[selected].sum()
+                    if self.stair_course.edge_speed:
+                        course = self.stair_course
+                        local_seconds = course.edge_speed_time[selected].sum()
+                        self.extras["log"][f"Stairs/{name}/edge_slow_fraction"] = course.edge_slow_time[
+                            selected
+                        ].sum() / local_seconds.clamp_min(self.step_dt)
+                        self.extras["log"][f"Stairs/{name}/edge_slow_max_s"] = (
+                            course.edge_slow_max[selected].amax(-1).mean()
+                        )
                     self.extras["log"][f"Stairs/{name}/route_active_seconds"] = self.stair_course.route_active_seconds[
                         selected
                     ].mean()

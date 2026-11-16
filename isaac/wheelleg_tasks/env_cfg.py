@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.stairs import FEATURES as STAIR_FEATURES
+from wheelleg.stairs import SPEED_FEATURES
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
@@ -258,7 +259,11 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
             else 81
         )
         + (LANDING_FEATURES if t.task == "p1-landing" else 0)
-        + (STAIR_FEATURES if t.task == "p1-stairs" else 0),
+        + (
+            STAIR_FEATURES + (SPEED_FEATURES if t.stage["course"].get("edge_speed") else 0)
+            if t.task == "p1-stairs"
+            else 0
+        ),
     )
     if t.task == "p3-tunnel":
         # contact_sensor_cfg.py:63-68: one sensing body per environment, not Robot/.*.

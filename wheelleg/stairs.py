@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 FEATURES = 24
+SPEED_FEATURES = 16
 
 
 def advance_height_assist(
@@ -223,6 +224,13 @@ class StairCourse:
         self.stuck = torch.zeros(count, dtype=torch.bool, device=device)
         self.route_active_seconds = torch.zeros(count, device=device)
         self.stuck_seconds = torch.zeros(count, device=device)
+        self.edge_speed = self.p.get("edge_speed")
+        self.edge_speed_time = torch.zeros(count, 4, device=device)
+        self.edge_slow_time = torch.zeros_like(self.edge_speed_time)
+        self.edge_slow_run = torch.zeros_like(self.edge_speed_time)
+        self.edge_slow_max = torch.zeros_like(self.edge_speed_time)
+        self.edge_speed_active = torch.zeros(count, dtype=torch.bool, device=device)
+        self.edge_speed_cost = torch.zeros(count, device=device)
         self.seen_support = torch.zeros(count, 2, dtype=torch.bool, device=device)
         self.contact = torch.zeros_like(self.seen_support)
         self.flight_time = torch.zeros(count, 2, device=device)
@@ -304,6 +312,12 @@ class StairCourse:
             self.stuck,
             self.route_active_seconds,
             self.stuck_seconds,
+            self.edge_speed_time,
+            self.edge_slow_time,
+            self.edge_slow_run,
+            self.edge_slow_max,
+            self.edge_speed_active,
+            self.edge_speed_cost,
             self.seen_support,
             self.contact,
             self.flight_time,
@@ -462,10 +476,18 @@ class StairCourse:
             self.traversed | (self.motion & recovered & (self.age >= self.p["minimum_episode_s"])),
         )
         yaw_mean = self.yaw_track_sum / self.track_count.clamp_min(1)
+        self.update_edge_speed(state, origin, dt, terminated)
         promote = torch.where(self.free_commands, self.p["free_tracking_promote"], self.p["tracking_promote"])
         self.success.copy_(
             task_done & ~terminated & ~self.escaped & (self.track_count > 0) & (mean >= promote) & (yaw_mean >= promote)
         )
+        if self.edge_speed:
+            required = torch.isfinite(self.edges)
+            sampled = self.edge_speed_time > 0
+            ratio = self.edge_slow_time / self.edge_speed_time.clamp_min(dt)
+            passed = sampled & (ratio <= self.edge_speed["max_slow_fraction"])
+            passed &= self.edge_slow_max <= self.edge_speed["max_slow_duration_s"]
+            self.success &= ~self.steps | (passed | ~required).all(-1)
         flat = self.p["flat_curriculum"]
         samples = self.flat_sample_count.clamp_min(1)[:, None]
         allowed = self.flat_error_sum.new_tensor(flat["error_thresholds"]).expand_as(self.flat_error_sum).clone()
@@ -475,6 +497,34 @@ class StairCourse:
         self.success.copy_(torch.where(self.motion, flat_success, self.success))
         self.update_route_motion(state, dt, terminated, reward_parameters)
         self.last_x.copy_(center)
+
+    def update_edge_speed(self, state: dict, origin: torch.Tensor, dt: float, terminated: torch.Tensor) -> None:
+        self.edge_speed_active.zero_()
+        self.edge_speed_cost.zero_()
+        if not self.edge_speed:
+            return
+        p = self.edge_speed
+        command = state["tracked_command"][:, 0].abs()
+        center = state["root_position_w"][:, 0] - origin[:, 0]
+        distance = center[:, None] - self.edges
+        local = (distance >= -p["approach_m"]) & (distance <= p["departure_m"])
+        enabled = self.steps & ~self.arrived & ~self.traversed & ~self.escaped & ~terminated
+        local &= enabled[:, None]
+        # Route tiles always traverse world +x, including yaw=pi with a negative
+        # body-frame command. Wheel spin and sideways travel cannot earn speed credit.
+        speed = state["velocity_w"][:, 0]
+        moving = command >= p["min_command_m_s"]
+        slow = (speed < p["min_speed_fraction"] * command) & moving
+        self.edge_speed_time += local * dt
+        self.edge_slow_time += (local & slow[:, None]) * dt
+        # Keep history across contact/flight phases and separate visits to each edge.
+        self.edge_slow_run.copy_(torch.where(local & slow[:, None], self.edge_slow_run + dt, 0.0))
+        self.edge_slow_max.copy_(torch.maximum(self.edge_slow_max, self.edge_slow_run))
+        self.edge_speed_active.copy_(local.any(-1) & moving)
+        deficit = (p["min_speed_fraction"] * command - speed) / command.clamp_min(p["min_command_m_s"])
+        scale = torch.where(self.guide_support, p["guide_scale"], 1.0)
+        penalized = self.edge_speed_active & ~self.flying & (self.cushion <= 0)
+        self.edge_speed_cost.copy_(deficit.clamp(0, 1).square() * scale * penalized)
 
     def update_route_motion(self, state: dict, dt: float, terminated: torch.Tensor, parameters: dict) -> None:
         # Only traverse commands have world +x as their task direction. Reverse driving (yaw=pi, vx<0) qualifies.
@@ -598,4 +648,15 @@ class StairCourse:
             ),
             -1,
         ).clamp(-1, 1)
+        if self.edge_speed:
+            result = torch.cat(
+                (
+                    result,
+                    (self.edge_speed_time / self.p["episode_length_s"]).clamp(0, 1),
+                    (self.edge_slow_time / self.edge_speed_time.clamp_min(1e-6)).clamp(0, 1),
+                    (self.edge_slow_run / self.edge_speed["max_slow_duration_s"]).clamp(0, 1),
+                    (self.edge_slow_max / self.edge_speed["max_slow_duration_s"]).clamp(0, 1),
+                ),
+                -1,
+            )
         return torch.nan_to_num(result)
