@@ -100,7 +100,9 @@ def main() -> None:
         from isaac.wheelleg_tasks.env_cfg import make_env_cfg
         from isaac.wheelleg_tasks.runner import WheelLegRunner
 
-        env = WheelLegEnv(make_env_cfg(cfg, num_envs, args.device))
+        env = WheelLegEnv(
+            make_env_cfg(cfg, num_envs, args.device, allow_unvalidated_baseline=args.allow_unvalidated_baseline)
+        )
         try:
             # Never clip at the wrapper: obs_v2 contains the previous RAW action.
             wrapped = RslRlVecEnvWrapper(env, clip_actions=None)

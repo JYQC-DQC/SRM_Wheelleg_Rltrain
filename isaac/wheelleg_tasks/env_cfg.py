@@ -38,8 +38,15 @@ class WheelLegEnvCfg(DirectRLEnvCfg):
     obstacle_contact_sensors: dict[str, ContactSensorCfg] = {}
 
 
-def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: bool = False) -> WheelLegEnvCfg:
-    t.require_ready(evaluation=evaluation)
+def make_env_cfg(
+    t: TrainingConfig,
+    num_envs: int,
+    device: str,
+    *,
+    evaluation: bool = False,
+    allow_unvalidated_baseline: bool = False,
+) -> WheelLegEnvCfg:
+    t.require_ready(evaluation=evaluation, allow_unvalidated_baseline=allow_unvalidated_baseline)
     asset, physics = t.asset, t.shared
     names = list(asset["active_joint_names"])
     # The explicit motor envelope and randomized PD run every physics step in _apply_action.
