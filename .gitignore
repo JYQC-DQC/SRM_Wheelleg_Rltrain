@@ -16,6 +16,16 @@ export/
 # Previously tracked reference assets under runs/ remain version-controlled.
 /runs/
 
+# Local sim2sim downloads, generated models, evaluation output and unpacked terrain.
+/sim2sim/remote_src/
+/sim2sim/checkpoints/
+/sim2sim/results/
+/sim2sim/assets/
+/terrain/
+/sim2sim*.zip
+/terrain_sim2sim*.zip
+/MUJOCO_LOG.TXT
+
 # Tests stay local (including existing tests)
 [Tt]est/
 [Tt]ests/

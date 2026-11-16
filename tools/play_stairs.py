@@ -10,6 +10,7 @@ import re
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import mujoco
@@ -18,12 +19,14 @@ import numpy as np
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
-SIM2SIM = ROOT.parent / "sim2sim"
+SIM2SIM = ROOT / "sim2sim"
+if not SIM2SIM.is_dir():
+    SIM2SIM = ROOT.parent / "sim2sim"
 sys.path.insert(0, str(SIM2SIM))
 from build_model import build  # noqa: E402
 from play import KP, KP_ADD, KP_DECIMAL, KP_DIVIDE, KP_ENTER, KP_MULTIPLY, KP_SUBTRACT, SLOW_MOTION  # noqa: E402
-from sim2sim import OBS_FIELDS, NumpyActor, RunConfig, Spawn, WheelLegSim, euler_xyz  # noqa: E402
 
+from sim2sim import OBS_FIELDS, NumpyActor, RunConfig, Spawn, WheelLegSim, euler_xyz  # noqa: E402
 from wheelleg.mujoco_terrain import build_course  # noqa: E402
 from wheelleg.stairs import advance_height_assist, scan_course  # noqa: E402
 
@@ -235,7 +238,7 @@ class TerrainSim(WheelLegSim):
 class CoursePlayer:
     def __init__(self, sim: TerrainSim, tiles: list[dict], profile: str, row: int):
         self.sim, self.tiles = sim, tiles
-        self.names = list(sim.stage["terrain"]["profiles"])
+        self.names = list(dict.fromkeys(tile["profile"] for tile in tiles))
         self.profile, self.row, self.reverse = profile, row, False
         self.lock = threading.Lock()
         self.target, self.value = np.zeros(3), np.zeros(3)
@@ -244,6 +247,7 @@ class CoursePlayer:
         self.camera_request = True
         self.last, self.budget, self.info = None, 0.0, None
         self.failed = False
+        self.reload_request = None
 
     def height_bounds(self) -> list:
         return (
@@ -320,7 +324,10 @@ class CoursePlayer:
             if not self.paused and not self.failed:
                 self.budget = min(self.budget + elapsed * SLOW_MOTION[self.slow], 0.1)
                 c = self.sim.cfg.commands
-                while self.budget >= dt:
+                # Yield to Tk and the renderer after each policy step. A large
+                # terrain scan can exceed real time; catch-up batches otherwise
+                # monopolize the window lock and starve input processing.
+                if self.budget >= dt:
                     rates = np.array([c["linear_slew_m_s2"], c["linear_slew_m_s2"], c["angular_slew_rad_s2"]]) * dt
                     self.value += np.clip(self.target - self.value, -rates, rates)
                     self.height += float(
@@ -329,8 +336,6 @@ class CoursePlayer:
                     self.info = self.sim.step(self.value, self.height)
                     self.budget -= dt
                     self.failed = self.info["terminated"]
-                    if self.failed:
-                        break
             if self.camera_request:
                 viewer.cam.type = (
                     mujoco.mjtCamera.mjCAMERA_TRACKING if self.tracking else mujoco.mjtCamera.mjCAMERA_FREE
@@ -339,7 +344,10 @@ class CoursePlayer:
                 self.camera_request = False
             # Respect native Esc / Ctrl-right-double-click changes instead of overwriting the camera every frame.
             self.tracking = viewer.cam.type == mujoco.mjtCamera.mjCAMERA_TRACKING
-            viewer.set_texts(self.texts())
+            texts = self.texts()
+        # set_texts acquires MuJoCo's UI mutex internally. Calling it while
+        # holding viewer.lock() can deadlock with the render thread on Windows.
+        viewer.set_texts(texts)
         viewer.sync()
 
     def texts(self) -> list:
@@ -415,6 +423,12 @@ def run_panel(player: CoursePlayer, viewer, keyboard: bool) -> None:
     ttk.Checkbutton(controls, text="倒车接近", variable=reverse).grid(row=1, column=1)
 
     def spawn():
+        available = {(tile["profile"], tile["row"]) for tile in player.tiles}
+        if (profile.get(), row.get() - 1) not in available:
+            player.reload_request = (profile.get(), row.get(), reverse.get())
+            viewer.close()
+            root.destroy()
+            return
         with player.lock:
             player.profile, player.row, player.reverse = profile.get(), row.get() - 1, reverse.get()
             player.request = True
@@ -523,18 +537,23 @@ def run_panel(player: CoursePlayer, viewer, keyboard: bool) -> None:
     root.mainloop()
 
 
-def main() -> None:
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, default=ROOT / "runs/stairs_viewer/checkpoint")
     parser.add_argument("--profile", default="up_one")
     parser.add_argument("--row", type=int, default=2, help="difficulty row, 1..8")
+    parser.add_argument("--terrain", type=Path, help="unpacked course.xml and map.json directory")
+    parser.add_argument("--terrain-group", choices=("stairs", "grid", "rough"), help="load only this group at --row")
+    parser.add_argument("--reverse", action="store_true", help="approach the course in reverse")
     parser.add_argument(
         "--panel", action="store_true", help="enable old W/S A/D letter keys ONLY in the separate panel"
     )
     parser.add_argument(
         "--build-only", action="store_true", help="compile the model and inspect spawn/sensors, no viewer"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.terrain_group and not args.terrain:
+        parser.error("--terrain-group requires --terrain")
     torch.set_num_threads(1)
     run = args.run.resolve()
     cfg = RunConfig(run)
@@ -548,16 +567,55 @@ def main() -> None:
     if args.profile not in terrain["profiles"] or not 1 <= args.row <= terrain["rows"]:
         parser.error("Unknown terrain profile or difficulty row")
     out = ROOT / "runs/stairs_viewer"
+    if args.terrain_group:
+        out = out / f"{args.terrain_group}_row{args.row}"
     out.mkdir(parents=True, exist_ok=True)
-    # Rebuild the existing robot with this run's friction/damping and fixed randomization midpoints.
-    flat = out / "robot_flat.xml"
-    build(ROOT / "runs/scut_experience/scene.xml", run / "params/robot.yaml", flat, 0.8)
     model_path = out / "course.xml"
-    tiles = build_course(flat, model_path, terrain, cfg.shared["ground_material"]["dynamic_friction"])
+    if args.terrain:
+        source = args.terrain.resolve()
+        tree = ET.parse(source / "course.xml")
+        # The unpacked scene retains the author's mesh path. Resolve its robot
+        # meshes against this checkout while keeping the supplied terrain geometry.
+        tree.getroot().find("compiler").set("meshdir", str(ROOT / "runs/scut_experience"))
+        tree.write(model_path, encoding="utf-8", xml_declaration=True)
+        tiles = json.loads((source / "map.json").read_text(encoding="utf-8"))
+        if args.terrain_group:
+            groups = {
+                "stairs": ("up", "down", "mixed"),
+                "grid": ("grid",),
+                "rough": ("rough", "slope", "flat"),
+            }
+            tiles = [
+                tile
+                for tile in tiles
+                if tile["row"] == args.row - 1
+                and terrain["profiles"][tile["profile"]]["kind"] in groups[args.terrain_group]
+            ]
+            if not tiles:
+                parser.error("No tiles match this terrain group and difficulty row")
+            prefixes = [f"course_{tile['profile']}_{tile['row']}" for tile in tiles]
+            world = tree.getroot().find("worldbody")
+            for geom in list(world.findall("geom")):
+                name = geom.get("name", "")
+                if name.startswith("course_") and not any(name == p or name.startswith(p + "_") for p in prefixes):
+                    world.remove(geom)
+            used = {geom.get("hfield") for geom in world.findall("geom")}
+            asset = tree.getroot().find("asset")
+            for field in list(asset.findall("hfield")):
+                if field.get("name") not in used:
+                    asset.remove(field)
+            tree.write(model_path, encoding="utf-8", xml_declaration=True)
+            if args.profile not in {tile["profile"] for tile in tiles}:
+                args.profile = tiles[0]["profile"]
+    else:
+        flat = out / "robot_flat.xml"
+        build(ROOT / "runs/scut_experience/scene.xml", run / "params/robot.yaml", flat, 0.8)
+        tiles = build_course(flat, model_path, terrain, cfg.shared["ground_material"]["dynamic_friction"])
     (out / "map.json").write_text(json.dumps(tiles, indent=2), encoding="utf-8")
     actor = NumpyActor(checkpoint, cfg.policy["hidden_dims"])
     sim = TerrainSim(cfg, actor, model_path)
     player = CoursePlayer(sim, tiles, args.profile, args.row - 1)
+    player.reverse = args.reverse
     player.respawn()
     obs = sim.observation(np.zeros(3), player.height)
     print(
@@ -584,7 +642,24 @@ def main() -> None:
             viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_STATIC] = 1
         viewer.sync()
         run_panel(player, viewer, keyboard=args.panel)
+    if player.reload_request:
+        profile, row, reverse = player.reload_request
+        next_args = ["--run", str(run), "--profile", profile, "--row", str(row)]
+        if args.terrain:
+            next_args += ["--terrain", str(args.terrain.resolve())]
+        if args.terrain_group:
+            next_args += ["--terrain-group", args.terrain_group]
+        if args.panel:
+            next_args.append("--panel")
+        if reverse:
+            next_args.append("--reverse")
+        return next_args
+    return None
 
 
 if __name__ == "__main__":
-    main()
+    arguments = None
+    while True:
+        arguments = main(arguments)
+        if arguments is None:
+            break
