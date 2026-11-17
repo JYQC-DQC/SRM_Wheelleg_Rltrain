@@ -27,6 +27,11 @@ def main() -> None:
     group.add_argument("--resume", type=Path, help="Restore this task's policy, critic, optimizer and iteration")
     group.add_argument("--initialize-from", type=Path, help="Transfer actor weights to a new stage/policy")
     parser.add_argument(
+        "--inherit-action-std",
+        action="store_true",
+        help="With --initialize-from: also retain the checkpoint's learned per-action exploration std",
+    )
+    parser.add_argument(
         "--command-fraction",
         type=float,
         help="With --resume: restart the P1 command curriculum at this fraction (open window discarded)",
@@ -37,6 +42,8 @@ def main() -> None:
         help="With --resume on p1-landing: restart the air-birth height curriculum at its first level",
     )
     args, _ = parser.parse_known_args()
+    if args.inherit_action_std and not args.initialize_from:
+        parser.error("--inherit-action-std needs --initialize-from")
     if args.command_fraction is not None and (not args.resume or not 0 < args.command_fraction <= 1):
         parser.error("--command-fraction needs --resume and a value in (0, 1]")
     if args.restart_air_height and (not args.resume or args.task != "p1-landing"):
@@ -86,6 +93,7 @@ def main() -> None:
         iterations=iterations,
         resume=str(args.resume) if args.resume else None,
         initialize_from=str(args.initialize_from) if args.initialize_from else None,
+        inherit_action_std=args.inherit_action_std,
         allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
@@ -136,7 +144,9 @@ def main() -> None:
                     env.command_curriculum.discard_landing()
                     print(f"AIR_HEIGHT_RESET {env.air_height_curriculum.upper}")
             elif args.initialize_from:
-                initialize_actor(runner, args.initialize_from)
+                initialize_actor(runner, args.initialize_from, inherit_action_std=args.inherit_action_std)
+                if args.inherit_action_std:
+                    print(f"INHERITED_ACTION_STD {runner.alg.policy.std.detach().tolist()}")
             # Mixed jump episodes use physical-age triggers and one full attempt.
             # A randomized initial timeout can cut them off before takeoff.
             runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=TASKS[args.task].policy != "p3")

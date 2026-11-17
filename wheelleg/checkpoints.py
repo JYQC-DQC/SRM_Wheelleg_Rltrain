@@ -30,8 +30,8 @@ def load_policy_module(checkpoint: str | Path, policy: PolicyConfig) -> Deployed
     return DeployedPolicy(load_actor(checkpoint, policy), estimator).eval()
 
 
-def initialize_actor(runner, checkpoint: str | Path) -> None:
-    """Cross-stage transfer: actor only; critic/optimizer/iteration are fresh.
+def initialize_actor(runner, checkpoint: str | Path, *, inherit_action_std: bool = False) -> None:
+    """Transfer the actor (and optionally action std); critic/optimizer/iteration are fresh.
 
     A single-frame (35-input) actor moved into a history policy gets zero weights for the estimate inputs, so it
     starts with exactly the old behaviour. A source estimator is reused when present; otherwise it starts fresh.
@@ -46,6 +46,14 @@ def initialize_actor(runner, checkpoint: str | Path) -> None:
     estimator_state = _prefixed(state, "estimator.")
     if estimator_state and hasattr(policy, "estimator"):
         policy.estimator.load_state_dict(estimator_state, strict=True)
+    if inherit_action_std:
+        source_std = state.get("std")
+        if source_std is None or source_std.shape != policy.std.shape:
+            raise ValueError("Checkpoint action std is missing or does not match the target action shape")
+        if not (torch.isfinite(source_std) & (source_std > 0)).all():
+            raise ValueError("Checkpoint action std must be finite and positive")
+        with torch.no_grad():
+            policy.std.copy_(source_std)
 
 
 def require_target_runtime() -> None:
