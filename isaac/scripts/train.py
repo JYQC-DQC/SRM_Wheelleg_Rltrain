@@ -20,29 +20,52 @@ def main() -> None:
     parser.add_argument("--iterations", type=int)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--resume", type=Path, help="Restore this task's policy, critic, optimizer and iteration")
-    group.add_argument("--initialize-from", type=Path, help="Transfer actor weights to a new stage/policy")
+    group.add_argument("--initialize-from", type=Path, help="Transfer the Actor and velocity encoder to a fresh stage")
     args, _ = parser.parse_known_args()
     path = args.policy or Path(f"config/policies/{TASKS[args.task].policy}/policy_meta.yaml")
     cfg = load_training(args.task, args.robot, path)
+    simulate_jump_button = TASKS[args.task].policy == "p3"
     if args.check_only:
         print(
             json.dumps(
-                {"task": args.task, "initialize_from_task": TASKS[args.task].initialize_from, "missing": cfg.missing()},
+                {
+                    "task": args.task,
+                    "initialize_from_task": TASKS[args.task].initialize_from,
+                    "missing": cfg.missing(simulate_jump_button=simulate_jump_button),
+                },
                 ensure_ascii=False,
                 indent=2,
             )
         )
         return
-    cfg.require_ready()  # Fail before starting the simulator or creating a run.
+    if args.task in ("p1-landing", "p1-stairs", "p3-tunnel") and not (args.resume or args.initialize_from):
+        source = TASKS[args.task].initialize_from
+        parser.error(f"{args.task} requires --initialize-from an explicitly selected {source} checkpoint or --resume")
+    cfg.require_ready(simulate_jump_button=simulate_jump_button)  # Before simulator startup.
     if not args.run_name or Path(args.run_name).name != args.run_name:
         parser.error("--run-name must be one directory name")
     from isaaclab.app import AppLauncher
 
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
-    from wheelleg.checkpoints import initialize_actor, require_target_runtime
+    from wheelleg.actor import policy_contract
+    from wheelleg.checkpoints import initialize_actor, load_actor, load_landing_transfer, require_target_runtime
 
     require_target_runtime()
+    flat_transfer = None
+    if args.task == "p1-landing":
+        flat_transfer = load_landing_transfer(
+            args.resume or args.initialize_from,
+            cfg.policy,
+            source_task="p1-landing" if args.resume else "p1-flat",
+            commands=cfg.settings["commands"],
+        )
+    elif args.task == "p1-stairs":
+        load_actor(
+            args.resume or args.initialize_from, cfg.policy, source_task="p1-stairs" if args.resume else "p1-landing"
+        )
+    if args.task == "p3-tunnel" and args.initialize_from:
+        load_actor(args.initialize_from, cfg.policy, source_task="p3-jump")
     num_envs = cfg.settings["num_envs"] if args.num_envs is None else args.num_envs
     iterations = cfg.settings["max_iterations"] if args.iterations is None else args.iterations
     if num_envs <= 0 or iterations <= 0:
@@ -54,6 +77,18 @@ def main() -> None:
     shutil.copy2(args.robot, params / "robot.yaml")
     shutil.copy2(path, params / "policy_meta.yaml")
     commit = subprocess.run(["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    guide_root = Path("docs/上大轮腿训练方案")
+    guide_names = ["上大轮腿训练方案_决策记录_20261115.md"]
+    if TASKS[args.task].policy == "p1":
+        guide_names.extend(
+            (
+                "P1_FLAT_REWARD_DESIGN_20261115.md",
+                "P1_LANDING_DESIGN_20261116.md",
+                "P1_LANDING_REWARD_CURRICULUM_COMPARISON_20261116.md",
+            )
+        )
+    guide_paths = [guide_root / name for name in guide_names]
+    guide_payload = b"\0".join(p.read_bytes() for p in guide_paths)
     manifest = dict(
         task=args.task,
         git_commit=commit,
@@ -67,8 +102,9 @@ def main() -> None:
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
         obs_version=cfg.policy.obs_version,
-        guide_version="2.1",
-        guide_sha256=hashlib.sha256(Path("docs/轮腿RL_推进指南_v2.md").read_bytes()).hexdigest(),
+        policy_contract=policy_contract(cfg.policy),
+        guide_sources=[p.as_posix() for p in guide_paths],
+        guide_sha256=hashlib.sha256(guide_payload).hexdigest(),
     )
     (params / "run.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
@@ -80,9 +116,17 @@ def main() -> None:
         from isaac.wheelleg_tasks.env_cfg import make_env_cfg
         from isaac.wheelleg_tasks.runner import WheelLegRunner
 
-        env = WheelLegEnv(make_env_cfg(cfg, num_envs, args.device))
+        env = WheelLegEnv(
+            make_env_cfg(
+                cfg,
+                num_envs,
+                args.device,
+                flat_transfer=flat_transfer,
+                simulate_jump_button=simulate_jump_button,
+            )
+        )
         try:
-            # Never clip at the wrapper: obs_v2 contains the previous RAW action.
+            # Never clip at the wrapper: the policy frame contains the previous RAW action.
             wrapped = RslRlVecEnvWrapper(env, clip_actions=None)
             runner = WheelLegRunner(wrapped, runner_config(cfg), log_dir=str(output), device=args.device)
             runner.add_git_repo_to_log(__file__)
@@ -95,7 +139,7 @@ def main() -> None:
                 env.training_iteration_offset = runner.current_learning_iteration
             elif args.initialize_from:
                 initialize_actor(runner, args.initialize_from)
-            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=False)
         finally:
             env.close()
     finally:

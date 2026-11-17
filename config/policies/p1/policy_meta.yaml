@@ -51,7 +51,6 @@ training:
   save_interval: 500
   episode_length_s: 20.0
   init_noise_std: 1.0
-  reward_clip: 2.5
   ppo:
     value_loss_coef: 2.0
     use_clipped_value_loss: true
@@ -86,42 +85,20 @@ training:
     - 0.1
     - 0.15
     dash_range_m_s: null
-  reward_parameters:
-    linear_sigma: 0.5
-    angular_sigma: 0.25
-    height_sigma: 0.001
-    roll_sigma: 0.01
-    pitch_sigma: 0.02
-    fork_deadzone_m: 0.05
-    stand_deadzone: 0.1
-    contact_force_n: 3.0
-    spin_velocity_sigma: 0.25
-    spin_heading_sigma: 0.025
-    air_wheel_torque_sigma: 1.5
-    fork_square_scale: 5.0
-    leg_length_symmetry_scale: 10.0
-  rewards:
-    track_lin_vel: 1.0
-    lin_vel_error: -1.0
-    track_ang_vel: 1.0
-    ang_vel_error: -1.0
-    track_height: 1.0
-    height_error: -1.0
-    flat_roll: 1.0
-    flat_pitch: 1.0
-    roll_penalty: -2.0
-    pitch_penalty: -2.0
-    vertical_velocity: -0.5
-    angular_xy: -0.05
-    no_fork: -1.0
-    no_fork_square: -1.0
-    undesired_contact: -2.0
-    stand_still: -1.0
-    joint_torque: -0.0001
-    wheel_power: -0.0001
-    action_rate: -0.01
-    termination: -4.0
-    leg_symmetry: 0.0
+    combined_wz_limit_rad_s: null
+    heading_kp: null
+    heading_max_wz: null
+  shu_rewards:
+    # Shapes are implemented; unapproved tolerances require explicit tuning before training.
+    vx_tol_max: null
+    vx_tol_knee: null
+    wz_tol_max: null
+    wz_tol_knee: null
+    vx_error_sigma: 2.5
+    wz_error_sigma: 2.5
+    lateral_velocity_scale: null
+    height_wide_weight: null
+    height_gate_shape: null
   evaluation:
     observation_delay_steps: null
     action_delay_steps: null
@@ -146,110 +123,147 @@ training:
     - 300.0
     lateral_probability: 0.8
     phase2_start_iteration: null
-  air_rewards:
-    joint_limit: -10.0
-    wheel_center: 10.0
-    wheel_center_sigma: null
-    wheel_torque: 20.0
-    wheel_torque_sigma: 1.5
-    wheel_speed_alignment: -10.0
-  command_curriculum:
-    min_completed_episodes: 4096
-    initial_fraction: 0.25
-    increment: 0.05
-    success_fraction: 0.8
-    velocity_error_threshold_m_s: null
-    yaw_error_threshold_rad_s: null
-  transition_reset:
-    probability: 0.0
-    states_npz: null
 stages:
   flat:
+    disturbance_phase: 1
+    recovery_probability: null
+    initial_fraction: 0.25
+    min_segments: null  # accepted sample window, independent per motion bucket
+    error_floor: [null, null, null]  # vx (m/s), yaw (rad/s), height (m); grading, not reward dead zones
+    relative_error: [null, null, null]
+  landing:
+    disturbance_phase: 1
+    height_edges_m: [null, null, null, null, 0.45]  # provisional H4; confirm all five on the actual chassis
+  stairs:
     air_reset_probability: 0.0
     recovery_probability: 0.0
-    disturbance_phase: 1
-  landing:
-    air_reset_probability: 0.3
-    air_height_offset_m: &id001
-    - 0.12
-    - 0.42
-    air_vx_range_m_s: &id002
-    - -2.5
-    - 2.5
-    recovery_probability: 0.0
-    disturbance_phase: 1
-  stairs:
-    air_reset_probability: 0.3
-    air_height_offset_m: *id001
-    air_vx_range_m_s: *id002
-    recovery_probability: 0.0
     terrain:
-      tile_size_m: &id003
-      - 8.0
-      - 8.0
-      rows: 8
-      columns: 10
-      flat_proportion: 0.3
-      step_height_range_m: null
-      step_width_m: null
-      slope_proportion: 0.1
-      bump_proportion: 0.1
-      slope_angle_range_rad:
-      - 0.0
-      - 0.4363323129985824
-      bump_height_range_m: null
-      bump_spacing_m: null
-      bump_width_m: null
-    stair_detection_distance_m: 0.5
-    stair_detection_height_m: 0.05
-    stair_false_positive: 0.1
-    stair_false_negative: 0.1
-    progress_weight: 1.0
-    stuck_weight: -1.0
-    impact_weight: -0.001
-    stuck_window_s: 1.0
-    stuck_distance_m: 0.05
+      tile_size_m: null
+      rows: null
+      route:
+        vx_range_m_s: null  # Positive forward-speed range for traverse only.
+        heading_kp: null
+        heading_max_wz_rad_s: null
+        corridor_width_m: null  # Full route width, centered on the tile.
+        clearance_m: null  # Vehicle envelope/safety margin to corridor, obstacle and tile edges.
+      # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
+      groups: {rough: null, grid: null, slope: null, stairs: null}
+      stair_weights:
+        single_up: null
+        double_up: null
+        triple_up: null
+        single_down: null
+        double_down: null
+        triple_down: null
+      # Zero-based row, finalized route-attempt window, and required pass fraction per prerequisite.
+      gates:
+        single_up: {row: null, window: null, success_fraction: null}
+        double_up: {row: null, window: null, success_fraction: null}
+        single_down: {row: null, window: null, success_fraction: null}
+        double_down: {row: null, window: null, success_fraction: null}
+      profiles:
+        flat:
+          row_range: null
+          command_mode: free
+          geometry: {spawn_x_m: null, ground_thickness_m: null}
+        rough:
+          row_range: null
+          command_mode: null
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            surface_x_range_m: null
+            surface_resolution_m: null
+            rough_amplitude_range_m: null
+        grid:
+          row_range: null
+          command_mode: null
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            surface_x_range_m: null
+            grid_y_range_m: null
+            grid_bar_x_m: null
+            grid_bar_y_m: null
+            grid_width_m: null
+            grid_height_range_m: null
+        slope:
+          row_range: null
+          command_mode: null
+          geometry: {spawn_x_m: null, ground_thickness_m: null, slope_angle_range_rad: null}
+        single_up:
+          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          command_mode: traverse
+          exit_distance_m: null  # Along +X, measured from this tile spawn.
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            first_edge_x_m: null
+            step_width_m: null
+            step_height_range_m: null
+        double_up:
+          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          command_mode: traverse
+          exit_distance_m: null  # Along +X, measured from this tile spawn.
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            first_edge_x_m: null
+            step_width_m: null
+            step_height_range_m: null
+        single_down:
+          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          command_mode: traverse
+          exit_distance_m: null  # Along +X, measured from this tile spawn.
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            first_edge_x_m: null
+            step_width_m: null
+            step_height_range_m: null
+        double_down:
+          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          command_mode: traverse
+          exit_distance_m: null  # Along +X, measured from this tile spawn.
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            first_edge_x_m: null
+            step_width_m: null
+            step_height_range_m: null
+        triple_up:
+          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          command_mode: traverse
+          exit_distance_m: null  # Along +X, measured from this tile spawn.
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            first_edge_x_m: null
+            step_width_m: null
+            step_height_range_m: null
+        triple_down:
+          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          command_mode: traverse
+          exit_distance_m: null  # Along +X, measured from this tile spawn.
+          geometry:
+            spawn_x_m: null
+            ground_thickness_m: null
+            first_edge_x_m: null
+            step_width_m: null
+            step_height_range_m: null
+    stair_detection_distance_m: null
+    stair_detection_height_m: null
+    stair_false_positive: null
+    stair_false_negative: null
+    progress_weight: null
+    stuck_weight: null
+    impact_weight: null
+    stuck_window_s: null
+    stuck_distance_m: null
     disturbance_phase: 2
-    step_height_boost_m: 0.16
-    step_height_hold_s: 2.0
-    step_height_trigger_distance_m: 0.14
-  recovery:
-    air_reset_probability: 0.3
-    air_height_offset_m: *id001
-    air_vx_range_m_s: *id002
-    recovery_probability: 0.15
-    handover_states_npz: null
-    rise_duration_s: 1.5
-    zero_torque_s: 0.2
-    recovery_timeout_s: 5.0
-    disturbance_phase: 2
-    terrain:
-      tile_size_m: *id003
-      rows: 8
-      columns: 10
-      flat_proportion: 0.3
-      step_height_range_m: null
-      step_width_m: null
-      slope_proportion: 0.1
-      bump_proportion: 0.1
-      slope_angle_range_rad:
-      - 0.0
-      - 0.4363323129985824
-      bump_height_range_m: null
-      bump_spacing_m: null
-      bump_width_m: null
-    stair_detection_distance_m: 0.5
-    stair_detection_height_m: 0.05
-    stair_false_positive: 0.1
-    stair_false_negative: 0.1
-    progress_weight: 1.0
-    stuck_weight: -1.0
-    impact_weight: -0.001
-    stuck_window_s: 1.0
-    stuck_distance_m: 0.05
-    step_height_boost_m: 0.16
-    step_height_hold_s: 2.0
-    step_height_trigger_distance_m: 0.14
+    step_height_boost_m: null
+    step_height_hold_s: null
+    step_height_trigger_distance_m: null
 mode_semantics:
 - normal
 - stair

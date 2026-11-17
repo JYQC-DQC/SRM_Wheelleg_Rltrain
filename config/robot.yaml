@@ -38,6 +38,11 @@ asset:
   wheel_body_names: [null, null]
   base_body_name: null
   undesired_contact_body_names: null
+  # Exact names in this chassis' USD. Closed-chain joint order is defined in shu_spawn.LEG_JOINT_ORDER.
+  shu_leg_reset_joint_names: null
+  guide_body_names: null
+  leg_body_names: null
+  termination_contact_body_names: null
   initial_root_position_m: [0.0, 0.0, null]
   initial_joint_positions_rad: null
   # One filtered ContactSensor per USD body; exact asset names, no bounding spheres.
@@ -90,6 +95,44 @@ training:
   solver_position_iterations: 12
   solver_velocity_iterations: 6
   wheel_radius_m: null
+  wheel_rim_sign: [null, null]  # signed joint angular speed -> positive forward rim speed
+  shu_contact:
+    contact_force_n: null          # any-body first touch / ordinary undesired contact
+    wheel_contact_force_n: null    # raw wheel Fz; separate from sustained load
+    support_force_n: null
+    release_s: null                # passive preset release (SCUT reference: 0.2 s)
+  shu_spawn:
+    # All geometric ranges need CAD clearance / spring and closure checks, not SCUT defaults.
+    ik_branch: null  # symmetric_five_bar_v1 only after CAD branch verification
+    link_lengths_m: null
+    angle_offsets_rad: null
+    min_root_height_m: null
+    ordinary_length_m: null
+    ordinary_angle_rad: null
+    ordinary_tilt_rad: null
+    air_length_m: null
+    recovery_length_m: null
+    recovery_forward_leg_height_m: null
+    recovery_rear_leg_height_m: null
+    recovery_root_height_m: null
+    wheel_angle_rad: null
+    wheel_speed_rad_s: null
+    leg_speed_rad_s: null
+  # Flat/landing only: explicitly resolve the WHOLE articulation at the sampled pose. No default axes.
+  shu_reset_map:
+    mode: null  # planar_rear_knee_coaxial_v1 only for COPLANAR, COAXIAL eyes on the two rear links
+    canonical_to_asset_sign: null  # 12 LEG_JOINT_ORDER then left/right wheel, independent +/- per asset axis
+    canonical_zero_in_asset_rad: null  # 14 absolute USD readings at each canonical zero, not motor offsets
+    fixed_pin_xz_m: null  # L/R [x,z] in rear proximal-link frame, in metres
+    knee_pivot_xz_m: null  # L/R pivot point in that same frame
+    moving_pin_knee0_xz_m: null  # L/R vector from pivot to distal eye at canonical rear2 q=0
+    knee_rotation_sign: null  # canonical rear2 coordinate -> X-toward-Z rotation, left/right
+    zero_pin_distance_m: null  # pin separation at asset slider q=0, L/R
+    extension_sign: null  # lengthening -> signed USD slider direction, NOT the force sign
+    slider_safe_range_m: null  # actual L/R safe prismatic q intervals; also checked against USD limits
+    auxiliary_joint_names: null  # [] only after confirming no other DOFs; else L/R pin swivel names
+    hinge_zero_xz_rad: null  # [] or L/R pin-line bearing at swivel q=0 in the same parent frame
+    hinge_asset_sign: null  # [] or L/R bearing -> asset swivel direction
   joint_lower_rad: [null, null, null, null, null, null]
   joint_upper_rad: [null, null, null, null, null, null]
   joint_target_margin_rad: 0.05
@@ -150,7 +193,9 @@ training:
   termination:
     tilt_rad: 0.6981317007977318
     airborne_tilt_rad: null
-    contact_force_n: 3.0
+    duration_s: 0.4
+    decay_s: 2.0  # elapsed clean time needed to drain a full physical termination counter
+    contact_force_n: null  # calibrate this chassis; not reference-robot newtons
   airborne:
     contact_force_n: 20.0
     enter_duration_s: 0.02

@@ -113,58 +113,12 @@ def spin_speed_error(s, p):
     return s["speed_error"].square()
 
 
-def jump_apex(s, p):
-    error = (s["jump"].height - (s["jump"].apex_z - s["jump"].start_z)).clamp_min(0)
-    return torch.exp(-error.square() / s["jump"].settings["apex_sigma"]) * s["jump"].apex_pulse
-
-
 def jump_landing(s, p):
     return s["jump"].landing_pulse.float()
 
 
-def jump_flight(s, p):
-    return s["jump_ref"]["flight"].float()
-
-
-def jump_crouch(s, p):
-    error = (s["leg_length"] - s["jump"].settings["crouch_leg_length_m"]).abs().sum(-1)
-    return torch.exp(-4 * error) * s["jump_ref"]["crouch"] * s["guidance_scale"]
-
-
-def jump_takeoff(s, p):
-    target = s["jump_ref"]["takeoff_velocity"]
-    ratio = s["velocity_w"][:, 2] / target.clamp_min(torch.finfo(target.dtype).eps)
-    return ratio.clamp(0, 1) * s["jump_ref"]["push"] * s["guidance_scale"]
-
-
-def jump_push_symmetry(s, p):
-    force = s["wheel_force"].clamp_min(0)
-    return (1 - (force[:, 0] - force[:, 1]).abs() / force.sum(-1).clamp_min(1)) * s["jump_ref"]["push"]
-
-
-def jump_tuck(s, p):
-    error = (s["leg_length"] - s["jump"].settings["tuck_leg_length_m"]).abs().sum(-1)
-    return torch.exp(-4 * error) * s["jump_ref"]["tuck"] * s["guidance_scale"]
-
-
-def jump_prepare(s, p):
-    error = (s["leg_length"] - s["jump"].settings["landing_leg_length_m"]).abs().sum(-1)
-    return torch.exp(-4 * error) * s["jump_ref"]["prepare"] * s["guidance_scale"]
-
-
-def jump_impact(s, p):
-    return (s["hip_torque"].square().amax(-1) + s["hip_velocity"].square().sum(-1)) * s["jump"].touchdown_pulse
-
-
-def jump_asymmetric_landing(s, p):
-    times = s["jump"].touchdown_time
-    return ((times[:, 0] - times[:, 1]).abs() > s["jump"].settings["max_touchdown_difference_s"]).float() * s[
-        "jump"
-    ].touchdown_pulse
-
-
-def uncommanded_flight(s, p):
-    return (s["airborne"] & ~s["jump"].active & ~s["jump"].landing_pulse).float()
+def tunnel_crossing(s, p):
+    return s["jump"].landing_pulse.float()
 
 
 TERMS = {
@@ -196,34 +150,19 @@ TERMS = {
         spin_velocity_error,
         spin_speed_error,
         leg_symmetry,
-        jump_apex,
         jump_landing,
-        jump_flight,
-        jump_crouch,
-        jump_takeoff,
-        jump_push_symmetry,
-        jump_tuck,
-        jump_prepare,
-        jump_impact,
-        jump_asymmetric_landing,
-        uncommanded_flight,
+        tunnel_crossing,
     )
 }
 
 
-EVENT_TERMS = frozenset(
-    (
-        "termination",
-        "jump_apex",
-        "jump_landing",
-        "jump_impact",
-        "jump_asymmetric_landing",
-        "tunnel_crossing",
-    )
-)
+EVENT_TERMS = frozenset(("termination", "jump_landing", "tunnel_crossing"))
 
 
 def compute_rewards(state: dict, parameters: dict, weights: dict, dt: float, clip: float) -> dict[str, torch.Tensor]:
+    unresolved = [name for name, weight in weights.items() if weight is None]
+    if unresolved:
+        raise ValueError(f"Reward weights must be configured (explicit zero disables): {', '.join(unresolved)}")
     # Event weights are total payouts: neither dt nor the continuous-term clip applies.
     return {
         name: TERMS[name](state, parameters) * weight

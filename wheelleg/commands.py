@@ -1,10 +1,10 @@
-import math
-
 import torch
 
 from .tasks import TASKS
 from .tensor_ops import rotate_xy, slew
 from .training import TrainingConfig
+
+SPIN_SIM_LIMIT_RAD_S = 18.0
 
 
 def uniform(bounds: tuple[float, float], shape: tuple[int, ...], device: str) -> torch.Tensor:
@@ -12,9 +12,10 @@ def uniform(bounds: tuple[float, float], shape: tuple[int, ...], device: str) ->
 
 
 class Commands:
-    def __init__(self, cfg: TrainingConfig, count: int, device: str):
+    def __init__(self, cfg: TrainingConfig, count: int, device: str, *, sample_jump_motion: bool = False):
         self.cfg, self.device = cfg, device
         self.family = TASKS[cfg.task].policy
+        self.sample_jump_motion = sample_jump_motion
         self.settings = cfg.settings["commands"]
         self.value = torch.zeros(count, 3, device=device)
         self.target = torch.zeros_like(self.value)
@@ -28,7 +29,19 @@ class Commands:
         self.rates = self.value.new_tensor(
             [self.settings["linear_slew_m_s2"], self.settings["linear_slew_m_s2"], self.settings["angular_slew_rad_s2"]]
         )
-        self.command_fraction = cfg.settings["command_curriculum"]["initial_fraction"]
+        self.command_fraction = cfg.settings["command_curriculum"]["initial_fraction"] if self.family == "p1" else 1.0
+        if self.family == "p2":
+            stage = cfg.stage
+            self.spin_rates = self.value.new_tensor(stage["spin_rates_rad_s"])
+            self.spin_probabilities = self.value.new_tensor(stage["spin_probabilities"])
+            if self.spin_rates.ndim != 1 or not (self.spin_rates.abs() <= SPIN_SIM_LIMIT_RAD_S).all():
+                raise ValueError("P2 spin_rates_rad_s must be a vector within the +/-18 rad/s simulation limit")
+            if (
+                self.spin_probabilities.shape != self.spin_rates.shape
+                or not (self.spin_probabilities >= 0).all()
+                or not torch.isclose(self.spin_probabilities.sum(), self.value.new_tensor(1.0))
+            ):
+                raise ValueError("P2 spin_probabilities must match the signed rates, be nonnegative and sum to 1")
 
     def reset(self, ids: torch.Tensor) -> None:
         self.value[ids] = 0
@@ -43,21 +56,22 @@ class Commands:
         n = len(ids)
         if not n:
             return
-        self.remaining[ids] = uniform(self.settings["segment_duration_s"], (n,), self.device)
         self.target[ids] = 0
-        if self.cfg.task == "p3-tunnel":
-            self.target[ids, 0] = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
+        if self.family == "p3":
+            if self.cfg.task == "p3-tunnel":
+                speed = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
+            else:
+                speed = uniform(self.settings["vx_range_m_s"], (n,), self.device)
+            # Preserve the stationary/moving cohort and speed before, during and after the press.
+            if self.sample_jump_motion:
+                speed *= torch.rand(n, device=self.device) < self.cfg.stage["moving_probability"]
+            self.target[ids, 0] = speed
+            self.remaining[ids] = torch.inf
             return
+        self.remaining[ids] = uniform(self.settings["segment_duration_s"], (n,), self.device)
         if self.family == "p2":
-            stage = self.cfg.stage
-            low = uniform(stage["spin_low_range_rad_s"], (n,), self.device)
-            high = uniform(stage["spin_high_range_rad_s"], (n,), self.device)
-            self.target[ids, 2] = torch.where(torch.rand(n, device=self.device) < 0.5, low, high)
-            self.target[ids, 2] *= torch.where(torch.rand(n, device=self.device) < 0.5, -1.0, 1.0)
-            speed = uniform(stage["translation_speed_range_m_s"], (n,), self.device)
-            heading = uniform((-math.pi, math.pi), (n,), self.device)
-            self.translation_target[ids] = torch.stack((speed * heading.cos(), speed * heading.sin()), -1)
-            self.reference_yaw[ids] = stage["reference_yaw_rad"]
+            kinds = torch.multinomial(self.spin_probabilities, n, replacement=True)
+            self.target[ids, 2] = self.spin_rates[kinds]
             return
         kinds = torch.multinomial(self.value.new_tensor(self.settings["segment_probabilities"]), n, replacement=True)
         vx = uniform(self.settings["vx_range_m_s"], (n,), self.device) * self.command_fraction
@@ -80,11 +94,18 @@ class Commands:
         self.height_remaining -= dt
         self._resample(((self.remaining <= 0) & ~frozen).nonzero().flatten())
         self._resample_height(((self.height_remaining <= 0) & ~frozen).nonzero().flatten())
-        self.value = torch.where(frozen[:, None], self.value, slew(self.value, self.target, self.rates, dt))
+        motion = slew(self.value, self.target, self.rates, dt)
+        # P3 keeps one motion target per episode, but issued speed must keep slewing during the jump.
+        self.value = motion if self.family == "p3" else torch.where(frozen[:, None], self.value, motion)
         self.height = torch.where(
             frozen[:, None], self.height, slew(self.height, self.target_height, self.settings["height_slew_m_s"], dt)
         )
-        self.translation = slew(self.translation, self.translation_target, self.settings["linear_slew_m_s2"], dt)
+        if self.family == "p2":
+            self.value[:, :2] = 0
+            self.translation.zero_()
+            self.translation_target.zero_()
+        else:
+            self.translation = slew(self.translation, self.translation_target, self.settings["linear_slew_m_s2"], dt)
 
     def mode(
         self,
@@ -102,11 +123,6 @@ class Commands:
             mode[:, 3] = recovering
         elif self.family == "p2":
             mode[:, 1] = 1
-            mode[:, 2] = torch.linalg.vector_norm(self.translation, dim=-1)
-            heading = torch.atan2(self.translation[:, 1], self.translation[:, 0])
-            mode[:, 3], mode[:, 4] = heading.sin(), heading.cos()
-            relative = self.reference_yaw - yaw
-            mode[:, 5], mode[:, 6] = relative.sin(), relative.cos()
         else:
             mode[:, 4] = jump_active
             mode[:, 5] = jump_height * self.cfg.policy.height_scale * jump_active

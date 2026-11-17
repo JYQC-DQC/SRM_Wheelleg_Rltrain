@@ -11,10 +11,11 @@ from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
 from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
+from wheelleg.shu_terrain import MIXED_PROFILES
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
-from .terrain import BumpsCfg, SlopeCfg, StepsCfg
+from .terrain import MixedTerrainCfg
 
 
 @configclass
@@ -23,7 +24,9 @@ class WheelLegEnvCfg(DirectRLEnvCfg):
     observation_space = 35
     state_space = 81
     training: TrainingConfig = None
+    flat_transfer: dict | None = None
     evaluation: bool = False
+    simulate_jump_button: bool = False
     robot: ArticulationCfg = None
     terrain: TerrainImporterCfg = None
     contact_sensor: ContactSensorCfg = None
@@ -31,8 +34,18 @@ class WheelLegEnvCfg(DirectRLEnvCfg):
     obstacle_contact_sensors: dict[str, ContactSensorCfg] = {}
 
 
-def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: bool = False) -> WheelLegEnvCfg:
-    t.require_ready(evaluation=evaluation)
+def make_env_cfg(
+    t: TrainingConfig,
+    num_envs: int,
+    device: str,
+    *,
+    evaluation: bool = False,
+    flat_transfer: dict | None = None,
+    simulate_jump_button: bool = False,
+) -> WheelLegEnvCfg:
+    if simulate_jump_button and (evaluation or t.task not in ("p3-jump", "p3-tunnel")):
+        raise ValueError("synthetic jump button is only available for P3 training")
+    t.require_ready(evaluation=evaluation, simulate_jump_button=simulate_jump_button)
     asset, physics = t.asset, t.shared
     names = list(asset["active_joint_names"])
     # The explicit motor envelope and randomized PD run every physics step in _apply_action.
@@ -93,41 +106,23 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
     )
     terrain.max_init_terrain_level = 0 if not evaluation else None
     scanner = None
-    if t.task in ("p1-stairs", "p1-recovery"):
+    if t.task == "p1-stairs":
         s = t.stage["terrain"]
         terrain.terrain_type = "generator"
         terrain.terrain_generator = TerrainGeneratorCfg(
             seed=t.settings["seed"],
             size=tuple(s["tile_size_m"]),
             num_rows=s["rows"],
-            num_cols=s["columns"],
-            curriculum=not evaluation,
+            num_cols=len(MIXED_PROFILES),
+            # One fixed column per profile; actual episode proportions come from the runtime.
+            curriculum=True,
             sub_terrains={
-                "flat": StepsCfg(
-                    proportion=s["flat_proportion"],
-                    step_count=0,
-                    step_height_range=tuple(s["step_height_range_m"]),
-                    step_width=s["step_width_m"],
-                ),
-                "one": StepsCfg(
-                    proportion=(1 - s["flat_proportion"] - s["slope_proportion"] - s["bump_proportion"]) / 2,
-                    step_count=1,
-                    step_height_range=tuple(s["step_height_range_m"]),
-                    step_width=s["step_width_m"],
-                ),
-                "two": StepsCfg(
-                    proportion=(1 - s["flat_proportion"] - s["slope_proportion"] - s["bump_proportion"]) / 2,
-                    step_count=2,
-                    step_height_range=tuple(s["step_height_range_m"]),
-                    step_width=s["step_width_m"],
-                ),
-                "slope": SlopeCfg(proportion=s["slope_proportion"], angle_range=tuple(s["slope_angle_range_rad"])),
-                "bumps": BumpsCfg(
-                    proportion=s["bump_proportion"],
-                    height_range=tuple(s["bump_height_range_m"]),
-                    spacing=s["bump_spacing_m"],
-                    width=s["bump_width_m"],
-                ),
+                name: MixedTerrainCfg(
+                    proportion=1.0,
+                    profile=name,
+                    parameters={**mutable(s["profiles"][name]["geometry"]), "seed": t.settings["seed"]},
+                )
+                for name in MIXED_PROFILES
             },
         )
         scanner = RayCasterCfg(
@@ -141,6 +136,8 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
     cfg = WheelLegEnvCfg(
         training=t,
         evaluation=evaluation,
+        simulate_jump_button=simulate_jump_button,
+        flat_transfer=flat_transfer,
         seed=t.settings["seed"],
         decimation=t.robot.decimation,
         episode_length_s=t.settings["episode_length_s"],
@@ -166,9 +163,7 @@ def make_env_cfg(t: TrainingConfig, num_envs: int, device: str, *, evaluation: b
                 prim_path=f"/World/envs/env_.*/Robot/{name}",
                 update_period=0.0,
                 history_length=0,
-                filter_prim_paths_expr=[
-                    f"/World/envs/env_.*/{target}" for target in ("TunnelBeam", "RailLeft", "RailRight")
-                ],
+                filter_prim_paths_expr=["/World/envs/env_.*/TunnelBeam"],
             )
             for name in asset["collision_body_names"]
         }
