@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import glfw
 import mujoco
@@ -29,6 +30,59 @@ def playground(tmp_path_factory):
     checkpoint = max(RUN.glob("model_*.pt"), key=lambda f: int(f.stem.split("_")[1]))
     actor = NumpyActor(checkpoint, cfg.policy["hidden_dims"])
     return JumpSim(cfg, actor, arena), sites, p
+
+
+def test_manual_keypad_and_space_before_settling():
+    controls = yaml.safe_load((ROOT / "config/policies/p3/policy_meta.yaml").read_text(encoding="utf-8"))["sim2sim"][
+        "controls"
+    ]
+
+    class Sim:
+        cfg = SimpleNamespace(
+            evaluation={"height_m": 0.22},
+            commands={
+                "height_range_m": (0.22, 0.30),
+                "height_slew_m_s": 0.2,
+                "linear_slew_m_s2": 2.0,
+                "angular_slew_rad_s2": 10.0,
+            },
+            policy_hz=100,
+        )
+        jump = SimpleNamespace(active=np.array([False]))
+        estopped = False
+        presses = []
+
+        def reset(self, _):
+            self.time = 0.0
+            self.jump.active.fill(False)
+
+        def press_jump(self, target):
+            if not self.jump.active[0]:
+                self.presses.append((self.time, target))
+                self.jump.active.fill(True)
+
+        def step(self, command, height):
+            self.time += 0.01
+            return {"terminated": False}
+
+    sim = Sim()
+    player = JumpPlayer(sim, [{"spawn_xy_m": (0.0, 0.0)}], controls)
+    player.key(glfw.KEY_KP_8)
+    player.key(glfw.KEY_KP_4)
+    player.key(glfw.KEY_KP_9)
+    player.key(glfw.KEY_KP_ADD)
+    np.testing.assert_allclose(player.target, [0.25, 0.0, 0.5])
+    assert player.body_height_target_m == pytest.approx(0.24)
+    assert player.height_m == pytest.approx(0.05)
+    player.key(glfw.KEY_SPACE)
+    assert sim.presses == [(0.0, 0.05)]  # No hold time, velocity threshold, or stable stance required.
+    player.step()
+    assert player.body_height_m == pytest.approx(0.22)
+    sim.jump.active.fill(False)
+    player.step()
+    assert player.body_height_m == pytest.approx(0.222)
+    player.key(glfw.KEY_KP_5)
+    np.testing.assert_array_equal(player.target, 0)
 
 
 def test_hollow_tunnels_and_step_dimensions(playground):

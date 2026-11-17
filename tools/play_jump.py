@@ -339,7 +339,7 @@ class JumpPlayer:
         self.target = np.zeros(3)
         self.command = np.zeros(3)
         self.height_m = settings["jump_height_range_m"][0]
-        self.body_height_m = sim.cfg.evaluation["height_m"]
+        self.body_height_target_m = self.body_height_m = sim.cfg.evaluation["height_m"]
         self.selected = 0
         self.paused = self.failed = False
         self.slow = 1.0
@@ -375,23 +375,33 @@ class JumpPlayer:
             self.teleport(self.selected)
         elif key == glfw.KEY_X:
             self.stop()
-        elif key == glfw.KEY_SPACE and not self.failed and not self.paused:
-            self.sim.press_jump(self.height_m)
-        elif key == glfw.KEY_P:
+        elif key == glfw.KEY_SPACE:
+            if not (self.failed or self.paused):
+                # This is a manual press, not an automatic request waiting for a stable stance.
+                self.sim.press_jump(self.height_m)
+        elif key in (glfw.KEY_P, glfw.KEY_KP_DIVIDE):
             self.paused = not self.paused
-        elif key == glfw.KEY_Z:
+        elif key in (glfw.KEY_Z, glfw.KEY_KP_7):
             self.slow = {1.0: 0.5, 0.5: 0.25, 0.25: 1.0}[self.slow]
-        elif key == glfw.KEY_C:
+        elif key in (glfw.KEY_C, glfw.KEY_KP_5):
             self.target[:] = 0
         elif not self.sim.estopped:
-            if key in (glfw.KEY_W, glfw.KEY_S):
-                sign = 1 if key == glfw.KEY_W else -1
+            if key in (glfw.KEY_W, glfw.KEY_S, glfw.KEY_KP_8, glfw.KEY_KP_2):
+                sign = 1 if key in (glfw.KEY_W, glfw.KEY_KP_8) else -1
                 self.target[0] = np.clip(self.target[0] + sign * p["vx_step_m_s"], *p["vx_range_m_s"])
-            elif key in (glfw.KEY_A, glfw.KEY_D):
-                sign = 1 if key == glfw.KEY_A else -1
+            elif key in (glfw.KEY_A, glfw.KEY_D, glfw.KEY_KP_4, glfw.KEY_KP_6):
+                sign = 1 if key in (glfw.KEY_A, glfw.KEY_KP_4) else -1
                 self.target[2] = np.clip(self.target[2] + sign * p["wz_step_rad_s"], *p["wz_range_rad_s"])
-            elif key in (glfw.KEY_Q, glfw.KEY_E):
-                sign = 1 if key == glfw.KEY_E else -1
+            elif key in (glfw.KEY_KP_9, glfw.KEY_KP_3):
+                sign = 1 if key == glfw.KEY_KP_9 else -1
+                self.body_height_target_m = float(
+                    np.clip(
+                        round(self.body_height_target_m + sign * p["body_height_step_m"], 4),
+                        *self.sim.cfg.commands["height_range_m"],
+                    )
+                )
+            elif key in (glfw.KEY_Q, glfw.KEY_E, glfw.KEY_KP_SUBTRACT, glfw.KEY_KP_ADD):
+                sign = 1 if key in (glfw.KEY_E, glfw.KEY_KP_ADD) else -1
                 self.height_m = float(
                     np.clip(round(self.height_m + sign * p["jump_height_step_m"], 4), *p["jump_height_range_m"])
                 )
@@ -402,6 +412,11 @@ class JumpPlayer:
         c, dt = self.sim.cfg.commands, 1 / self.sim.cfg.policy_hz
         limit = np.array([c["linear_slew_m_s2"], c["linear_slew_m_s2"], c["angular_slew_rad_s2"]]) * dt
         self.command += np.clip(self.target - self.command, -limit, limit)
+        if not self.sim.jump.active[0]:
+            height_delta = c["height_slew_m_s"] * dt
+            self.body_height_m += float(
+                np.clip(self.body_height_target_m - self.body_height_m, -height_delta, height_delta)
+            )
         self.info = self.sim.step(self.command, self.body_height_m)
         self.failed |= self.info["terminated"]
 
@@ -421,7 +436,7 @@ class JumpPlayer:
         return (
             f"{self.sites[self.selected]['name']} | {state} | x{self.slow}\n"
             f"target jump {self.height_m * 100:.1f} cm | vx {self.target[0]:+.2f} m/s "
-            f"| wz {self.target[2]:+.2f} rad/s\n"
+            f"| wz {self.target[2]:+.2f} rad/s | body height {self.body_height_target_m * 100:.1f} cm\n"
             f"{actual}jump: {self.sim.jump_result} | "
             + (
                 f"peak wheel clearance {self.sim.jump.scored_height[0] * 100:.1f} cm | "
@@ -467,15 +482,19 @@ def control_panel(player: JumpPlayer):
     ttk.Label(frame, textvariable=message, wraplength=580).grid(row=13, column=0, columnspan=2)
     ttk.Label(
         frame,
-        text="W/S 前后速度  A/D 偏航  Q/E 跳高减/增  Space 跳跃\n"
-        "X 停机  R 复位  C 停车  P 暂停  Z 慢放  F1-F12 场地\n"
+        text="小键盘 8/2 前后  4/6 偏航  9/3 站姿高度  +/− 跳高  空格跳跃\n"
+        "5 停车  / 暂停  7 慢放  X 急停  R 复位  F1-F12 场地\n"
         "输入框内可编辑数值，空格始终只触发跳跃。",
     ).grid(row=14, column=0, columnspan=2)
     mapping = {"space": glfw.KEY_SPACE, "Escape": glfw.KEY_X, "x": glfw.KEY_X, "X": glfw.KEY_X}
     mapping.update({f"F{i + 1}": glfw.KEY_F1 + i for i in range(12)})
+    keypad = {f"KP_{i}": glfw.KEY_KP_0 + i for i in (2, 3, 4, 5, 6, 7, 8, 9)}
+    keypad.update(KP_Add=glfw.KEY_KP_ADD, KP_Subtract=glfw.KEY_KP_SUBTRACT, KP_Divide=glfw.KEY_KP_DIVIDE)
 
     def key(event):
         code = mapping.get(event.keysym)
+        if code is None and not isinstance(event.widget, ttk.Entry):
+            code = keypad.get(event.keysym)
         if code is None and event.keysym.lower() in "wsadqexrcpz" and len(event.keysym) == 1:
             if isinstance(event.widget, ttk.Entry):
                 return None
@@ -560,8 +579,8 @@ def run_viewer(player: JumpPlayer, panel: bool) -> None:
                 mujoco.mjtFont.mjFONT_NORMAL,
                 mujoco.mjtGridPos.mjGRID_BOTTOMLEFT,
                 viewport,
-                "SPACE jump | W/S vx | A/D yaw | Q/E jump height | X E-stop | R reset\n"
-                "C zero speed | P pause | Z slow | F1 flat | F2-F6 tunnels | F7-F11 steps | F12 double",
+                "SPACE jump | KP 8/2 vx | 4/6 yaw | 9/3 body height | +/- jump target\n"
+                "KP 5 stop | / pause | 7 slow | X E-stop | R reset | F1-F12 sites",
                 "",
                 context,
             )

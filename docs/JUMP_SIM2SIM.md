@@ -8,7 +8,7 @@
 Windows 双击 `sim2sim/play_jump_latest.cmd`，或在仓库根目录执行：
 
 ```powershell
-D:/Anaconda/envs/Mujoco/python.exe -m tools.play_jump
+D:/Anaconda3/envs/mjlab/python.exe -m tools.play_jump
 ```
 
 默认加载 `sim2sim/checkpoints/jump_latest/` 中编号最大的 `model_*.pt` 及该目录下的
@@ -18,9 +18,9 @@ D:/Anaconda/envs/Mujoco/python.exe -m tools.play_jump
 
 ```powershell
 # 出生到20cm隧道，目标跳高25cm、前进1m/s、自身偏航角速度0rad/s
-D:/Anaconda/envs/Mujoco/python.exe -m tools.play_jump --site 4 --height 0.25 --vx 1.0 --wz 0
+D:/Anaconda3/envs/mjlab/python.exe -m tools.play_jump --site 4 --height 0.25 --vx 1.0 --wz 0
 # 无窗口CPU运行；启动时模拟一次空格按键
-D:/Anaconda/envs/Mujoco/python.exe -m tools.play_jump --headless 3
+D:/Anaconda3/envs/mjlab/python.exe -m tools.play_jump --headless 3
 ```
 
 默认同时打开模型窗口和中文控制面板。面板可输入精确数值并点“应用设定”；跳跃高度输入单位为 cm，
@@ -31,15 +31,16 @@ D:/Anaconda/envs/Mujoco/python.exe -m tools.play_jump --headless 3
 
 | 按键 | 功能 |
 |---|---|
-| Space 空格 | 请求一次跳跃；事件进行中再次按下不会重启计时 |
-| W / S | 前后速度累加 / 递减，每次 0.25 m/s，允许范围 −2.5 至 +2.5 m/s |
-| A / D | 自身偏航角速度累加 / 递减，每次 0.5 rad/s，范围 −3 至 +3 rad/s |
-| Q / E | 下一次跳跃目标高度减 / 增 1 cm，范围 4–40 cm |
-| C | 速度及偏航指令归零，继续执行策略稳定控制 |
+| Space 空格 | 立即发跳跃指令，不等待站稳或达到前速；跳跃进行中再次按下不会重启计时，暂停/急停/已失败时先恢复控制 |
+| 小键盘 8 / 2（W / S） | 前后速度累加 / 递减，每次 0.25 m/s，允许范围 −2.5 至 +2.5 m/s |
+| 小键盘 4 / 6（A / D） | 自身偏航角速度累加 / 递减，每次 0.5 rad/s，范围 −3 至 +3 rad/s |
+| 小键盘 9 / 3 | 站姿高度增 / 减 2 cm，范围按训练快照的站姿高度指令限制；跳跃期间冻结该指令，结算后渐变到新目标 |
+| 小键盘 − / +（Q / E） | 下一次跳跃目标高度减 / 增 1 cm，范围 4–40 cm |
+| 小键盘 5（C） | 速度及偏航指令归零，继续执行策略稳定控制 |
 | X 或 Esc | 锁存紧急停机：六路主动电机输出立即归零，继续模拟重力、接触和被动气弹簧 |
 | R | 回到当前场地出生点，并清空速度、延迟、上一动作、跳跃状态及急停锁存 |
-| P | 暂停 / 继续 |
-| Z | 1× / 0.5× / 0.25× 慢放 |
+| 小键盘 /（P） | 暂停 / 继续 |
+| 小键盘 7（Z） | 1× / 0.5× / 0.25× 慢放 |
 | F1–F12 | 快速出生到对应场地，同时完整复位 |
 
 模型窗口直接处理 GLFW 按键，空格不会触发 MuJoCo 默认的暂停操作。
@@ -47,8 +48,8 @@ D:/Anaconda/envs/Mujoco/python.exe -m tools.play_jump --headless 3
 速度为累加指令，松键不会自动停车；C 是受控停车，X/Esc 是切断主动输出，R 重新出生。
 鼠标左键拖动旋转，右键拖动平移，滚轮缩放。
 
-跳跃高度是**相对按键触发时机身根节点的目标高度增量**，不是机身离地高度，也不是轮底越障净空。
-一旦触发，本次事件锁存目标；面板及 Q/E 修改的是下一次目标。相位及起跳/触地/落稳计时复用快照的
+跳跃高度在新版 `clearance_jump` 快照里是**双轮净空目标**；旧快照仍用相对按键时的机身上升量。
+一旦触发，本次事件锁存目标；面板、小键盘 −/+ 及 Q/E 修改的是下一次目标。相位及起跳/触地/落稳计时复用快照的
 `stages.jump`，不施加额外弹射力，也不按设定高度移动机器人。
 
 ## 场地
