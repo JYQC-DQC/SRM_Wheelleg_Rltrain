@@ -13,7 +13,6 @@ export/
 *.onnx
 *.mp4
 
-# Tests stay local (including existing tests)
-[Tt]est/
-[Tt]ests/
-.pytest_cache/
+# Keep unrelated local experiments untracked; ship the SHU regression suite.
+tests/*
+!tests/test_shu_*.py
