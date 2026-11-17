@@ -4,10 +4,10 @@
 
 ## 对照对象和证据边界
 
-- **我们**：[华南虎机体参考配方](../../config/reference/scut_p1.yaml) 的 `training` 加 `stages.flat`（`reward_overrides` 为空），以及[参考机器人](../../config/reference/scut_robot.template.yaml)。版本为上大仓 `5f764e8`。不是上大真车的通用 `p1/policy_meta.yaml`。当前模板、历史独立 flat run 和后续 landing/stairs 的父权重不是一回事。
+- **我们**：[华南虎机体参考配方](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/config/reference/scut_p1.yaml) 的 `training` 加 `stages.flat`（`reward_overrides` 为空），以及[参考机器人](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/config/reference/scut_robot.template.yaml)。版本为上大仓 `5f764e8`。不是上大真车的通用 `p1/policy_meta.yaml`。当前模板、历史独立 flat run 和后续 landing/stairs 的父权重不是一回事。
 - **华南虎**：`wheeled-legged_RL` 仓 `1a26356`，`pretrained/26_infantry/flat_and_rotation/2026-07-29_23-20-03/params/{env,agent}.yaml`。这是 7 月 19 日早版的轻量分支；另查了 7 月 19 日早、晚两份保存参数。引用具体发布值，不拿可选算法或其他地形策略作证据。
 - **复旦**：`fudan_rl_wheel_leg` 仓 `8204e85`，`plane/wheel_legged_gym/envs/base/{legged_robot_config,legged_robot}.py`，叠加 `envs/wheel_legged/wheel_legged_config.py` 的覆写。比较默认 `plane` 训练，不声称它能对应国赛 Stable 的特定权重。
-- **已训证据**：[平地复盘](../LESSONS.md)记录前三次参考车训练都出现折腿撑地；`standup3` 从 `standup2/model_500` 仅继承策略，约第 1900 轮高度误差约 1.3 cm，非轮触地、终止接近零；速度／转速跟踪指标约 0.90／0.86（不是成功率），当时课程停在 0.85。它证明整组修改后出现站立解，不证明某一项单独有效。本地此次未找到能把最后一份独立 flat checkpoint 与完整冻结 `params` 一一对应的记录；下文“我们”数值是当前参考模板，不倒推为那次 run 的全套参数。
+- **已训证据**：[平地复盘](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/docs/LESSONS.md)记录前三次参考车训练都出现折腿撑地；`standup3` 从 `standup2/model_500` 仅继承策略，约第 1900 轮高度误差约 1.3 cm，非轮触地、终止接近零；速度／转速跟踪指标约 0.90／0.86（不是成功率），当时课程停在 0.85。它证明整组修改后出现站立解，不证明某一项单独有效。本地此次未找到能把最后一份独立 flat checkpoint 与完整冻结 `params` 一一对应的记录；下文“我们”数值是当前参考模板，不倒推为那次 run 的全套参数。
 
 ## 地形、指令与课程
 
@@ -22,7 +22,7 @@
 
 ## 奖励：只比较实际启用的项
 
-下表是**配置系数和奖励形状**，不是每一步获得的分数。上大连续项乘 0.01 s 后逐项裁至 ±2.5/步，终止单次结算；复旦 `plane` 每项乘 0.01 s 后裁至 ±0.01/步；华南虎连续项乘 0.02 s。上大前速取航向系水平速度，华南虎取机体系前速乘俯仰余弦，复旦取机体系前速。[上大各项实现](../../wheelleg/rewards.py)；[项目已有的公式对照](../training_comparison_20261115/README.md)。
+下表是**配置系数和奖励形状**，不是每一步获得的分数。上大连续项乘 0.01 s 后逐项裁至 ±2.5/步，终止单次结算；复旦 `plane` 每项乘 0.01 s 后裁至 ±0.01/步；华南虎连续项乘 0.02 s。上大前速取航向系水平速度，华南虎取机体系前速乘俯仰余弦，复旦取机体系前速。[上大各项实现](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/wheelleg/rewards.py)；[项目已有的公式对照](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/docs/training_comparison_20261115/README.md)。
 
 | 项目 | 我们：当前参考模板 | 华南虎：7 月 29 日 flat | 复旦：当前 plane |
 |---|---|---|---|
@@ -42,4 +42,4 @@
 - 上大 / 华南虎 / 复旦的 PPO rollout 分别为 48 / 24 / 48 拍，实际都是每环境每轮 **0.48 s**。三者均为 5 epochs、4 mini-batches、PPO clip 0.2。学习率依次为 `1e−4 / 1e−4 / 1e−3`，初始动作标准差 `1 / 1 / 0.5`，折扣 `0.995 / 0.99 / 0.99`。三者都是 20 s 回合；不要只比较“训练多少轮”。
 - **建议，不是定案：** 第一版上大车优先保留已经解决具体失败模式的接触名单／慢回落、紧宽核组合及零速工况；部件名和可达站高换成本车的。先保持任务不变，再用相同初态与同样指令判断新小网络。最值得单独验证的是前速平方罚：拿上大 `−8` 对华南虎 `−0.1`，其他权重和门控不动，同时对比起立成功、直行误差和刹停漂移。不要把复旦 `orientation=−100` 移进另一种裁剪实现，也不要把华南虎高速自转档混回本项目 P1。新车课程、验收线仍待确认。
 
-**一手来源入口：** [华南虎本次 flat 的 env.yaml](../../../wheeled-legged_RL/pretrained/26_infantry/flat_and_rotation/2026-07-29_23-20-03/params/env.yaml)、[agent.yaml](../../../wheeled-legged_RL/pretrained/26_infantry/flat_and_rotation/2026-07-29_23-20-03/params/agent.yaml)；[复旦 plane 的奖励与课程配置](../../../fudan_rl_wheel_leg/plane/wheel_legged_gym/envs/base/legged_robot_config.py)、[任务覆写](../../../fudan_rl_wheel_leg/plane/wheel_legged_gym/envs/wheel_legged/wheel_legged_config.py)、[计分、终止和课程实现](../../../fudan_rl_wheel_leg/plane/wheel_legged_gym/envs/base/legged_robot.py)；[上大的指令采样](../../wheelleg/commands.py)、[课程窗口](../../wheelleg/curriculum.py)与[回合成功判据](../../isaac/wheelleg_tasks/env.py)。
+**一手来源入口：** [华南虎本次 flat 的 env.yaml](../../../wheeled-legged_RL/pretrained/26_infantry/flat_and_rotation/2026-07-29_23-20-03/params/env.yaml)、[agent.yaml](../../../wheeled-legged_RL/pretrained/26_infantry/flat_and_rotation/2026-07-29_23-20-03/params/agent.yaml)；[复旦 plane 的奖励与课程配置](../../../fudan_rl_wheel_leg/plane/wheel_legged_gym/envs/base/legged_robot_config.py)、[任务覆写](../../../fudan_rl_wheel_leg/plane/wheel_legged_gym/envs/wheel_legged/wheel_legged_config.py)、[计分、终止和课程实现](../../../fudan_rl_wheel_leg/plane/wheel_legged_gym/envs/base/legged_robot.py)；[上大的指令采样](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/wheelleg/commands.py)、[课程窗口](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/wheelleg/curriculum.py)与[回合成功判据](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/isaac/wheelleg_tasks/env.py)。

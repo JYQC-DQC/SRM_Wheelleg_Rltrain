@@ -1,160 +1,54 @@
-# 多策略训练代码（2026-11-10）
+# SHU-Train 训练与交接
 
-## 2026-11-11 动作反馈与数值安全修复
+| 策略 | 顺序与交接条件 |
+|---|---|
+| P1 通行 | **平地 → 被动落地（含预设起身）→ 混合地形**。平地指令范围全开才进落地；继续训练同一 Actor 和 encoder，不重开驾驶课程。落地按空生／预设起身／普通出生 40%／40%／20% 采样，只升掉高。负责人自行做 sim2sim 并指定混训 checkpoint，不按参考车成绩代选。 |
+| P1 混训 | 保留 30% 平地；含粗糙面、井字、坡和单／双级台阶。自由操控与指定路线分开；路线按实际有效过线结算，三级上、下分别由同方向单／双级先修解锁。预设起身已并入落地，不增加独立 recovery 阶段。 |
+| P2 自转 | 平地原地高速自转，平移指令为零；仿真上限不是实车放行值。 |
+| P3 跳跃 | **先在无障碍平面练按键跳，再练越隧道横梁**。一次按键触发一次跳跃，不用测距替代操作手按键。整车越过横梁、首触落在后方地面且随后落稳才算成功；落梁顶再滑下不算。 |
 
-修复在共用代码路径生效，SRM 和华南虎参考配置共用，不以 `reference_preset` 分流。
+具体奖惩和未定阈值见[方案索引](上大轮腿训练方案/README.md)。跨阶段初始化须匹配[网络合同](INTERFACE.md)，不能拿旧单帧 Actor、五输出估计器或旧优化器状态充当新策略。
 
-- `training.observation_clip` 必填，原始物理分量先限幅、再缩放、最后 nan_to_num。
-  上一帧动作输入限到 ±100，原始输出仍不裁剪，单独记录诊断最大值。
-  指令/角速度/重力/关节角/力矩/轮心速度/kp/kd/延迟为 ±100，关节速度 ±200；
-  腿高指令 [0,1]，机身高度和质量比例 ±10。来源 SCUT V14/cfg_utils.py:75-124。
-- `training.numerical_safety` 必填。原始关节速度/机身线速度/机身角速度非有限，
-  或绝对值超过 500/100/200，即终止该环境并将本步每项奖励及总奖励置零。
-- `training.critic_torque_scale` 必填，两份 robot 配置为 0.05（SCUT V14/cfg_utils.py:133）。
-  Actor 35 维、critic 81/158 维不变，obs_version 保持 2。
-- **critic 输入分布已改变：旧 checkpoint 禁止 `--resume`，只能 `--initialize-from` 提取 Actor。**
-  新 checkpoint 保存限幅/critic 缩放合同，恢复时在加载权重和优化器前比较合同；不匹配直接报错。
-  发生过动作指数增长的 Actor，即便可提取也未证明稳定，应先运行反馈诊断再决定是否继续使用。
-- `p1-flat` 和 `p2-spin` 不运行腾空状态机，airborne 恒假，倾角阈值固定 `tilt_rad`，
-  机身接触/终止倍率固定 1。其他任务的腾空逻辑和奖励权重不变。
-- `asset.initial_root_position_m[2]` 必须根据初始关节姿态下轮底触地的机身高度确定，
-  若配置离地余量，则为该触地高度加 `training.spawn_clearance_m`（0.01 m）。SRM 同样适用，当前仍为 null。
-  华南虎准备工具从 USD 零位姿的 base_link 和左右轮刚体世界坐标计算
-  `base_z-wheel_z+wheel_radius_m`；两轮相差 >1 mm 或任一触地高度偏离 0.185 m >1 cm 就报错，
-  验证触地高度后再加余量（0.185 来源 supermimic_wheelbipe/tools/mujoco_check.py:58）。
-- 第一次完整 reset 的 `sim.forward` 后检查轮底离地高度，超过 `spawn_clearance_max_m=0.03` 或非有限即报错，
-  信息包含实测值。其他任务有意的空中出生、恢复库和状态库样本不当作默认出生姿态验收。
-- 每轮 TensorBoard 写 `Safety/raw_action_abs_max` 和 `Safety/numerical_terminations`，
-  后者为这一轮发生数值安全终止的环境次数（同一槽位重置后再次失败会再次计数）。
+P3 的指令与模拟按键分布、各阶段时间、落稳阈值、碰撞包络与裕量、引导权重继续留待确认；配置中以 `null` 标记。
 
-反馈诊断（本次只新增工具，不执行）：
+## 不启动仿真的检查
 
-```bash
-python -m tools.check_action_feedback --checkpoint runs/<run>/model_655.pt --robot config/robot.yaml --policy config/policies/p1/policy_meta.yaml --observations runs/<run>/eval/rollout.npz
-```
-
-`observation[N,35]` 为有限的固定初始观测，每行一条反馈轨迹；只把 Actor 输出接回上一动作槽位，
-其余分量固定。限幅开/关各迭代 400 步，输出超过 1e6 的环境数、非有限环境数和原始动作最大绝对值。
-本次不运行 CPU 测试、反馈诊断、USD 准备工具、Isaac/GPU 训练，也不推送。
-
-对齐推进指南 v2.1。当前为无云台底盘；真实 USD、机械参数、标定和辨识量仍待填。
-本次交付是代码实现，未进行 Isaac 环境运行、GPU 冒烟训练、sim2sim 或实车验收。
-
-## 任务与续训关系
-
-| 任务 | 策略 | 内容 | 建议 Actor 初始化来源 |
-|---|---|---|---|
-| `p1-flat` | P1 | 平地速度/转向/腿高；指令片段及指令范围课程 | 从头训练 |
-| `p1-landing` | P1 | 混入空中出生、airborne 状态、落地约束 | p1-flat |
-| `p1-stairs` | P1 | 单/双台阶、坡道、凸起；30% 平地；地形等级课程 | p1-landing |
-| `p1-recovery` | P1 | 接管状态库、低姿态起身、高度参考、零力矩窗口；保留粗糙地形 | p1-stairs |
-| `p2-spin` | P2 | 双档转速、旋转平移、独立 PD 参数 | p1-flat |
-| `p3-jump` | P3 | 0/1/2 次事件、接触驱动相位、五档跳高、引导项退火 | p1-landing |
-| `p3-tunnel` | P3 | 横梁/护栏、横梁高度课程、后方地面落地 | p3-jump |
-
-以上是 3 个策略、7 个训练阶段，P1 的各阶段通常依次续训成为同一策略。
-Actor 均为 35→256→128→64→6；critic 为 81 维，台阶/起身阶段加入 77 点扫描后为 158 维。
-跨阶段用 `--initialize-from` 严格加载 Actor，不裁切/补零网络输入；critic 和优化器重新初始化。
-相同任务用 `--resume` 恢复 Actor、critic、优化器、迭代和课程状态。
-
-## 配置与缺参
-
-- `config/robot.yaml`：真实资产映射、几何依赖、执行器、弹簧、延迟与随机化。
-- `config/policies/p1/policy_meta.yaml`、`p2/...`、`p3/...`：每个策略的 PD、动作缩放、指令、奖励、阶段、评测。
-- 普通 `null` 表示未知；唯一明确例外是 **`action_clip: null`，表示按 v2.1 不裁剪原始动作**。
-- 禁用状态库时 `transition_reset.probability: 0.0`，其路径可以为 null；启用后必须提供真实 rollout 库。
-- `baseline_evaluation_passed: false` 是未通过，不是默认假定通过；第二阶段推扰还需填写 `phase2_start_iteration`。
-- CPU 检查不启动 Isaac，不要求 Torch：
+在仓库根目录、已安装项目依赖的环境执行。训练入口的 `--check-only` 列出该 task 的缺项，不启动仿真；正式启动仍须通过阶段就绪检查。下面 `tools.check_config --require-ready` 单独检查机器人与策略的公共合同，不能代替阶段就绪检查。
 
 ```powershell
 python -m isaac.scripts.train --task p1-flat --check-only
-python -m isaac.scripts.train --task p2-spin --check-only
+python -m tools.check_config --robot config/robot.yaml --policy config/policies/p1/policy_meta.yaml --require-ready
+```
+
+## P3：训练输入与手动 rollout
+
+P3 的默认模板是 `config/policies/p3/policy_meta.yaml`。检查两阶段的缺参：
+
+```powershell
+python -m isaac.scripts.train --task p3-jump --check-only
 python -m isaac.scripts.train --task p3-tunnel --check-only
 ```
 
-缺参将列出完整配置路径。未选阶段的缺参不会阻塞当前任务；训练不要求先填评测指令。
-P3 的最高目标不得超过 `feasible_height_m`。`joint_lower/upper_rad` 是机械限位，腿目标进一步内收 0.05 rad；
-轮关节仍连续转动，不在 PhysX 设置轮位置限位。`hip_pivot_positions_b_m` 是左右虚拟腿的真实基座点，不能照抄参考机器人。
-USD 中的完整被动关节初态必须由闭链模型提供。
+正式 P3 入口读取所选阶段的 `press_time_range_s`（秒）、`no_press_probability`、`moving_probability`。三者未定为 `null`；确认后填写才有训练输入。每个非空回合最多模拟一次按键上升沿，按回合时间触发，不读取梁距。移动与不移动使用各自的前速目标；没有外力辅助跳跃。
 
-## 云端运行
+手动 rollout 使用显式的 checkpoint、`--vx-m-s`，并选择 `--press-time-s` 加 `--jump-height-m`，或 `--no-press`。两种 P3 地形都不支持按障碍距离触发。该路径读取 `training.evaluation` 的 `duration_s`、`episodes_per_case`、`seed`、`height_m` 和两项延迟，不使用训练按键分布。外部调用时，先 `obs = env.unwrapped.set_jump_button(button_down, target_height_m=...)`，再使用返回的观测计算动作；下一拍记得释放。本流程只做操作者指定的 rollout，不做自动选模或验收。
 
-使用 Isaac Sim 5.1 / Isaac Lab 2.3.2，rsl-rl-lib **3.1.2**（已核对该版本官方 setup.py 和接口源码）。
-不升级镜像的 Torch。安装本项目和其训练入口：
+隧道模板保留梁底 `0.25 m`、梁顶 `0.27 m`、沿 x 长 `0.35 m`、前沿距入口 `1.35 m` 和车道净宽 `0.8 m`；这些值不能替代梁外宽或整车碰撞包络。其余待确认参数保持 `null`。
 
-```bash
-python -m pip install -e '.[train]'
-python -m isaac.scripts.train --task p1-flat --run-name p1_smoke --num-envs 512 --iterations 200 --headless
-python -m isaac.scripts.train --task p2-spin --run-name p2_first --initialize-from runs/p1_flat/model_5000.pt --headless
-python -m isaac.scripts.train --task p3-jump --run-name p3_first --initialize-from runs/p1_landing/model_5000.pt --headless
-python -m isaac.scripts.train --task p3-tunnel --run-name p3_tunnel --initialize-from runs/p3_first/model_5000.pt --headless
-python -m isaac.scripts.train --task p1-flat --run-name p1_continue --resume runs/p1_flat/model_5000.pt --headless
+## P1 正式训练入口（只在就绪后使用）
+
+下面路径是占位符，不代表仓库已附带训练权重：
+
+```powershell
+python -m isaac.scripts.train --task p1-flat --run-name shu-flat
+python -m isaac.scripts.train --task p1-landing --run-name shu-landing --initialize-from "<flat 六桶满档检查点>"
+python -m isaac.scripts.train --task p1-stairs --run-name shu-mixed --initialize-from "<负责人在 sim2sim 后指定的 landing 检查点>"
 ```
 
-命令中的运行名和 checkpoint 是使用示例，当前未生成这些训练产物。输出目录不得覆盖现有 run。
-配置快照和运行元数据写入 `runs/<run>/params/`；checkpoint 和 TensorBoard 日志写入该 run。
-所有正式启动都先执行缺参检查；没有用 SCUT 参数或虚假数据替代真实底盘。
+跨阶段 `--initialize-from` 只迁移推理网络；同阶段 `--resume` 才恢复 PPO、速度监督优化器和该阶段课程状态。环境以实际出生时钟结算，不从随机偏移的回合时钟截短落地样本。`--check-only` 列出的数量是待填配置字段数（不是独立测量项目数）；按具体阶段补齐对应项，未给出的 CAD、出生关节／弹簧映射或任务参数都不能透过正式入口。
 
-## v2.1 已同步内容
+## 到模和实测后交什么
 
-1. 原始动作不裁剪；上一动作观测保留原始值。只裁剪转换后的腿位置/轮速度目标，输出单点执行力矩包络。
-2. 每回合独立采样四髋零点误差 ±0.01 rad，只影响 Actor 传感输入；不改真实关节角或 PD 反馈。
-3. IMU roll/pitch 各 ±1°，同一个固定旋转作用于陀螺和重力；critic 使用真实状态。
-4. 各刚体惯量独立 ×0.9–1.1，在质量随机化之后执行，避免后者重新计算惯量覆盖它。
-5. 第一阶段推扰 0.25 m/s；第二阶段按配置在 3000 轮升到 1.25 m/s（指南允许范围内的起点）。
-6. 第二阶段增加 0.1 s 撞击，100→300 N，8–15 s 间隔，侧向为主；必须先记录基线评测通过。
-7. `no_fork` 是二值项，平方项为 `(5*max(abs(dx)-0.05,0))²`；`leg_symmetry` 默认 0，配置拒绝同时开启。
-
-P2 当前采用固定世界航向作为“虚拟云台”参考。模式位 33/34 表示参考航向相对机体 yaw 的 sin/cos；
-没有模拟不存在的实体云台。后续装云台时必须增加其真实惯量与 yaw 控制，并同步部署合同。
-
-## 评测、录像与导出
-
-```bash
-python -m isaac.scripts.evaluate --task p1-flat --robot runs/p1_flat/params/robot.yaml --policy runs/p1_flat/params/policy_meta.yaml --checkpoint runs/p1_flat/model_5000.pt --output runs/p1_flat/eval --video --headless
-python -m pip install -e '.[export]'
-python -m tools.export_policy --checkpoint runs/p1_flat/model_5000.pt --robot runs/p1_flat/params/robot.yaml --policy runs/p1_flat/params/policy_meta.yaml --rollout runs/p1_flat/eval/rollout.npz --output runs/p1_flat/export
-```
-
-- P1 固定 16 条指令；P2 双向旋转/平移组合；P3 包含不跳基线和五档跳高；具体指令等待本车能力确定。
-- 评测关闭域随机化和噪声，固定种子；传感/动作延迟分别使用 policy 的 `evaluation.observation_delay_steps` / `action_delay_steps`（单位 2 ms，必填，不默认 0）。失败之后的自动重置不计入成功或误差。
-- 输出 `evaluation.json/md`、`rollout.npz`，可选录像；末尾有效状态输出 `transition_states.npz`。R 的接管库仍由 `handover_states_npz` 指定，两者用途不同。
-- 评测旧阶段时重新选择旧 `--task`，用新 checkpoint 回归旧任务，不能仅看新技能回报。
-- 导出只接受至少 100 帧真实 rollout 观测；ONNX 输入固定 `[1,35]`，输出 `[1,6]`，与 PyTorch 最大误差须 `<1e-5`。
-- 导出包含 ONNX、golden.npz/h、参数头、机器人和策略快照、manifest；未生成 CubeAI C 网络，不声明固件可用。
-
-跳隧道要求轮底越过后沿、所有刚体原点越过后沿、在后方地面稳定保持 1 s。
-碰横梁/护栏或顶面会使该次事件失败；不会通过“先落顶面，再驶下去”获得成功。
-`collision_body_names` 必须覆盖 USD 全部刚体。每个刚体一个 ContactSensor，通过 `filter_prim_paths_expr`
-分别过滤横梁、左护栏和右护栏，使用 `force_matrix_w` 判定真实接触；删除包围球区域猜测。
-横梁施加给机器人向上的接触法向力用于顶面惩罚，需在真实资产上验证方向和过滤结果。
-跳高输入来自本回合横梁上表面高度加 `clearance_margin_m`，不独立随机；只采样 `tunnel.vx_range_m_s` 的正向速度，vy/wz=0。
-隧道仅按位置窗口触发，不再要求 age >= next_trigger；普通跳跃仍保留时间触发条件。
-每回合先采样跳跃次数，再放置横梁；次数为 0 时使用 `tunnel.no_jump_beam_pose`（环境局部 xyz + wxyz）把横梁移至地面下，保留正常直行指令。跳跃次数消耗完不在回合中途移动横梁。
-测得的 `feasible_height_m` 必须覆盖最大课程横梁高度、制造扰动和余量；隧道评测同样只用直行越障。
-刚体原点通过不等价于精确碰撞网格全部通过，完整几何净空仍需模型验收，不能以 CPU 检查替代。
-
-## 训练评审修复（2026-11-10）
-
-- 质量比例分子、分母都转到仿真设备。场景配置不含地形；`_setup_scene` 显式创建地形，克隆一次，仅 CPU 调用碰撞过滤。
-- 地面 static/dynamic friction 都为 1.0，friction/restitution combine mode 都为 multiply，参数来自 `robot.training.ground_material`。
-- 持续奖励乘 dt 并按 `reward_clip` 限幅；一次性 `termination`、`jump_apex`、`jump_landing`、`jump_impact`、`jump_asymmetric_landing`、`tunnel_crossing` 不乘 dt，也不受持续项限幅，权重为每次事件总量。termination=-4.0，其余权重不变；空中原有终止倍率保留。
-- 指令课程按完成回合窗口统计，`command_curriculum.min_completed_episodes` 必填，当前为 4096，校验不得小于 `training.num_envs`；一个窗口至多升级一次，然后清空计数。均值分母用实际采样步数，不用随机初始化后的回合时钟。窗口状态写入 checkpoint。
-- 外力用 `permanent_wrench_composer`，每个物理步维护持续时间；`robot.training.randomization.external_wrench_duration_s=10.0`，校验不得小于 `push_interval_s` 上限。来源 SCUT `wheelbipe25_v3/env_cfg.py:161-170` 的 interval 事件：两次采样之间外力持续作用，新采样覆盖旧外力。侧向撞击仍用 `training.disturbance.collision_duration_s=0.1`；最后不足一物理步按占空比保冲量。
-- 外力来源：SCUT `source/agent_tasks/agent_tasks/manager/mdp/isaaclab/events.py:438-488`；新接口已核对本地 `runs/api_reference/events.py:1038-1043` 和 `wrench_composer.py:221`。
-- output_scale 在 DC 包络裁剪之后生效；执行器透传上限覆盖最大输出比例，避免二次裁掉随机化。电压仅缩放空载转速；髋力矩上限只按回合进度下降 0–10%。
-- 训练使用 `init_at_random_ep_len=True`；`params/run.json` 包含 `workspace_dirty`。
-
-必要 CPU 回归：`python -m pytest tests/test_review_fixes.py -q -s`。包括一次完整跳跃的事件奖励总量大于引导奖励总量、步长独立性、窗口课程、包络后缩放、必填配置和隧道指令。
-本次未启动 Isaac、GPU PPO、视频评测或实车；场景、PhysX 过滤接触、永久外力、GPU 设备修复仅经过源码核对与静态检查。
-
-后续按用户要求直接调整：课程窗口 4096、持续外力 10 s、P3 `jump_impact=-0.0001`、隧道位置触发和零跳跃回合隐藏横梁。这批调整未运行测试或静态检查。
-
-## 当前边界
-
-- 已写训练、课程、评测和导出逻辑；真实 CAD→USD/MJCF 资产生成、五连杆 CAD 数值标定、
-  MuJoCo 双引擎验收及手写恢复控制器 R 不在本次训练代码中伪造。起身任务读取 R 的真实接管状态库。
-- 按回报重置采样和历史估计器按指南后置；当前使用均匀高度 bin 和成功率课程。
-- 尚未在目标 Isaac/GPU 上运行，训练收敛与 sim2real 未验证。
-- 用户要求先完成代码、暂停完整测试；最后只做静态检查及配置加载。先前中间版本的一轮 CPU 检查为 31 passed，
-  该结果不覆盖其后的所有代码变动。
+1. CAD/USD：闭链几何、刚体／关节映射、无云台质量／质心／惯量、轮径、出生姿态和净空。对照本车核实腿长摆角、连杆干涉、气弹簧行程和各掉高带。
+2. 固件侧：交付六通道 ID、方向、零点与限位、IMU 安装、驱动力矩包络、延迟及弹簧辨识报告；按[扫频与辨识指南](SWEEP_IDENT.md)回填机器人与策略配置。接触刚体名单、阈值和释放参数也要按本车确认。
+3. 未知参数保留 `null`。不得用参考车参数或扩大随机化替代辨识。配置就绪后才进入目标 Isaac Sim 5.1 / Isaac Lab 2.3.2 / rsl-rl-lib 3.1.2 环境验证；CPU 测试与源码核对不是 GPU 验收。

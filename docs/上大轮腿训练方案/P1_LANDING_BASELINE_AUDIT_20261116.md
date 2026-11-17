@@ -14,7 +14,7 @@
 | 怎样发奖 | 支撑姿态、角速度、竖直速度、站高误差改善，只付历史最佳进展增量，事件总预算 +0.75。首次连续 0.5 s 满足指标（双轮、无非轮支撑、最大倾角≤10°、横滚／俯仰角速度≤0.5 rad/s、竖直速度≤0.2 m/s、高度误差≤5 cm）给 +1.5 一次。碰撞、超时未稳／无接触等事件失败 −1；真实回合物理终止另付 −4，纯外生时间截止不算落地失败。事件失败≠每次都重置整回合。**这套稳定条件本身不检查前速、偏航跟踪或位移漂移。** | 倾向保留“首次稳住立即发奖”，不要把信号全延到 3 s；但速度指令非零时，不能把“安全停下”当作“已经恢复行驶”。恢复时间和触地后的速度／偏航误差、零指令漂移另报；是否纳入课程成功要另确认。 |
 | 怎样升级 | 当前参考模板掉高偏移采样下界 0.12 m，上界 0.20/0.24/0.28/0.32/0.36/0.42 m；新档开放后低档仍采样。高度只统计最新高度带，≥1,024 个有效结算（含失败，不含纯外生超时）、首次恢复率≥80% 才扩上界。速度课另有行驶通过条件，还须最新高度带 ≥256 个事件、首次恢复率≥75%；升高度后清空原速度门槛的落地计数。历史运行用过不同门槛。 | 先区分“首次稳定发奖”与“窗口末是否恢复”再定比例。推荐新课程采用“窗末最后 0.5 s 稳定、全窗无硬碰／物理失败；早先轻擦可恢复”，干净率另列。该口径不同于现有 `window_end_stable_rate`：后者排除**所有**非轮接触。不要直接拿旧 80% 或平地的 60%/10 个百分点套新指标。 |
 
-依据：[参考车参数](../../config/reference/scut_p1.yaml)、[出生和命令冻结](../../isaac/wheelleg_tasks/env.py)、[事件奖励与硬碰分级](../../wheelleg/landing_rewards.py)、[独立窗口诊断](../../wheelleg/landing.py)、[课程计数](../../wheelleg/curriculum.py)。
+依据：[参考车参数](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/config/reference/scut_p1.yaml)、[出生和命令冻结](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/isaac/wheelleg_tasks/env.py)、[事件奖励与硬碰分级](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/wheelleg/landing_rewards.py)、[独立窗口诊断](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/wheelleg/landing.py)、[课程计数](https://github.com/JYQC-DQC/SRM_Wheelleg_Rltrain/blob/1a56b67067accd185bc5e7c41175dc0795e3d8fb/wheelleg/curriculum.py)。
 
 ## 2. 我们已经训到什么，哪些不能据此推断
 
