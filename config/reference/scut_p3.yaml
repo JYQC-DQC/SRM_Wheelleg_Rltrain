@@ -1,6 +1,6 @@
 # SCUT simulation trial settings. Capability remains unmeasured.
 # simulation_height_limit_m is a design target bound, not achieved jump height.
-name: scut_p3_mixed_jump
+name: scut_p3_staged_jump
 obs_version: 2
 hidden_dims:
 - 256
@@ -76,9 +76,7 @@ training:
     height_duration_s:
     - 2.0
     - 6.0
-    vx_range_m_s:
-    - 0.0
-    - 0.0
+    vx_range_m_s: [0.6, 2.5]
     wz_range_rad_s:
     - 0.0
     - 0.0
@@ -136,16 +134,16 @@ training:
     wheel_power: -0.0001
     action_rate: -0.01
     termination: -4.0
-    jump_apex: 5.0
+    jump_apex: 2.0
     jump_landing: 3.0
-    jump_flight: 0.15
+    jump_flight: 0.0
     jump_crouch: 0.5
     jump_takeoff: 2.5
     jump_push_symmetry: 0.05
     jump_tuck: 1.7
     jump_prepare: 0.5
-    jump_impact: -0.0001
-    jump_asymmetric_landing: -1.0
+    jump_impact: 0.0
+    jump_asymmetric_landing: -0.25
     uncommanded_flight: -1.0
     leg_symmetry: 0.0
   evaluation:
@@ -179,11 +177,11 @@ training:
     phase2_start_iteration: 3000
   air_rewards:
     joint_limit: -10.0
-    wheel_center: 3.3333333333333335
+    wheel_center: 0.0
     wheel_center_sigma: 0.02
-    wheel_torque: 6.666666666666667
+    wheel_torque: 0.0
     wheel_torque_sigma: 1.5
-    wheel_speed_alignment: -10.0
+    wheel_speed_alignment: 0.0
   command_curriculum:
     min_completed_episodes: 4096
     initial_fraction: 1.0
@@ -204,6 +202,7 @@ mode_semantics:
 - phase
 stages:
   jump:
+    moving_probability: 0.5
     event_duration_s: 1.2
     takeoff_confirmation_s: 0.03
     takeoff_clearance_m: 0.02
@@ -218,14 +217,15 @@ stages:
     - 5.0
     jump_count_probabilities:
     - 0.2
-    - 0.7
-    - 0.1
+    - 0.8
+    - 0.0
     height_range_m:
     - 0.04
-    - 0.12
+    - 0.25
     feasible_height_m: null
     crouch_duration_s: 0.25
     crouch_leg_length_m: 0.18
+    push_leg_length_m: 0.26
     tuck_leg_length_m: 0.15
     landing_leg_length_m: 0.26
     landing_prepare_time_s: 0.1
@@ -233,8 +233,6 @@ stages:
     max_touchdown_difference_s: 0.05
     apex_sigma: 0.0025
     landing_tilt_rad: 0.25
-    landing_speed_error_m_s: 0.25
-    non_event_tracking_scale: 0.5
     guidance_final_scale: 0.3
     guidance_decay_iterations: 2000
     guidance_success_threshold: 0.7
@@ -261,10 +259,11 @@ stages:
     - 0.0
     height_range_m:
     - 0.04
-    - 0.12
+    - 0.25
     feasible_height_m: null
     crouch_duration_s: 0.25
     crouch_leg_length_m: 0.18
+    push_leg_length_m: 0.26
     tuck_leg_length_m: 0.15
     landing_leg_length_m: 0.26
     landing_prepare_time_s: 0.1
@@ -272,24 +271,14 @@ stages:
     max_touchdown_difference_s: 0.05
     apex_sigma: 0.0025
     landing_tilt_rad: 0.25
-    landing_speed_error_m_s: 0.25
-    non_event_tracking_scale: 0.5
     guidance_final_scale: 0.3
     guidance_decay_iterations: 2000
     guidance_success_threshold: 0.7
     tunnel:
-      obstacle_fraction: 0.4
-      mix_switch_iteration: 2000
-      mix_require_basic_success: true
-      mix_basic_min_events: 100
-      mix_basic_success_rate: 0.7
-      obstacle_fraction_after_switch: 0.7
-      vx_range_m_s:
-      - 2.5
-      - 2.5
+      vx_range_m_s: [1.5, 2.5]
       beam_height_m: 0.27
       beam_length_m: 0.35
-      beam_thickness_m: 0.02
+      beam_offset_from_entrance_m: 1.35
       no_jump_beam_pose:
       - 0.0
       - 0.0
@@ -298,18 +287,12 @@ stages:
       - 0.0
       - 0.0
       - 0.0
-      lane_width_m: 1.6
-      rail_height_m: 0.6
+      lane_width_m: 0.8
       lane_length_m: 2.9
-      rail_thickness_m: 0.02
       approach_distance_m: 2.5
-      trigger_distance_m: 1.1
-      height_curriculum_m:
-      - 0.054
-      - 0.1215
-      - 0.189
-      - 0.2565
-      - 0.324
+      # Simulation operator window, not a deployment trigger or calibrated distance.
+      press_distance_range_m: [0.9, 1.3]
+      height_curriculum_m: [0.27]
       clearance_margin_m: 0.03
       landing_margin_m: 0.05
       initial_yaw_range_rad:
@@ -322,8 +305,8 @@ stages:
       heading_weight: -1.0
       support_reward_scale: 0.05
       approach_timeout_s: 6.0
-      obstacle_contact_weight: -5.0
-      top_contact_weight: -10.0
+      obstacle_contact_weight: 0.0
+      top_contact_weight: 0.0
       approach_jitter_m:
       - 0.0
       - 0.0

@@ -168,7 +168,7 @@ def jump_apex(s, p):
     error = jump_height_error(event.apex_z - event.start_z, event.height, event.settings)
     return (
         torch.exp(-error.square() / event.settings["apex_sigma"])
-        * event.apex_pulse
+        * event.landing_pulse
         * ~event.invalid
         * ~event.failure_paid
     )
@@ -190,12 +190,19 @@ def jump_crouch(s, p):
 def jump_takeoff(s, p):
     target = s["jump_ref"]["takeoff_velocity"]
     ratio = s["velocity_w"][:, 2] / target.clamp_min(torch.finfo(target.dtype).eps)
-    return ratio.clamp(0, 1) * s["jump_ref"]["push"] * s["guidance_scale"]
+    # Reward supported extension, not positive vertical speed from an unsupported bounce.
+    settings = s["jump"].settings
+    strength = ratio.clamp(0, 1) * s["wheel_contact"].any(-1)
+    if "push_leg_length_m" in settings:
+        error = (s["leg_length"] - settings["push_leg_length_m"]).abs().sum(-1)
+        strength *= torch.exp(-4 * error)
+    return strength * s["jump_ref"]["push"] * s["guidance_scale"]
 
 
 def jump_push_symmetry(s, p):
     force = s["wheel_force"].clamp_min(0)
-    return (1 - (force[:, 0] - force[:, 1]).abs() / force.sum(-1).clamp_min(1)) * s["jump_ref"]["push"]
+    total = force.sum(-1)
+    return (1 - (force[:, 0] - force[:, 1]).abs() / total.clamp_min(1)) * (total > 0) * s["jump_ref"]["push"]
 
 
 def jump_tuck(s, p):

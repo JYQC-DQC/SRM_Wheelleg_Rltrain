@@ -48,9 +48,18 @@ def test_baseline_override_is_explicit_and_does_not_bypass_missing_values(tmp_pa
         incomplete.require_ready(allow_unvalidated_baseline=True)
 
 
-def test_mixed_commands_hold_60_percent_stationary(tmp_path):
+def test_legacy_mixed_commands_hold_60_percent_stationary(tmp_path):
     policy = yaml.safe_load((ROOT / "config/reference/scut_p3.yaml").read_text(encoding="utf-8"))
-    policy["stages"]["tunnel"]["tunnel"]["vx_range_m_s"] = [0.5, 1.0]
+    tunnel = policy["stages"]["tunnel"]["tunnel"]
+    tunnel.update(
+        obstacle_fraction=0.4,
+        obstacle_fraction_after_switch=0.7,
+        mix_switch_iteration=2000,
+        mix_require_basic_success=True,
+        mix_basic_min_events=100,
+        mix_basic_success_rate=0.7,
+        vx_range_m_s=[0.5, 1.0],
+    )
     path = tmp_path / "policy.yaml"
     path.write_text(yaml.safe_dump(policy), encoding="utf-8")
     cfg = load_training("p3-tunnel", ROOT / "config/reference/scut_robot.template.yaml", path)
@@ -113,18 +122,17 @@ def test_tunnel_curriculum_strict_thresholds_stale_episodes_and_resume():
     torch.testing.assert_close(restored.latest_rate, curriculum.latest_rate)
 
 
-@pytest.mark.parametrize("level, top", [(1, 0.054), (2, 0.1215), (3, 0.189), (4, 0.2565), (5, 0.324)])
-def test_generated_tunnel_height_and_dimensions(level, top):
-    model = mujoco.MjModel.from_xml_path(str(ROOT / f"assets/tunnel/tunnel_level{level}.xml"))
+def test_standard_tunnel_is_solid_and_matches_rule_figure():
+    model = mujoco.MjModel.from_xml_path(str(ROOT / "assets/tunnel/tunnel_standard.xml"))
     beam = model.geom("TunnelBeam")
-    assert beam.pos[2] + beam.size[2] == pytest.approx(top)
-    np.testing.assert_allclose(beam.size * 2, [0.35, 1.6, 0.02])
-    assert model.geom("RailLeft").size[2] * 2 == pytest.approx(0.6)
+    np.testing.assert_allclose(beam.size * 2, [0.35, 0.8, 0.27])
+    np.testing.assert_allclose(beam.pos, [1.525, 0.0, 0.135])
+    assert model.ngeom == 2  # Ground and one solid box; no rails or hole.
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     ray = np.array([0.0, 0.0, -1.0])
-    distance = mujoco.mj_ray(model, data, np.array([0.175, 0.0, 1.0]), ray, None, 1, -1, np.zeros(1, np.int32))
-    assert 1.0 - distance == pytest.approx(top)
+    distance = mujoco.mj_ray(model, data, np.array([1.525, 0.0, 1.0]), ray, None, 1, -1, np.zeros(1, np.int32))
+    assert 1.0 - distance == pytest.approx(0.27)
 
 
 def test_tunnel_roof_is_not_a_valid_landing():
@@ -172,3 +180,69 @@ def test_no_takeoff_cannot_receive_landing_success():
             torch.tensor([False]),
         )
     assert not jump.landing_paid.item()
+
+
+def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
+    from wheelleg.evaluation import evaluation_cases
+
+    robot = ROOT / "config/reference/scut_robot.template.yaml"
+    policy = ROOT / "config/reference/scut_p3.yaml"
+    flat = load_training("p3-jump", robot, policy)
+    torch.manual_seed(2)
+    commands = Commands(flat, 64, "cpu")
+    commands.reset(torch.arange(64))
+    target = commands.target.clone()
+    assert (target[:, 0] == 0).any() and (target[:, 0] >= 0.6).any()
+    assert not target[:, 1:].any()
+    commands.step(30.0, torch.zeros(64, dtype=torch.bool))
+    torch.testing.assert_close(commands.value, target)
+    flat_cases = evaluation_cases(flat)
+    assert sorted({case.command[0] for case in flat_cases if case.jump_count}) == pytest.approx([0.0, 0.6, 1.55, 2.5])
+    assert sum(case.jump_count == 0 for case in flat_cases) == 4
+    tunnel = load_training("p3-tunnel", robot, policy)
+    commands = Commands(tunnel, 64, "cpu")
+    assert commands.tunnel_obstacle.all()
+    cases = evaluation_cases(tunnel)
+    assert len({case.name for case in cases}) == len(cases) == 6
+    assert all(case.jump_count == 1 and case.command[0] > 0 for case in cases)
+    assert {case.press_distance_m for case in cases} == {0.9, 1.3}
+    assert all(case.jump_height == pytest.approx(0.145) for case in cases)
+
+
+@pytest.mark.parametrize("first_contact_valid", [False, True])
+def test_beam_ignores_root_height_but_rejects_early_single_wheel_and_defers_apex(first_contact_valid):
+    from wheelleg.rewards import jump_apex
+
+    settings = yaml.safe_load((ROOT / "config/reference/scut_p3.yaml").read_text(encoding="utf-8"))["stages"]["tunnel"]
+    settings["landing_stable_s"] = 0.03
+    event = JumpEvent(settings, 1, "cpu")
+    event.reset(torch.tensor([0]))
+    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), torch.tensor([0.10]))
+
+    def advance(z, vz, contact, valid):
+        event.update(
+            0.01,
+            torch.tensor([5.0]),
+            torch.tensor([z]),
+            torch.tensor([vz]),
+            torch.tensor([contact]),
+            torch.tensor([True]),
+            torch.tensor([valid]),
+            torch.tensor([False]),
+            wheel_clearance=torch.full((1, 2), 0.06),
+            require_height=torch.tensor([False]),
+        )
+
+    for _ in range(28):
+        advance(0.3, 0.0, (True, True), False)
+    for z in (0.42, 0.52, 0.60, 0.61):
+        advance(z, 1.0, (False, False), False)
+    advance(0.60, -0.1, (False, False), False)
+    assert event.took_off.item()
+    assert event.apex_pulse.item()
+    assert jump_apex({"jump": event}, {}).item() == 0
+    advance(0.32, -0.3, (True, False), first_contact_valid)
+    for _ in range(3):
+        advance(0.30, 0.0, (True, True), True)
+    assert event.landing_paid.item() == first_contact_valid
+    assert event.failure_paid.item() != first_contact_valid

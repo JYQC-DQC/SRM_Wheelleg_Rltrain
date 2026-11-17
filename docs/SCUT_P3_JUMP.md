@@ -1,0 +1,27 @@
+# SCUT 参考车 P3：无梁预训与标准梁验收
+
+当前入口用 `config/reference/scut_p3.yaml`。这是参考车仿真实验配方，不适用于上大实车。旧混训 run 的数值不代表新任务成绩。
+
+## 实心梁
+
+依据《RoboMaster 2027 机甲大师超级对抗赛比赛规则手册 V1.0.0（20261015）》印刷页 59、§4.4.2 图 4-38：梁前沿距道路入口 1.350 m，沿行进方向长 350 mm，车道净宽 800 mm；道路表面高出场地基准 G 200 mm，梁顶高出**道路表面** 270 mm。把路面设为局部 `z=0`，用 `0.350 × 0.800 × 0.270 m` 的实心盒模拟车道内顶面投影；盒中心为 `(1.525, 0, 0.135) m`。不挖洞、不建护栏实体，不复现道路高度台差或裁判卡。MuJoCo 用 `python -m tools.build_tunnel_model` 生成同一尺寸的标准模型。
+
+## 顺序
+
+1. `p3-jump` 无梁。每回合固定为零速或正向行进，默认各 50%；80% 回合在 2–5 s 模拟一次按键，20% 不按。速度和机身上升目标是参考车试验范围，不是已验证能力。先分别确认原地和带速跳能离地、落稳，并从 `jump_motion.npz` 查看在足够净空下的**连续前进距离**，不能用起跳 `vx` 或单个峰值替代。
+2. 用同一平地 checkpoint 直接评 `p3-tunnel`。所有用例有标准梁，按速度、早／晚按键分组，记录离地、通过、触地、落稳，不混入原地样本。位置用于仿真脚本模拟操作手按键，不是部署触发方案，不把测距交给 Actor。
+3. 直接评测已有足够成功率和按键窗口就不另训。否则用 `--initialize-from` 仅继承平地 Actor 开新 `p3-tunnel` run，不能完整 resume 旧混训。顶面落地、碰撞、绕行、首轮过早触地均失败。30 mm 净空、50 mm 后沿裕量、1 s 落稳是训练验收约定；轮底和刚体原点只是近似，完整净空仍需按目标资产验证。表 5-27 的裁判卡窗口另测。
+
+## 奖惩
+
+借鉴复旦的支撑期蹬伸、华南虎的起跳／收腿分相：蹬伸必须有轮支撑，且腿长和向上速度共同计分；离地后不再给下蹲引导。关闭按腾空时长发奖、空中奖金、轮速对齐罚和未经实际冲击测量的髋力矩代理罚。平地顶点奖延迟到落稳后发，跳高未达标仍可以获得落稳奖，但不计入升档或达标成功率；过梁不按机身升高量判失败或发顶点奖。空中速度跟踪降权，触地后恢复跟踪，落稳和速度恢复分开看；碰梁沿用一次事件失败罚，不再叠加顶面持续罚。
+
+## 运行入口
+
+使用准备好的 SCUT `robot.yaml`；下列 `<...>` 替换为已有文件。先完成基线验证或按现有流程显式记录基线覆盖。
+
+```text
+python -m isaac.scripts.train --task p3-jump --robot <robot.yaml> --policy config/reference/scut_p3.yaml --run-name p3_flat --initialize-from <landing.pt> --headless
+python -m isaac.scripts.evaluate --task p3-tunnel --robot <robot.yaml> --policy config/reference/scut_p3.yaml --checkpoint <p3_flat.pt> --output runs/p3_beam_eval --headless
+python -m isaac.scripts.train --task p3-tunnel --robot <robot.yaml> --policy config/reference/scut_p3.yaml --run-name p3_beam --initialize-from <p3_flat.pt> --headless
+```

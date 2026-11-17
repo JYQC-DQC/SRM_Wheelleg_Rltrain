@@ -82,7 +82,10 @@ def main() -> None:
                 actor = load_policy_module(args.checkpoint[0], cfg.policy).to(args.device)
                 report, observations, histories = [], [], []
                 handover = {key: [] for key in ("root_state", "joint_position", "joint_velocity")}
+                jump_traces = {}
                 raw.commands_fixed = True
+                if cfg.task == "p3-tunnel":
+                    raw.commands.tunnel_obstacle.fill_(True)
                 for case in evaluation_cases(cfg):
                     command = torch.tensor(case.command, device=args.device)
                     raw.fixed_command = (command, case.height)
@@ -107,6 +110,7 @@ def main() -> None:
                         if cfg.task == "p3-tunnel":
                             # Fixed evaluation count overrides the reset sample; restore/hide the beam accordingly.
                             raw._reset_tunnel(torch.arange(count, device=args.device))
+                            raw.tunnel_press_distance.fill_(case.press_distance_m)
                     obs = raw._get_observations()
                     alive = torch.ones(count, dtype=torch.bool, device=args.device)
                     failed = torch.zeros_like(alive)
@@ -118,6 +122,10 @@ def main() -> None:
                     tracking = torch.zeros(count, device=args.device)
                     levels = raw.terrain.terrain_levels.cpu().numpy().copy() if stairs else None
                     errors, valid, displacement = [], [], []
+                    motion = []
+                    jump_flags = {
+                        key: torch.zeros_like(alive) for key in ("took_off", "cleared", "touched_down", "stable")
+                    }
                     start_position = raw.robot.data.root_pos_w.clone()
                     with torch.inference_mode():
                         for step in range(int(duration / raw.step_dt)):
@@ -136,8 +144,13 @@ def main() -> None:
                                 handover["joint_velocity"].append(raw.robot.data.joint_vel[keep].cpu().numpy().copy())
                             info = extras["evaluation"]
                             failed |= alive & info["failed"]
-                            if not stairs:
+                            if raw.jump is not None:
                                 succeeded |= alive & info["jump_success"]
+                                for key, mask in jump_flags.items():
+                                    mask |= alive & info[f"jump_{key}"]
+                                dx = info["position"][:, :1] - start_position[:, :1]
+                                sample = torch.cat((dx, info["jump_motion"]), -1)
+                                motion.append(torch.where(alive[:, None], sample, torch.nan).cpu().numpy())
                             if stairs:
                                 traversed |= alive & info["stair_traversed"]
                                 stopped |= alive & info["stair_stopped"]
@@ -221,7 +234,29 @@ def main() -> None:
                                     failed.cpu().numpy()[selected],
                                 )
                             lower = upper
+                    if raw.jump is not None:
+                        result.update(
+                            vx_m_s=case.command[0],
+                            press_distance_m=case.press_distance_m,
+                            target_root_rise_m=case.jump_height if case.jump_count else None,
+                            **{f"jump_{key}": int(mask.sum()) for key, mask in jump_flags.items()},
+                        )
+                        jump_traces[case.name] = np.stack(motion)
                     report.append(result)
+                if jump_traces:
+                    np.savez_compressed(
+                        args.output / "jump_motion.npz",
+                        dt_s=raw.step_dt,
+                        columns=(
+                            "delta_world_x_m",
+                            "world_vx_m_s",
+                            "minimum_wheel_clearance_m",
+                            "velocity_error_m_s",
+                            "press_fired",
+                            "takeoff_confirmed",
+                        ),
+                        **jump_traces,
+                    )
                 (args.output / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
                 rollout = dict(observation=np.asarray(observations, dtype=np.float32))
                 if histories:

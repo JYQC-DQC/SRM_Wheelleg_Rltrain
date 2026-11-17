@@ -99,7 +99,11 @@ class TrainingConfig:
             for key in tuple(stage):
                 if key.startswith("air_") and key != "air_reset_probability":
                     stage.pop(key)
-        if self.task == "p3-tunnel" and "obstacle_fraction" not in self.stage["tunnel"]:
+        if (
+            self.task == "p3-tunnel"
+            and "beam_offset_from_entrance_m" not in self.stage["tunnel"]
+            and "obstacle_fraction" not in self.stage["tunnel"]
+        ):
             stage.pop("height_range_m")
         if self.task != "p3-tunnel":
             asset.pop("collision_body_names")
@@ -1054,16 +1058,17 @@ def _validate_training(cfg: TrainingConfig) -> None:
             vx = p["vx_range_m_s"]
             if vx is not None and (len(vx) != 2 or vx[0] <= 0 or vx[1] < vx[0]):
                 raise ValueError("tunnel.vx_range_m_s must be a positive, ordered forward-speed range")
-            required_height = max(p["beam_height_m"], max(p["height_curriculum_m"]) + p["height_jitter_m"][1])
-            if feasible is not None and required_height + p["clearance_margin_m"] > feasible:
-                raise ValueError("Tunnel beam plus clearance margin exceeds feasible_height_m")
-    if cfg.policy.history_frames:
-        if "history_estimator" not in cfg.settings:
-            raise ValueError(f"{cfg.policy_path}: history_estimator.frames > 0 requires training.history_estimator")
-        for key in ("learning_rate", "velocity_loss_coef", "contact_loss_coef"):
-            value = cfg.settings["history_estimator"][key]
-            if type(value) not in (int, float) or not isfinite(value) or value <= 0:
-                raise ValueError(f"training.history_estimator.{key} must be finite and positive")
+            if "press_distance_range_m" in p:
+                near, far = p["press_distance_range_m"]
+                if not 0 < near <= far < p["approach_distance_m"] + p["approach_jitter_m"][0]:
+                    raise ValueError("Tunnel press distances must be positive, ordered and nearer than spawn")
+                # The commanded root rise is independent of world-space beam and wheel clearance.
+                if heights is None or (feasible is not None and heights[1] > feasible):
+                    raise ValueError("Tunnel needs a root rise range within feasible_height_m")
+            else:
+                required_height = max(p["beam_height_m"], max(p["height_curriculum_m"]) + p["height_jitter_m"][1])
+                if feasible is not None and required_height + p["clearance_margin_m"] > feasible:
+                    raise ValueError("Tunnel beam plus clearance margin exceeds feasible_height_m")
     if cfg.stage["disturbance_phase"] not in (1, 2):
         raise ValueError("disturbance_phase must be 1 or 2")
     schedule = cfg.settings["disturbance"]

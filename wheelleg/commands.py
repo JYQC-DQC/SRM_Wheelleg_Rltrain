@@ -148,9 +148,16 @@ class Commands:
                     self.target[selected, 0] = speed * course.forward_sign[selected]
                     self.target[selected, 2] = uniform(profile["yaw_range_rad_s"], (len(selected),), self.device)
             return
+        if self.cfg.task == "p3-jump" and "moving_probability" in self.cfg.stage:
+            speed = uniform(self.settings["vx_range_m_s"], (n,), self.device)
+            moving = torch.rand(n, device=self.device) < self.cfg.stage["moving_probability"]
+            self.target[ids, 0] = speed * moving
+            self.remaining[ids] = torch.inf
+            return
         if self.cfg.task == "p3-tunnel":
             speed = uniform(self.cfg.stage["tunnel"]["vx_range_m_s"], (n,), self.device)
             self.target[ids, 0] = torch.where(self.tunnel_obstacle[ids], speed, 0.0)
+            self.remaining[ids] = torch.inf
             return
         if self.family == "p2":
             stage = self.cfg.stage

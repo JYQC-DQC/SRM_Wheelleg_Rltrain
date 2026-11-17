@@ -52,6 +52,9 @@ def main() -> None:
             )
         )
         return
+    if args.task == "p3-tunnel" and "press_distance_range_m" in cfg.stage["tunnel"]:
+        if not (args.resume or args.initialize_from):
+            parser.error("Train p3-jump first and pass its checkpoint with --initialize-from")
     cfg.require_ready(allow_unvalidated_baseline=args.allow_unvalidated_baseline)
     if not args.run_name or Path(args.run_name).name != args.run_name:
         parser.error("--run-name must be one directory name")
@@ -136,8 +139,7 @@ def main() -> None:
                 initialize_actor(runner, args.initialize_from)
             # Mixed jump episodes use physical-age triggers and one full attempt.
             # A randomized initial timeout can cut them off before takeoff.
-            mixed_jump = args.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]
-            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=not mixed_jump)
+            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=TASKS[args.task].policy != "p3")
         except Exception:
             import traceback
 

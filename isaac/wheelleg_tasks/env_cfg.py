@@ -283,9 +283,7 @@ def make_env_cfg(
                 prim_path=f"/World/envs/env_.*/Robot/{name}",
                 update_period=0.0,
                 history_length=0,
-                filter_prim_paths_expr=[
-                    f"/World/envs/env_.*/{target}" for target in ("TunnelBeam", "RailLeft", "RailRight")
-                ],
+                filter_prim_paths_expr=["/World/envs/env_.*/TunnelBeam"],
             )
             for name in asset["collision_body_names"]
         }

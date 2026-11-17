@@ -142,6 +142,7 @@ class JumpEvent:
         obstacle_contact: torch.Tensor,
         wheel_clearance: torch.Tensor | None = None,
         failed: torch.Tensor | None = None,
+        require_height: torch.Tensor | None = None,
     ) -> None:
         self.apex_pulse.zero_()
         self.landing_pulse.zero_()
@@ -170,7 +171,9 @@ class JumpEvent:
         self.quality_active.copy_(flight & candidate & ~self.invalid)
         # Invalid first touchdown cannot become success by driving off the roof later.
         height_ok = jump_height_error(self.apex_z - self.start_z, self.height, self.settings) <= 1e-6
-        new_touch = flight & contact.all(-1) & ~self.first_touch
+        if require_height is not None:
+            height_ok |= ~require_height
+        new_touch = flight & contact.any(-1) & ~self.first_touch
         self.invalid |= new_touch & (~valid_landing | ~height_ok)
         self.first_touch |= new_touch
         first_touch = flight[:, None] & contact & (self.touchdown_time < 0)
@@ -179,7 +182,8 @@ class JumpEvent:
         self.landed |= self.touchdown_pulse
         landing_ok = self.active & self.landed & contact.all(-1) & stable & valid_landing & ~self.invalid & height_ok
         self.stable_time = torch.where(landing_ok, self.stable_time + dt, 0)
-        self.landing_pulse = (self.stable_time >= self.settings["landing_stable_s"]) & ~self.landing_paid
+        self.landing_pulse = landing_ok & (self.stable_time >= self.settings["landing_stable_s"] - dt / 2)
+        self.landing_pulse &= ~self.landing_paid
         self.landing_paid |= self.landing_pulse
         # Keep the event alive through the required post-landing validation window.
         expired = self.elapsed >= self.settings["event_duration_s"] + self.settings["landing_stable_s"]
@@ -253,7 +257,7 @@ class JumpEvent:
         time_to_ground = (vz + torch.sqrt(vz.square() + 2 * gravity * wheel_clearance.clamp_min(0))) / gravity
         prepare = flight & (vz < 0) & (time_to_ground < self.settings["landing_prepare_time_s"])
         return {
-            "crouch": self.active & (self.elapsed < self.settings["crouch_duration_s"]),
+            "crouch": self.active & ~self.took_off & (self.elapsed < self.settings["crouch_duration_s"]),
             "push": self.active & ~self.took_off & (self.elapsed >= self.settings["crouch_duration_s"]),
             "flight": flight,
             "prepare": prepare,
@@ -330,10 +334,14 @@ def tunnel_landing(
     ground_tolerance: float,
     center_y: torch.Tensor | None = None,
     half_width: float | None = None,
+    contact: torch.Tensor | None = None,
 ) -> torch.Tensor:
     wheels_beyond = (wheel_position[:, :, 0] - wheel_radius > beam_end_x[:, None] + margin).all(-1)
     body_beyond = (body_position[:, :, 0] > beam_end_x[:, None] + margin).all(-1)
-    on_ground = (wheel_position[:, :, 2] - wheel_radius - ground_z[:, None]).abs().amax(-1) < ground_tolerance
+    near_ground = (wheel_position[:, :, 2] - wheel_radius - ground_z[:, None]).abs() < ground_tolerance
+    if contact is not None:
+        near_ground |= ~contact
+    on_ground = near_ground.all(-1)
     valid = wheels_beyond & body_beyond & on_ground
     if center_y is not None:
         lateral = torch.maximum(
