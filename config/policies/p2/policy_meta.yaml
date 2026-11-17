@@ -1,10 +1,7 @@
 # Guide v2.1: action_clip: null means NO raw clipping; other nulls are unmeasured.
 name: p2_spin
-obs_version: 2
-hidden_dims:
-- 256
-- 128
-- 64
+obs_version: 3
+hidden_dims: [128, 64, 32]
 activation: elu
 observation_scales:
   command:

@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 
 from wheelleg.config import load_policy, load_robot, missing_parameters
+from wheelleg.history import HISTORY_DIM, HISTORY_FRAMES, VELOCITY_DIM
 from wheelleg.observation import OBS_DIM, OBS_FIELDS
 
 
@@ -20,6 +21,10 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         f"#define WL_POLICY_DECIMATION {robot.decimation}u",
         f"#define WL_OBS_VERSION {policy.obs_version}u",
         f"#define WL_OBS_DIM {OBS_DIM}u",
+        "// obs_history is oldest first, including the current frame last; refill on reset or policy switch.",
+        f"#define WL_OBS_HISTORY_FRAMES {HISTORY_FRAMES}u",
+        f"#define WL_OBS_HISTORY_DIM {HISTORY_DIM}u",
+        f"#define WL_ENCODER_VELOCITY_DIM {VELOCITY_DIM}u",
         "#define WL_ACTION_DIM 6u",
         f"#define WL_DEPLOYMENT_CONFIG_READY {int(not interface_only)}",
         f"#define WL_WHEEL_REDUCTION_RATIO {float(robot.wheel_reduction_ratio)!r}f",

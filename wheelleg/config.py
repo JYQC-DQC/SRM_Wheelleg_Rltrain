@@ -91,6 +91,41 @@ def _vector(value: list, length: int, field: str, *, allow_missing: bool = False
     return tuple(value)
 
 
+# Required calibration sign-offs for the chassis. Deleting a pending row is not evidence.
+_MEASUREMENTS = (
+    "cad_closed_chain_geometry",
+    "chassis_mass_com_inertia",
+    "wheel_radius_m",
+    "leg_joint_limits_rad",
+    "motor_ids_and_protocol_readback",
+    "imu_mounting_rotation",
+    "hip_torque_calibration_and_envelope",
+    "wheel_torque_calibration_and_envelope",
+    "motor_sweep_and_held_out_validation",
+    "spring_left_f0_k_hysteresis_damping",
+    "spring_right_f0_k_hysteresis_damping",
+    "measured_sensor_and_action_delay",
+    "power_controller_limits",
+)
+
+
+def _pending_evidence(value, path):
+    if isinstance(value, dict) and value:
+        for key, child in value.items():
+            yield from _pending_evidence(child, f"{path}.{key}")
+    elif isinstance(value, list) and value:
+        for index, child in enumerate(value):
+            yield from _pending_evidence(child, f"{path}[{index}]")
+    elif (
+        value is None
+        or value is False
+        or isinstance(value, (list, dict))
+        or (isinstance(value, str) and not value.strip())
+        or (isinstance(value, float) and not isfinite(value))
+    ):
+        yield path
+
+
 def load_robot(path: str | Path) -> RobotConfig:
     path = Path(path)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -121,7 +156,14 @@ def load_robot(path: str | Path) -> RobotConfig:
         buses = _vector(data["can_bus"], 6, f"{path}:can_bus")
         if any(type(x) is not int or x not in (1, 2, 3) for x in buses):
             raise ValueError(f"{path}: can_bus must contain integer bus indices 1..3")
-        pending = tuple(key for key, value in data["pending_measurements"].items() if value is None)
+        evidence = data["pending_measurements"]
+        if not isinstance(evidence, dict):
+            raise ValueError(f"{path}: pending_measurements must be a mapping of calibration evidence")
+        pending = tuple(
+            field
+            for key in dict.fromkeys((*_MEASUREMENTS, *evidence))
+            for field in _pending_evidence(evidence.get(key), key)
+        )
         clips = []
         for key in OBSERVATION_CLIP_FIELDS:
             field = f"training.observation_clip.{key}"
@@ -157,11 +199,11 @@ def load_policy(path: str | Path) -> PolicyConfig:
     if type(data) is not dict:
         raise ValueError(f"{path}: expected a YAML mapping")
     try:
-        if data["obs_version"] != 2:
-            raise ValueError(f"{path}: this implementation supports obs_version 2 only")
+        if type(data["obs_version"]) is not int or data["obs_version"] != 3:
+            raise ValueError(f"{path}: SHU policies require obs_version 3")
         dims = data["hidden_dims"]
-        if not dims or any(type(n) is not int or n <= 0 for n in dims):
-            raise ValueError(f"{path}: hidden_dims must contain positive integers")
+        if dims != [128, 64, 32] or any(type(width) is not int for width in dims):
+            raise ValueError(f"{path}: SHU policies require hidden_dims [128, 64, 32]")
         if data["activation"] != "elu":
             raise ValueError(f"{path}: expected elu activation")
         scales = data["observation_scales"]
