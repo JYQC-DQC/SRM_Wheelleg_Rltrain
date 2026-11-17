@@ -27,17 +27,9 @@ import numpy as np
 import torch
 import yaml
 
+from wheelleg.observation import OBS_FIELDS
+
 HERE = Path(__file__).resolve().parent
-OBS_FIELDS = (
-    ("command", 3),
-    ("height", 1),
-    ("angular_velocity", 3),
-    ("gravity", 3),
-    ("joint_position", 6),
-    ("joint_velocity", 6),
-    ("previous_action", 6),
-    ("mode", 7),
-)
 
 
 class RunConfig:
@@ -52,8 +44,8 @@ class RunConfig:
         self.shared = r["training"]
         if p["obs_version"] != 2 or (p.get("history_estimator") or {}).get("frames", 0):
             raise ValueError("Only the single-frame obs_version 2 actor is supported")
-        if p.get("policy_family") != "p1":
-            raise ValueError("Mode vector is implemented for the p1 family only")
+        if p.get("policy_family") not in ("p1", "p3"):
+            raise ValueError("Only p1 and p3 single-frame actors are supported")
         self.control_hz, self.policy_hz = r["control_hz"], r["policy_hz"]
         self.decimation = self.control_hz // self.policy_hz
         self.active_joints = r["asset"]["active_joint_names"]
@@ -300,8 +292,7 @@ class WheelLegSim:
         c, s = self.cfg, self.delayed_sensor
         q = np.zeros(6)
         q[c.legs] = s[6:12][c.legs] - c.default_q[c.legs]
-        mode = np.zeros(7)
-        mode[0] = 1.0  # p1: flat mode; stair/recovery flags stay 0 on flat ground
+        mode = self.observation_mode()
         raw = dict(
             command=command,
             height=np.array([height]),
@@ -321,6 +312,12 @@ class WheelLegSim:
             parts.append(np.nan_to_num(part, nan=0.0, posinf=0.0, neginf=0.0))
             offset += width
         return np.concatenate(parts)
+
+    def observation_mode(self) -> np.ndarray:
+        mode = np.zeros(7)
+        if self.cfg.policy["policy_family"] == "p1":
+            mode[0] = 1.0
+        return mode
 
     def _targets(self, action: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         c = self.cfg

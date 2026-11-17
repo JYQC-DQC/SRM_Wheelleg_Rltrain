@@ -306,5 +306,29 @@ stages:
     curriculum_min_events: 100
     curriculum_demote_rate: 0.2
     height_tolerance_m: 0.01
+sim2sim:
+  # Operator limits and test geometry; these are not measured robot capabilities.
+  controls:
+    jump_height_range_m: [0.04, 0.40]
+    jump_height_step_m: 0.01
+    vx_range_m_s: [-2.5, 2.5]
+    vx_step_m_s: 0.25
+    wz_range_rad_s: [-3.0, 3.0]
+    wz_step_rad_s: 0.5
+  course:
+    heights_m: [0.10, 0.15, 0.20, 0.25, 0.30]
+    tunnel_length_m: 0.35
+    tunnel_outer_width_m: 0.80
+    tunnel_wall_thickness_m: 0.02
+    step_length_m: 1.20
+    step_width_m: 1.60
+    double_step_rise_m: 0.20
+    double_step_first_tread_m: 0.80
+    double_step_second_tread_m: 0.80
+    lane_spacing_m: 3.0
+    column_spacing_m: 8.0
+    approach_distance_m: 2.5
+    flat_spawn_xy_m: [-4.0, -10.0]
+  wheel_friction: 0.8
 guide_version: '2.2'
 
