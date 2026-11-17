@@ -256,19 +256,35 @@ def test_stationary_and_moving_height_windows_advance_and_anneal_independently()
         "guidance_final_scale": 0.3,
         "guidance_decay_iterations": 2000,
     }
-    stationary, moving = (JumpCurriculum(settings, "cpu") for _ in range(2))
+    stationary, moving = (JumpCurriculum(settings, "cpu", fresh_windows=True) for _ in range(2))
     bins = torch.zeros(100, dtype=torch.long)
     stationary.record(bins, torch.ones(100, dtype=torch.bool), 10)
+    for _ in range(4):
+        moving.record(bins, torch.zeros(100, dtype=torch.bool), 10)
     moving.record(bins, torch.arange(100) < 60, 10)
     assert (stationary.maximum_level, moving.maximum_level) == (1, 0)
     assert stationary.guidance(bins[:1], 2010).item() == pytest.approx(0.3)
     assert moving.guidance(bins[:1], 2010).item() == 1.0
     assert not moving.sample(64)[0].any()
-    restored = JumpCurriculum(settings, "cpu")
+    assert moving.latest_rate[0].item() == pytest.approx(0.6)
+    assert not moving.attempts.any() and not moving.successes.any()
+
+    # Restore a half-filled window. Exactly 70/100 in this new window promotes despite old failures.
+    moving.record(bins[:50], torch.ones(50, dtype=torch.bool), 2009)
+    restored = JumpCurriculum(settings, "cpu", fresh_windows=True)
     restored.load_state_dict(moving.state_dict())
-    restored.record(bins, torch.ones(100, dtype=torch.bool), 2010)
+    restored.record(bins[:50], torch.arange(50) < 20, 2010)
     assert restored.maximum_level == 1
+    assert restored.latest_rate[0].item() == pytest.approx(0.7)
+    assert not restored.attempts.any() and not restored.successes.any()
     assert moving.maximum_level == 0
+
+    # Easy attempts can still be sampled, but cannot carry promotion at the current cap.
+    restored.record(bins, torch.ones(100, dtype=torch.bool), 2011)
+    assert not restored.attempts.any()
+    restored.record(bins + 1, torch.ones(100, dtype=torch.bool), 2012)
+    assert restored.maximum_level == 2
+    assert set(restored.sample(128)[0].tolist()) == {0, 1, 2}
 
 
 @pytest.mark.parametrize("dt", [0.01, 0.005])

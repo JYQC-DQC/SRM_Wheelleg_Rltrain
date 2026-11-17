@@ -145,11 +145,12 @@ class WheelLegEnv(DirectRLEnv):
             if t.task == "p3-tunnel"
             else None
         )
-        self.jump_curriculum = JumpCurriculum(t.stage, d, levels) if self.family == "p3" else None
+        staged_flat = t.task == "p3-jump" and "moving_probability" in t.stage
+        self.jump_curriculum = (
+            JumpCurriculum(t.stage, d, levels, fresh_windows=staged_flat) if self.family == "p3" else None
+        )
         self.flat_jump_curricula = (
-            (self.jump_curriculum, JumpCurriculum(t.stage, d))
-            if t.task == "p3-jump" and "moving_probability" in t.stage
-            else ()
+            (self.jump_curriculum, JumpCurriculum(t.stage, d, fresh_windows=True)) if staged_flat else ()
         )
         self.jump_vx_qualified = torch.ones(n, dtype=torch.bool, device=d)
         self.jump_bins = torch.zeros(n, dtype=torch.long, device=d)

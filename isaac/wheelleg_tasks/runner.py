@@ -30,7 +30,7 @@ class WheelLegRunner(OnPolicyRunner):
             contract["jump_event_features"] = JUMP_FEATURES + (TUNNEL_FEATURES if cfg.task == "p3-tunnel" else 0)
             contract["jump_event_stage"] = mutable(cfg.stage)
             if cfg.task == "p3-jump" and "moving_probability" in cfg.stage:
-                contract["flat_jump_curriculum_revision"] = 1
+                contract["flat_jump_curriculum_revision"] = 2
                 contract["jump_height_progress_weight"] = cfg.settings["rewards"].get("jump_height_progress", 0.0)
         if cfg.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]:
             contract["mixed_jump_revision"] = 2
@@ -135,9 +135,9 @@ class WheelLegRunner(OnPolicyRunner):
             attempts = curriculum.attempts[level]
             self.writer.add_scalar(f"Jump/{name}/level", level + 1, iteration)
             self.writer.add_scalar(f"Jump/{name}/height_m", curriculum.levels[level], iteration)
-            self.writer.add_scalar(f"Jump/{name}/attempts", attempts, iteration)
-            for i, (hits, count) in enumerate(zip(curriculum.successes, curriculum.attempts), 1):
-                self.writer.add_scalar(f"Jump/{name}/level{i}/success_rate", hits / count.clamp_min(1), iteration)
+            self.writer.add_scalar(f"Jump/{name}/window_count", attempts, iteration)
+            for i, rate in enumerate(curriculum.latest_rate, 1):
+                self.writer.add_scalar(f"Jump/{name}/level{i}/last_window_success_rate", rate, iteration)
         if env.training.task == "p3-tunnel" and "obstacle_fraction" in env.training.stage["tunnel"]:
             curriculum = env.jump_curriculum
             level = curriculum.maximum_level

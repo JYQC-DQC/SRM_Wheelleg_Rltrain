@@ -144,8 +144,11 @@ class AirHeightCurriculum:
 class JumpCurriculum:
     """Success-gated height bins and per-bin guidance annealing, guide section 6.6."""
 
-    def __init__(self, settings: dict, device: str, levels: tuple[float, ...] | None = None):
+    def __init__(
+        self, settings: dict, device: str, levels: tuple[float, ...] | None = None, *, fresh_windows: bool = False
+    ):
         self.settings = settings
+        self.fresh_windows = fresh_windows
         self.levels = (
             torch.linspace(*settings["height_range_m"], 5, device=device)
             if levels is None
@@ -167,23 +170,27 @@ class JumpCurriculum:
     def record(self, bins: torch.Tensor, successful: torch.Tensor, iteration: float) -> None:
         if not bins.numel():
             return
-        if "curriculum_demote_rate" in self.settings:
+        demotion = "curriculum_demote_rate" in self.settings
+        windowed = demotion or self.fresh_windows
+        if windowed:
             current = bins == self.maximum_level
             bins, successful = bins[current], successful[current]
         self.attempts.scatter_add_(0, bins, torch.ones_like(bins, dtype=torch.float))
         self.successes.scatter_add_(0, bins, successful.float())
         rate = self.successes / self.attempts.clamp_min(1)
-        if "curriculum_demote_rate" in self.settings:
+        if windowed:
             level = self.maximum_level
             if self.attempts[level] >= self.settings["curriculum_min_events"]:
                 self.latest_rate[level] = rate[level]
-                if rate[level] > self.settings["guidance_success_threshold"]:
+                threshold = self.settings["guidance_success_threshold"]
+                passed = rate[level] > threshold if demotion else rate[level] >= threshold
+                if passed:
                     if self.anneal_start[level] < 0:
                         self.anneal_start[level] = iteration
                     self.maximum_level = min(level + 1, len(self.levels) - 1)
-                elif rate[level] < self.settings["curriculum_demote_rate"]:
+                elif demotion and rate[level] < self.settings["curriculum_demote_rate"]:
                     self.maximum_level = max(level - 1, 0)
-                # Fresh, non-overlapping windows; old successes cannot prevent demotion.
+                # Count the whole finishing batch once; neither failures nor successes carry into the next window.
                 self.attempts.zero_()
                 self.successes.zero_()
             return
