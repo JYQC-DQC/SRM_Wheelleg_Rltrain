@@ -527,6 +527,60 @@ def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=
     return event.references(torch.tensor([vz]), torch.tensor([min(wheel)]), 9.81)
 
 
+def test_stand_walk_reward_gate_ends_at_first_wheel_contact(clearance_jump):
+    event = clearance_jump
+    assert event.pressed_before_touch.item()
+    for _ in range(3):
+        clearance_step(event, (0.28, 0.28))
+    assert event.pressed_before_touch.item()
+    clearance_step(event, (0.0, 0.0), vz=-0.5, contact=(True, False))
+    assert not event.pressed_before_touch.item()
+    clearance_step(event, (0.05, 0.05), vz=0.5)
+    assert not event.pressed_before_touch.item()  # A rebound does not undo first touch.
+    event.reset(torch.arange(1))
+    assert not event.pressed_before_touch.item()
+    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]))
+    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), failed=True)
+    assert event.failure_pulse.item() and not event.active.item() and event.pressed_before_touch.item()
+    event.reset(torch.arange(1))
+    event.fail_pending(torch.tensor([True]))
+    assert not event.pressed_before_touch.item()  # A failure before the press does not suppress ordinary rewards.
+
+
+@pytest.mark.parametrize(
+    "peak,speed_ok,body_hit,paid",
+    [(0.28, True, False, True), (0.20, True, False, False), (0.28, False, False, False), (0.28, True, True, False)],
+)
+def test_takeoff_response_latches_latency_and_only_pays_on_full_success(clearance_jump, peak, speed_ok, body_hit, paid):
+    from math import exp
+
+    from wheelleg.rewards import compute_rewards
+
+    event = clearance_jump
+    weight = event.clearance_training["reward_overrides"]["jump_takeoff_response"]
+    state = {"jump": event, "jump_vx_qualified": torch.tensor([speed_ok])}
+
+    def bonus():
+        return compute_rewards(state, {}, {"jump_takeoff_response": weight}, 0.01, 2.5)["jump_takeoff_response"].item()
+
+    for _ in range(17):
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    for _ in range(3):
+        clearance_step(event, (peak, peak))
+    assert event.takeoff_latency_s.item() == pytest.approx(0.20)
+    for _ in range(10):
+        clearance_step(event, (peak, peak))
+    assert event.takeoff_latency_s.item() == pytest.approx(0.20)
+    assert bonus() == 0  # Not paid in the air, even if the target was met.
+    for step in range(100):
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), failed=body_hit and step == 0)
+    assert bonus() == pytest.approx(0.20 * exp(-((0.2 / 0.6) ** 2)) if paid else 0.0)
+    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    assert bonus() == 0
+    event.reset(torch.arange(1))
+    assert event.takeoff_latency_s.item() == 0
+
+
 def test_flat_clearance_counts_only_both_wheels_pre_touch_after_confirmation(clearance_jump):
     event = clearance_jump
     for _ in range(2):

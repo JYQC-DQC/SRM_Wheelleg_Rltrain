@@ -174,6 +174,15 @@ def jump_height_progress(s, p):
     return s["jump"].height_progress * s["guidance_scale"]
 
 
+def jump_takeoff_response(s, p):
+    event = s["jump"]
+    speed_ok = s["jump_vx_qualified"]
+    height_ok = jump_height_error(event.scored_height, event.height, event.settings) <= 1e-6
+    success = event.landing_pulse & event.took_off & ~event.invalid & ~event.failure_paid & speed_ok & height_ok
+    latency = event.takeoff_latency_s / event.clearance_training["takeoff_response_scale_s"]
+    return torch.exp(-latency.square()) * success
+
+
 def jump_landing(s, p):
     return s["jump"].landing_pulse.float()
 
@@ -314,6 +323,7 @@ TERMS = {
         leg_symmetry,
         jump_apex,
         jump_height_progress,
+        jump_takeoff_response,
         jump_landing,
         jump_flight,
         jump_crouch,
@@ -337,6 +347,7 @@ EVENT_TERMS = frozenset(
         "termination",
         "jump_apex",
         "jump_height_progress",  # Increment of normalized apex, not a rate per second.
+        "jump_takeoff_response",
         "jump_landing",
         "jump_impact",
         "jump_fast_touchdown",

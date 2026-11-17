@@ -1017,6 +1017,15 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 value = clearance["reward_overrides"][key]
                 if type(value) not in (int, float) or not isfinite(value) or value > 0:
                     raise ValueError(f"clearance_jump.reward_overrides.{key} must be finite and nonpositive")
+            if "jump_takeoff_response" in clearance["reward_overrides"]:
+                weight = clearance["reward_overrides"]["jump_takeoff_response"]
+                scale = clearance["takeoff_response_scale_s"]
+                if type(weight) not in (int, float) or not isfinite(weight) or weight < 0:
+                    raise ValueError(
+                        "clearance_jump.reward_overrides.jump_takeoff_response must be finite and nonnegative"
+                    )
+                if type(scale) not in (int, float) or not isfinite(scale) or scale <= 0:
+                    raise ValueError("clearance_jump.takeoff_response_scale_s must be finite and positive")
         if cfg.task == "p3-jump" and "moving_takeoff_min_fraction" in cfg.stage:
             fraction = cfg.stage["moving_takeoff_min_fraction"]
             if type(fraction) not in (int, float) or not 0 < fraction <= 1:

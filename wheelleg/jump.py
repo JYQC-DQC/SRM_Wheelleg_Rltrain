@@ -55,6 +55,7 @@ class JumpEvent:
         self.last_air_vz = torch.zeros_like(self.elapsed)
         self.first_touch_speed_pulse = torch.zeros_like(self.elapsed)
         self.takeoff_time = torch.zeros_like(self.elapsed)
+        self.takeoff_latency_s = torch.zeros_like(self.elapsed)
         self.takeoff_peak_vz = torch.zeros_like(self.elapsed)
         self.quality_sum = torch.zeros(count, 2, device=device)
         self.quality_time = torch.zeros_like(self.elapsed)
@@ -95,6 +96,7 @@ class JumpEvent:
             self.first_touch_speed_pulse,
             self.height_progress,
             self.takeoff_time,
+            self.takeoff_latency_s,
             self.takeoff_peak_vz,
             self.quality_sum,
             self.quality_time,
@@ -143,6 +145,7 @@ class JumpEvent:
         self.air_time[ids] = 0
         self.stable_time[ids] = 0
         self.takeoff_time[ids] = 0
+        self.takeoff_latency_s[ids] = 0
         self.takeoff_peak_vz[ids] = 0
         self.quality_sum[ids] = 0
         self.quality_time[ids] = 0
@@ -188,6 +191,8 @@ class JumpEvent:
         confirmed &= self.takeoff_peak_vz >= self.settings.get("takeoff_upward_velocity_m_s", 0.1)
         # The running apex is monotone within an attempt. Do not cash any of it in until takeoff is confirmed.
         old_height = torch.where(self.took_off, self.scored_height, 0.0)
+        if self.clearance_training is not None:
+            self.takeoff_latency_s.copy_(torch.where(confirmed & ~self.took_off, self.elapsed, self.takeoff_latency_s))
         self.took_off |= confirmed
         flight = self.active & self.took_off & ~self.landed
         self.air_time += dt * flight * no_contact
@@ -315,6 +320,12 @@ class JumpEvent:
     @property
     def phase(self) -> torch.Tensor:
         return (self.elapsed / self.settings["event_duration_s"]).clamp(0, 1)
+
+    @property
+    def pressed_before_touch(self) -> torch.Tensor:
+        # update() clears active on a failed landing/takeoff before rewards are computed.
+        pressed = self.active | (self.finished & (self.elapsed > 0))
+        return pressed & ~self.first_touch
 
     @property
     def scored_height(self) -> torch.Tensor:

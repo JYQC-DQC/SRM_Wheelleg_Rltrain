@@ -1008,6 +1008,7 @@ class WheelLegEnv(DirectRLEnv):
             s["linear_error"] = s["translation_error"].norm(dim=-1)
         if self.jump is not None:
             s["jump"] = self.jump
+            s["jump_vx_qualified"] = self.jump_vx_qualified
             s["jump_ref"] = self.jump.references(
                 s["velocity_w"][:, 2], s["clearance"].amin(-1), t.shared["gravity_m_s2"]
             )
@@ -1057,6 +1058,12 @@ class WheelLegEnv(DirectRLEnv):
             weights = {**weights, "track_height_wide": initial + progress * (anneal["final_weight"] - initial)}
         terms = compute_rewards(s, t.settings["reward_parameters"], weights, self.step_dt, t.settings["reward_clip"])
         if t.task == "p3-jump":
+            if self.jump.clearance_training is not None:
+                # Suppress only ordinary positive tracking terms, not their paired error penalties.
+                stand_walk_allowed = ~self.jump.pressed_before_touch
+                for name in ("track_lin_vel", "track_ang_vel", "track_height", "flat_roll", "flat_pitch"):
+                    if name in terms:
+                        terms[name] *= stand_walk_allowed
             for name in ("jump_apex", "jump_height_progress"):
                 if name in terms:
                     terms[name] *= self.jump_vx_qualified

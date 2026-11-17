@@ -207,6 +207,7 @@ stages:
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
     clearance_jump:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
+      takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
       tuck_end_vz_m_s: 0.25  # At this downward speed, switch directly from tuck to landing extension.
       stable_vz_m_s: 0.20
       stable_roll_pitch_rate_rad_s: 1.0
@@ -216,6 +217,7 @@ stages:
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
         jump_air_leg_smoothness: -0.35
         jump_landing: 2.0
+        jump_takeoff_response: 0.20  # Maximum one-shot bonus; only for a full jump success.
         jump_landing_recovery: -1.2
         jump_rebound: -0.4
         jump_fast_touchdown: -0.15  # Maximum cost per jump, not a measured impact limit.
