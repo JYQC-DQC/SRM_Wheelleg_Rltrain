@@ -124,7 +124,8 @@ def main() -> None:
                     errors, valid, displacement = [], [], []
                     motion = []
                     jump_flags = {
-                        key: torch.zeros_like(alive) for key in ("took_off", "cleared", "touched_down", "stable")
+                        key: torch.zeros_like(alive)
+                        for key in ("took_off", "takeoff_speed_ok", "cleared", "touched_down", "stable")
                     }
                     start_position = raw.robot.data.root_pos_w.clone()
                     with torch.inference_mode():

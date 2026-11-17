@@ -996,6 +996,10 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if bounds is not None and (len(bounds) != 2 or bounds[0] > bounds[1]):
             raise ValueError(f"commands.{key}: expected [lower, upper]")
     if TASKS[cfg.task].policy == "p3":
+        if cfg.task == "p3-jump" and "moving_takeoff_min_fraction" in cfg.stage:
+            fraction = cfg.stage["moving_takeoff_min_fraction"]
+            if type(fraction) not in (int, float) or not 0 < fraction <= 1:
+                raise ValueError("moving_takeoff_min_fraction must be in (0, 1]")
         for key in (
             "takeoff_confirmation_s",
             "takeoff_clearance_m",

@@ -127,6 +127,8 @@ class WheelLegEnv(DirectRLEnv):
             self.stair_course.flat_level.fill_(len(self.stair_course.flat_levels) - 1)
         # 改自 SCUT V14/env_cfg.py:1662-1668: 落地及之后的阶段把平滑惩罚降到约 1/5，给落地缓冲留出动作空间。
         self.reward_weights = dict(t.settings["rewards"])
+        if t.task != "p3-jump":
+            self.reward_weights.pop("jump_height_progress", None)
         if self.family == "p1":
             self.reward_weights.update(t.stage["reward_overrides"])
         landing_gate = (
@@ -144,6 +146,12 @@ class WheelLegEnv(DirectRLEnv):
             else None
         )
         self.jump_curriculum = JumpCurriculum(t.stage, d, levels) if self.family == "p3" else None
+        self.flat_jump_curricula = (
+            (self.jump_curriculum, JumpCurriculum(t.stage, d))
+            if t.task == "p3-jump" and "moving_probability" in t.stage
+            else ()
+        )
+        self.jump_vx_qualified = torch.ones(n, dtype=torch.bool, device=d)
         self.jump_bins = torch.zeros(n, dtype=torch.long, device=d)
         self.command_error_sum = torch.zeros(n, 3, device=d)  # |vx 误差| m/s, |wz 误差| rad/s, |高度误差| m
         self.command_abs_sum = torch.zeros(n, 2, device=d)  # |vx 指令| m/s, |wz 指令| rad/s
@@ -377,14 +385,22 @@ class WheelLegEnv(DirectRLEnv):
                 require_trigger_time=t.task != "p3-tunnel",
             )
             started = (self.jump.active & ~was_active).nonzero().flatten()
+            self.jump_vx_qualified[started] = True
             if t.task == "p3-tunnel":
                 self.jump_bins[started] = self.tunnel_bins[started]
             elif not self.cfg.evaluation and len(started):
-                bins, heights = self.jump_curriculum.sample(len(started))
-                self.jump_bins[started] = bins
-                self.jump.height[started] = heights
+                if self.flat_jump_curricula:
+                    moving = self.commands.target[started, 0] > 0
+                    for cohort, curriculum in enumerate(self.flat_jump_curricula):
+                        ids = started[moving == bool(cohort)]
+                        self.jump_bins[ids], self.jump.height[ids] = curriculum.sample(len(ids))
+                else:
+                    self.jump_bins[started], self.jump.height[started] = self.jump_curriculum.sample(len(started))
             iteration = self.training_iteration_offset + self.common_step_counter / t.settings["rollout_steps"]
             self.guidance_scale = self.jump_curriculum.guidance(self.jump_bins, iteration)
+            if self.flat_jump_curricula:
+                moving_guidance = self.flat_jump_curricula[1].guidance(self.jump_bins, iteration)
+                self.guidance_scale = torch.where(self.commands.target[:, 0] > 0, moving_guidance, self.guidance_scale)
             if self.fixed_jump_height is not None:
                 self.jump.height[self.jump.active & ~was_active] = self.fixed_jump_height
         frozen = self.jump.active if self.jump is not None else torch.zeros_like(self.airborne)
@@ -842,6 +858,8 @@ class WheelLegEnv(DirectRLEnv):
                 )
                 valid &= self.tunnel_path.cleared & ~self.tunnel_path.invalid
                 valid |= ~self.commands.tunnel_obstacle
+            takeoff_min_fraction = t.stage.get("moving_takeoff_min_fraction")
+            was_airborne = self.jump.took_off.clone() if takeoff_min_fraction is not None else None
             self.jump.update(
                 dt,
                 self.episode_length_buf * dt,
@@ -861,6 +879,12 @@ class WheelLegEnv(DirectRLEnv):
                     else None
                 ),
             )
+            if was_airborne is not None:
+                takeoff = self.jump.took_off & ~was_airborne
+                target_vx = self.commands.target[:, 0]
+                actual_vx = s["linear_error"] + s["tracked_command"][:, 0]
+                qualified = (target_vx <= 0) | (actual_vx >= takeoff_min_fraction * target_vx)
+                self.jump_vx_qualified = torch.where(takeoff, qualified, self.jump_vx_qualified)
             self.jump.fail_pending(terminated | timeout | obstacle_hit)
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
             # Success and failure are true episode terminals. Only an ordinary
@@ -871,10 +895,14 @@ class WheelLegEnv(DirectRLEnv):
                 finished = self.jump.finished.nonzero().flatten()
                 iteration = self.training_iteration_offset + self.common_step_counter / t.settings["rollout_steps"]
                 success = self.jump.landing_pulse[finished]
-                if t.task == "p3-jump" and "moving_probability" in t.stage:
+                if self.flat_jump_curricula:
+                    # A fall before the simulated press is a driving failure, not an attempt at a sampled height.
+                    pressed = self.jump.elapsed[finished] > 0
+                    finished, success = finished[pressed], success[pressed]
                     rise = self.jump.apex_z[finished] - self.jump.start_z[finished]
                     success &= jump_height_error(rise, self.jump.height[finished], t.stage) <= 1e-6
-                self.jump_curriculum.record(self.jump_bins[finished], success, iteration)
+                    success &= self.jump_vx_qualified[finished]
+                self._record_jump_curriculum(finished, success, iteration)
         if self.first_landing is not None:
             self.first_landing.update(
                 self._sim_step_counter,
@@ -1010,6 +1038,10 @@ class WheelLegEnv(DirectRLEnv):
             initial = weights["track_height_wide"]
             weights = {**weights, "track_height_wide": initial + progress * (anneal["final_weight"] - initial)}
         terms = compute_rewards(s, t.settings["reward_parameters"], weights, self.step_dt, t.settings["reward_clip"])
+        if t.task == "p3-jump":
+            for name in ("jump_apex", "jump_height_progress"):
+                if name in terms:
+                    terms[name] *= self.jump_vx_qualified
         if self.stair_course is not None:
             motion_terms = compute_rewards(
                 s,
@@ -1211,9 +1243,11 @@ class WheelLegEnv(DirectRLEnv):
             if t.task == "p3-jump":
                 rise = self.jump.apex_z - self.jump.start_z
                 self.extras["evaluation"]["jump_success"] &= jump_height_error(rise, self.jump.height, t.stage) <= 1e-6
+                self.extras["evaluation"]["jump_success"] &= self.jump_vx_qualified
             self.extras["evaluation"].update(
                 jump_stable=self.jump.landing_pulse.clone(),
                 jump_took_off=self.jump.took_off.clone(),
+                jump_takeoff_speed_ok=(self.jump.took_off & self.jump_vx_qualified).clone(),
                 jump_cleared=(self.tunnel_path.cleared & ~self.tunnel_path.invalid).clone()
                 if t.task == "p3-tunnel"
                 else torch.zeros_like(self.airborne),
@@ -1485,8 +1519,8 @@ class WheelLegEnv(DirectRLEnv):
                 else env_ids[self.jump.active[env_ids]]
             )
             iteration = self.training_iteration_offset + self.common_step_counter / t.settings["rollout_steps"]
-            self.jump_curriculum.record(
-                self.jump_bins[interrupted],
+            self._record_jump_curriculum(
+                interrupted,
                 self.jump.landing_paid[interrupted] & ~self.jump.invalid[interrupted]
                 if mixed
                 else torch.zeros(len(interrupted), dtype=torch.bool, device=self.device),
@@ -1809,6 +1843,16 @@ class WheelLegEnv(DirectRLEnv):
         self.delayed_sensor[env_ids] = perturb_sensors(self._sensors(), self.zero_bias, self.imu_bias, self.legs)[
             env_ids
         ]
+
+    def _record_jump_curriculum(self, ids: torch.Tensor, success: torch.Tensor, iteration: float) -> None:
+        bins = self.jump_bins[ids]
+        if self.flat_jump_curricula:
+            moving = self.commands.target[ids, 0] > 0
+            for cohort, curriculum in enumerate(self.flat_jump_curricula):
+                selected = moving == bool(cohort)
+                curriculum.record(bins[selected], success[selected], iteration)
+        else:
+            self.jump_curriculum.record(bins, success, iteration)
 
     def _reset_tunnel(self, ids: torch.Tensor) -> None:
         self.tunnel_path.reset(ids)

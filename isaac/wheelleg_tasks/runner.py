@@ -29,6 +29,9 @@ class WheelLegRunner(OnPolicyRunner):
                 contract["tunnel_navigation_revision"] = 1
             contract["jump_event_features"] = JUMP_FEATURES + (TUNNEL_FEATURES if cfg.task == "p3-tunnel" else 0)
             contract["jump_event_stage"] = mutable(cfg.stage)
+            if cfg.task == "p3-jump" and "moving_probability" in cfg.stage:
+                contract["flat_jump_curriculum_revision"] = 1
+                contract["jump_height_progress_weight"] = cfg.settings["rewards"].get("jump_height_progress", 0.0)
         if cfg.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]:
             contract["mixed_jump_revision"] = 2
             contract["mixed_jump_stage"] = mutable(cfg.stage)
@@ -127,6 +130,14 @@ class WheelLegRunner(OnPolicyRunner):
         if env.command_curriculum is not None and env.command_curriculum.last_landing_rate is not None:
             rate = env.command_curriculum.last_landing_rate
             self.writer.add_scalar("Curriculum/command_landing_gate_rate", rate, iteration)
+        for name, curriculum in zip(("stationary", "moving"), env.flat_jump_curricula):
+            level = curriculum.maximum_level
+            attempts = curriculum.attempts[level]
+            self.writer.add_scalar(f"Jump/{name}/level", level + 1, iteration)
+            self.writer.add_scalar(f"Jump/{name}/height_m", curriculum.levels[level], iteration)
+            self.writer.add_scalar(f"Jump/{name}/attempts", attempts, iteration)
+            for i, (hits, count) in enumerate(zip(curriculum.successes, curriculum.attempts), 1):
+                self.writer.add_scalar(f"Jump/{name}/level{i}/success_rate", hits / count.clamp_min(1), iteration)
         if env.training.task == "p3-tunnel" and "obstacle_fraction" in env.training.stage["tunnel"]:
             curriculum = env.jump_curriculum
             level = curriculum.maximum_level
@@ -166,6 +177,8 @@ class WheelLegRunner(OnPolicyRunner):
         if env.jump_curriculum is not None:
             extra["jump_curriculum"] = env.jump_curriculum.state_dict()
             extra["basic_jump_gate"] = env.commands.basic_jump_gate
+        if env.flat_jump_curricula:
+            extra["moving_jump_curriculum"] = env.flat_jump_curricula[1].state_dict()
         if env.air_height_curriculum is not None:
             extra["air_height_curriculum"] = env.air_height_curriculum.state_dict()
         if env.stair_course is not None:
@@ -216,6 +229,8 @@ class WheelLegRunner(OnPolicyRunner):
         if env.jump_curriculum is not None:
             env.jump_curriculum.load_state_dict(infos["jump_curriculum"])
             env.commands.basic_jump_gate = infos["basic_jump_gate"]
+        if env.flat_jump_curricula:
+            env.flat_jump_curricula[1].load_state_dict(infos["moving_jump_curriculum"])
         if env.air_height_curriculum is not None and "air_height_curriculum" in infos:
             if not env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"]):
                 # Saved gate counts belong to an older band definition (or counted every height).

@@ -246,3 +246,87 @@ def test_beam_ignores_root_height_but_rejects_early_single_wheel_and_defers_apex
         advance(0.30, 0.0, (True, True), True)
     assert event.landing_paid.item() == first_contact_valid
     assert event.failure_paid.item() != first_contact_valid
+
+
+def test_stationary_and_moving_height_windows_advance_and_anneal_independently():
+    settings = {
+        "height_range_m": (0.04, 0.25),
+        "curriculum_min_events": 100,
+        "guidance_success_threshold": 0.7,
+        "guidance_final_scale": 0.3,
+        "guidance_decay_iterations": 2000,
+    }
+    stationary, moving = (JumpCurriculum(settings, "cpu") for _ in range(2))
+    bins = torch.zeros(100, dtype=torch.long)
+    stationary.record(bins, torch.ones(100, dtype=torch.bool), 10)
+    moving.record(bins, torch.arange(100) < 60, 10)
+    assert (stationary.maximum_level, moving.maximum_level) == (1, 0)
+    assert stationary.guidance(bins[:1], 2010).item() == pytest.approx(0.3)
+    assert moving.guidance(bins[:1], 2010).item() == 1.0
+    assert not moving.sample(64)[0].any()
+    restored = JumpCurriculum(settings, "cpu")
+    restored.load_state_dict(moving.state_dict())
+    restored.record(bins, torch.ones(100, dtype=torch.bool), 2010)
+    assert restored.maximum_level == 1
+    assert moving.maximum_level == 0
+
+
+@pytest.mark.parametrize("dt", [0.01, 0.005])
+def test_dense_apex_progress_pays_new_height_only_after_confirmed_takeoff(dt):
+    from wheelleg.rewards import compute_rewards
+
+    event = JumpEvent(
+        dict(
+            height_range_m=(0.2, 0.2),
+            first_trigger_range_s=(0.0, 0.0),
+            between_events_s=(2.0, 2.0),
+            jump_count_probabilities=(0.0, 1.0, 0.0),
+            event_duration_s=1.2,
+            crouch_duration_s=0.25,
+            landing_stable_s=1.0,
+            height_tolerance_m=0.01,
+            takeoff_confirmation_s=0.03,
+        ),
+        1,
+        "cpu",
+    )
+    ids = torch.arange(1)
+    event.reset(ids)
+    yes, no = torch.tensor([True]), torch.tensor([False])
+    event.trigger(torch.tensor([0.0]), torch.tensor([0.30]), yes)
+    weight = {"jump_height_progress": 0.5}
+
+    def step(z, vz, contact, obstacle=False):
+        event.update(
+            dt,
+            torch.tensor([1.0]),
+            torch.tensor([z]),
+            torch.tensor([vz]),
+            torch.full((1, 2), contact),
+            yes,
+            yes,
+            torch.tensor([obstacle]),
+            wheel_clearance=torch.full((1, 2), 0.04 if not contact else 0.0),
+            require_height=no,
+        )
+        return compute_rewards(dict(jump=event, guidance_scale=torch.ones(1)), {}, weight, dt, 2.5)[
+            "jump_height_progress"
+        ].item()
+
+    for _ in range(round(0.3 / dt)):
+        assert step(0.39, 0.4, True) == 0  # Supported extension is not airborne height.
+    assert step(0.35, 0.5, False) == 0  # One contact gap is not a confirmed jump.
+    assert step(0.3, -0.5, True) == 0
+    earned = sum(step(0.35, 0.5, False) for _ in range(round(0.03 / dt)))
+    assert event.took_off.item()
+    assert earned == pytest.approx(0.125)
+    earned += step(0.44, 0.5, False)
+    assert not step(0.38, -0.1, False)
+    assert not step(0.44, 0.5, False)  # No replay of already-paid height.
+    earned += step(0.51, 0.5, False)
+    assert earned == pytest.approx(0.5)
+    assert not step(0.55, 0.5, False, obstacle=True)
+    assert event.failure_pulse.item()
+    assert not step(0.60, 0.5, False)
+    event.reset(ids)
+    assert not event.height_progress.any()

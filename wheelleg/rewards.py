@@ -174,6 +174,10 @@ def jump_apex(s, p):
     )
 
 
+def jump_height_progress(s, p):
+    return s["jump"].height_progress * s["guidance_scale"]
+
+
 def jump_landing(s, p):
     return s["jump"].landing_pulse.float()
 
@@ -267,6 +271,7 @@ TERMS = {
         spin_speed_error,
         leg_symmetry,
         jump_apex,
+        jump_height_progress,
         jump_landing,
         jump_flight,
         jump_crouch,
@@ -285,6 +290,7 @@ EVENT_TERMS = frozenset(
     (
         "termination",
         "jump_apex",
+        "jump_height_progress",  # Increment of normalized apex, not a rate per second.
         "jump_landing",
         "jump_impact",
         "jump_asymmetric_landing",

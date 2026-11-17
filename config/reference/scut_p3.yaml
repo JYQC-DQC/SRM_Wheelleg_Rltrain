@@ -135,6 +135,7 @@ training:
     action_rate: -0.01
     termination: -4.0
     jump_apex: 2.0
+    jump_height_progress: 0.5  # Flat only; maximum total per attempt before guidance decay.
     jump_landing: 3.0
     jump_flight: 0.0
     jump_crouch: 0.5
@@ -203,6 +204,7 @@ mode_semantics:
 stages:
   jump:
     moving_probability: 0.5
+    moving_takeoff_min_fraction: 0.7  # Count a moving jump only if actual vx at takeoff meets this fraction.
     event_duration_s: 1.2
     takeoff_confirmation_s: 0.03
     takeoff_clearance_m: 0.02

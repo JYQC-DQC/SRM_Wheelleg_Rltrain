@@ -25,6 +25,7 @@ class JumpEvent:
         self.height = torch.zeros_like(self.elapsed)
         self.start_z = torch.zeros_like(self.elapsed)
         self.apex_z = torch.zeros_like(self.elapsed)
+        self.height_progress = torch.zeros_like(self.elapsed)
         self.air_time = torch.zeros_like(self.elapsed)
         self.stable_time = torch.zeros_like(self.elapsed)
         self.touchdown_time = torch.full((count, 2), -1.0, device=device)
@@ -73,6 +74,7 @@ class JumpEvent:
             self.stable_time,
             self.start_z,
             self.apex_z,
+            self.height_progress,
             self.takeoff_time,
             self.takeoff_peak_vz,
             self.quality_sum,
@@ -159,6 +161,8 @@ class JumpEvent:
         self.apex_z = torch.where(~self.took_off & ~candidate, self.start_z, self.apex_z)
         confirmed = candidate & (self.takeoff_time >= self.settings.get("takeoff_confirmation_s", 0.03) - dt * 0.5)
         confirmed &= self.takeoff_peak_vz >= self.settings.get("takeoff_upward_velocity_m_s", 0.1)
+        # The running apex is monotone within an attempt. Do not cash any of it in until takeoff is confirmed.
+        old_apex = torch.where(self.took_off, self.apex_z, self.start_z)
         self.took_off |= confirmed
         flight = self.active & self.took_off & ~self.landed
         self.air_time += dt * flight * no_contact
@@ -169,6 +173,10 @@ class JumpEvent:
         self.apex_pulse = flight & no_contact & (vz <= 0) & ~self.apex_paid & ~self.invalid
         self.apex_paid |= self.apex_pulse
         self.quality_active.copy_(flight & candidate & ~self.invalid)
+        goal = self.height.clamp_min(torch.finfo(self.height.dtype).eps)
+        previous = ((old_apex - self.start_z) / goal).clamp(0, 1)
+        current = ((self.apex_z - self.start_z) / goal).clamp(0, 1)
+        self.height_progress.copy_(torch.where(self.quality_active, (current - previous).clamp_min(0), 0.0))
         # Invalid first touchdown cannot become success by driving off the roof later.
         height_ok = jump_height_error(self.apex_z - self.start_z, self.height, self.settings) <= 1e-6
         if require_height is not None:
