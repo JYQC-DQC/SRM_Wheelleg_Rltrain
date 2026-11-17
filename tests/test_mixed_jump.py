@@ -623,29 +623,6 @@ def test_flat_body_contact_aborts_attempt_even_if_support_recovers(clearance_jum
     assert not event.landing_paid.item() and not event.failure_pulse.item()
 
 
-def test_flat_touchdown_tilt_charged_once_at_first_wheel_contact(clearance_jump):
-    from wheelleg.rewards import compute_rewards
-
-    event = clearance_jump
-    weight = event.clearance_training["reward_overrides"]["jump_touchdown_tilt"]
-
-    def cost(roll, pitch):
-        state = {"jump": event, "roll": torch.tensor([roll]), "pitch": torch.tensor([pitch])}
-        return compute_rewards(state, {}, {"jump_touchdown_tilt": weight}, 0.01, 2.5)["jump_touchdown_tilt"].item()
-
-    for _ in range(3):
-        clearance_step(event, (0.28, 0.28))
-    assert cost(0.3, 0.3) == 0  # No extra touchdown penalty in the air.
-    clearance_step(event, (0.0, 0.02), vz=-0.1, contact=(True, False))
-    assert cost(0.0, 0.0) == 0
-    assert cost(0.125, 0.0) == cost(0.0, -0.125) == pytest.approx(-0.25)
-    assert cost(0.125, -0.125) == pytest.approx(-0.5)
-    assert cost(0.30, 0.25) == -1.0
-    clearance_step(event, (0.05, 0.05), vz=0.5)
-    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
-    assert cost(0.3, 0.3) == 0  # Dual contact and later bounces cannot charge it again.
-
-
 def test_flat_landing_checks_rates_and_recovers_after_bounce(clearance_jump):
     from wheelleg.jump import landing_rates_ok
     from wheelleg.rewards import jump_fast_touchdown, jump_landing_recovery, jump_rebound

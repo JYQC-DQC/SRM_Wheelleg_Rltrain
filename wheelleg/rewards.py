@@ -247,13 +247,6 @@ def jump_landing_recovery(s, p):
     return (1 - score) * (event.active & event.first_touch)
 
 
-def jump_touchdown_tilt(s, p):
-    event = s["jump"]
-    limit = event.settings["landing_tilt_rad"]
-    tilt = (s["roll"].square() + s["pitch"].square()) / limit**2
-    return tilt.clamp(max=1) * event.first_touch_pulse
-
-
 def jump_rebound(s, p):
     event = s["jump"]
     speed = event.clearance_training["stable_vz_m_s"]
@@ -330,7 +323,6 @@ TERMS = {
         jump_prepare,
         jump_air_leg_smoothness,
         jump_landing_recovery,
-        jump_touchdown_tilt,
         jump_rebound,
         jump_fast_touchdown,
         jump_impact,
@@ -348,7 +340,6 @@ EVENT_TERMS = frozenset(
         "jump_landing",
         "jump_impact",
         "jump_fast_touchdown",
-        "jump_touchdown_tilt",
         "jump_asymmetric_landing",
         "tunnel_crossing",
         "jump_air_torque_success",
