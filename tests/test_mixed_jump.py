@@ -376,7 +376,7 @@ def test_push_and_landing_extension_only_discount_short_legs():
     assert jump_takeoff(state, {})[1] == 1  # Extra vertical speed does not pay extra past the target.
 
 
-def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
+def test_flat_clearance_result_requires_height_but_does_not_penalize_overshoot():
     from types import SimpleNamespace
 
     from wheelleg.jump import jump_height_error, jump_height_overshoot
@@ -386,12 +386,13 @@ def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
         "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
     )
     stage = cfg.stage
-    rise = torch.tensor([0.015, 0.04, 0.09])
-    target = torch.full_like(rise, 0.04)
+    rise = torch.tensor([0.20, 0.24, 0.30])
+    target = torch.full_like(rise, 0.25)
     event = SimpleNamespace(
         height=target,
         scored_height=rise,
         settings=stage,
+        clearance_training=stage["clearance_jump"],
         landing_pulse=torch.ones(3, dtype=torch.bool),
         invalid=torch.zeros(3, dtype=torch.bool),
         failure_paid=torch.zeros(3, dtype=torch.bool),
@@ -399,7 +400,10 @@ def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
     assert (jump_height_error(rise, target, stage) <= 1e-6).tolist() == [False, True, True]
     assert (jump_height_overshoot(rise, target, stage) > 1e-6).tolist() == [False, False, True]
     score = jump_apex({"jump": event}, {})
-    assert score[0] < score[1] == score[2] == 1.0
+    assert score.tolist() == [0.0, 1.0, 1.0]
+    event.clearance_training = None  # The legacy/beam result score is still graded.
+    assert 0 < jump_apex({"jump": event}, {})[0] < 1.0
+    event.clearance_training = stage["clearance_jump"]
     assert jump_height_error(rise, target, {**stage, "height_is_minimum": False})[-1] > 0
     event.landing_pulse[-1] = False
     assert jump_apex({"jump": event}, {})[-1] == 0  # Going high alone never replaces a stable landing.
@@ -509,7 +513,7 @@ def clearance_jump():
     return event
 
 
-def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55):
+def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55, failed=False):
     event.update(
         0.01,
         torch.tensor([6.0]),
@@ -520,6 +524,7 @@ def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=
         torch.tensor([True]),
         torch.tensor([False]),
         wheel_clearance=torch.tensor([wheel]),
+        failed=torch.tensor([failed]),
         require_height=torch.tensor([False]),
     )
     return event.references(torch.tensor([vz]), torch.tensor([min(wheel)]), 9.81)
@@ -605,6 +610,20 @@ def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):
     smooth = jump_air_leg_smoothness(state, {})
     assert 0 == smooth[0] < smooth[1] < smooth[2] < 1
     assert smooth[3] == 0
+
+
+@pytest.mark.parametrize("after_wheel_touch", [False, True])
+def test_flat_body_contact_aborts_attempt_even_if_support_recovers(clearance_jump, after_wheel_touch):
+    event = clearance_jump
+    for _ in range(3):
+        clearance_step(event, (0.28, 0.28))
+    if after_wheel_touch:
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), stable=False, failed=True)
+    assert event.invalid.item() and event.failure_pulse.item() and event.finished.item()
+    for _ in range(105):
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    assert not event.landing_paid.item() and not event.failure_pulse.item()
 
 
 def test_flat_landing_checks_rates_and_recovers_after_bounce(clearance_jump):

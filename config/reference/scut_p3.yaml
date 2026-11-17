@@ -215,7 +215,8 @@ stages:
       reward_overrides:
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
         jump_air_leg_smoothness: -0.35
-        jump_landing_recovery: -0.8
+        jump_landing: 1.0  # Keep a small completion bonus; the clean clearance outcome is worth more.
+        jump_landing_recovery: -1.2
         jump_rebound: -0.4
         jump_fast_touchdown: -0.15  # Maximum cost per jump, not a measured impact limit.
     landing_settle_timeout_s: 5.0  # From first touch, including the full continuous stability window.

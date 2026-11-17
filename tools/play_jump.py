@@ -254,7 +254,9 @@ class JumpSim(WheelLegSim):
         took_off = bool(self.jump.took_off[0])
         stable = max(abs(info["roll"]), abs(info["pitch"])) < self.stage["landing_tilt_rad"]
         stable &= not info["terminated"] and not info["nonwheel_contact"]
+        jump_failed = info["terminated"]
         if self.jump.clearance_training is not None:
+            jump_failed |= info["nonwheel_contact"]
             stable &= bool(
                 landing_rates_ok(
                     torch.tensor([info["vz"]]),
@@ -308,7 +310,7 @@ class JumpSim(WheelLegSim):
             valid,
             obstacle_hit,
             wheel_clearance=torch.tensor(info["wheel_clearance"][None]),
-            failed=torch.tensor([info["terminated"]]),
+            failed=torch.tensor([jump_failed]),
             require_height=torch.tensor([False]) if "moving_probability" in self.stage else None,
         )
         if bool(self.jump.took_off[0]) and not took_off:

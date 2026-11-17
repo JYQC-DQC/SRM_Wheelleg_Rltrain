@@ -166,12 +166,11 @@ def spin_speed_error(s, p):
 def jump_apex(s, p):
     event = s["jump"]
     error = jump_height_error(event.scored_height, event.height, event.settings)
-    return (
-        torch.exp(-error.square() / event.settings["apex_sigma"])
-        * event.landing_pulse
-        * ~event.invalid
-        * ~event.failure_paid
-    )
+    clean_landing = event.landing_pulse & ~event.invalid & ~event.failure_paid
+    if event.clearance_training is not None:
+        # Match the promotion threshold; the separate progress term covers undershoots.
+        return (clean_landing & (error <= 1e-6)).float()
+    return torch.exp(-error.square() / event.settings["apex_sigma"]) * clean_landing
 
 
 def jump_height_progress(s, p):

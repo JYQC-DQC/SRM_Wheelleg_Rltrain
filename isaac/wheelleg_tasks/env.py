@@ -834,7 +834,10 @@ class WheelLegEnv(DirectRLEnv):
                 timeout |= approach_expired
             stable = (s["roll"].abs() < t.stage["landing_tilt_rad"]) & (s["pitch"].abs() < t.stage["landing_tilt_rad"])
             stable &= ~(terminated | body_hit)
+            jump_failed = terminated | timeout
             if self.jump.clearance_training is not None:
+                # A chassis strike is not a recoverable wheel bounce.
+                jump_failed |= body_hit
                 stable &= landing_rates_ok(
                     s["velocity_w"][:, 2], s["angular_velocity"][:, :2], self.jump.clearance_training
                 )
@@ -884,7 +887,7 @@ class WheelLegEnv(DirectRLEnv):
                 valid,
                 obstacle_hit,
                 wheel_clearance=s["clearance"],
-                failed=terminated | timeout,
+                failed=jump_failed,
                 require_height=(
                     torch.zeros_like(stable)
                     if t.task == "p3-jump" and "moving_probability" in t.stage
