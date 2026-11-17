@@ -1013,8 +1013,18 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 value = clearance[key]
                 if type(value) not in (int, float) or not isfinite(value) or value <= 0:
                     raise ValueError(f"clearance_jump.{key} must be finite and positive")
-            for key in ("jump_air_leg_smoothness", "jump_landing_recovery", "jump_rebound", "jump_fast_touchdown"):
-                value = clearance["reward_overrides"][key]
+            for key in (
+                "jump_air_leg_smoothness",
+                "jump_landing_recovery",
+                "jump_rebound",
+                "jump_fast_touchdown",
+                "jump_touchdown_tilt",
+            ):
+                value = (
+                    clearance["reward_overrides"].get(key, 0.0)
+                    if key == "jump_touchdown_tilt"
+                    else clearance["reward_overrides"][key]
+                )
                 if type(value) not in (int, float) or not isfinite(value) or value > 0:
                     raise ValueError(f"clearance_jump.reward_overrides.{key} must be finite and nonpositive")
         if cfg.task == "p3-jump" and "moving_takeoff_min_fraction" in cfg.stage:

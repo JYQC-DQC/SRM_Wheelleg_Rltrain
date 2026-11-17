@@ -376,7 +376,7 @@ def test_push_and_landing_extension_only_discount_short_legs():
     assert jump_takeoff(state, {})[1] == 1  # Extra vertical speed does not pay extra past the target.
 
 
-def test_flat_clearance_result_requires_height_but_does_not_penalize_overshoot():
+def test_flat_clearance_awards_partial_undershoot_but_does_not_penalize_overshoot():
     from types import SimpleNamespace
 
     from wheelleg.jump import jump_height_error, jump_height_overshoot
@@ -392,7 +392,6 @@ def test_flat_clearance_result_requires_height_but_does_not_penalize_overshoot()
         height=target,
         scored_height=rise,
         settings=stage,
-        clearance_training=stage["clearance_jump"],
         landing_pulse=torch.ones(3, dtype=torch.bool),
         invalid=torch.zeros(3, dtype=torch.bool),
         failure_paid=torch.zeros(3, dtype=torch.bool),
@@ -400,10 +399,8 @@ def test_flat_clearance_result_requires_height_but_does_not_penalize_overshoot()
     assert (jump_height_error(rise, target, stage) <= 1e-6).tolist() == [False, True, True]
     assert (jump_height_overshoot(rise, target, stage) > 1e-6).tolist() == [False, False, True]
     score = jump_apex({"jump": event}, {})
-    assert score.tolist() == [0.0, 1.0, 1.0]
-    event.clearance_training = None  # The legacy/beam result score is still graded.
-    assert 0 < jump_apex({"jump": event}, {})[0] < 1.0
-    event.clearance_training = stage["clearance_jump"]
+    assert score[0].item() == pytest.approx(0.5272924)
+    assert score[1:].tolist() == [1.0, 1.0]
     assert jump_height_error(rise, target, {**stage, "height_is_minimum": False})[-1] > 0
     event.landing_pulse[-1] = False
     assert jump_apex({"jump": event}, {})[-1] == 0  # Going high alone never replaces a stable landing.
@@ -624,6 +621,29 @@ def test_flat_body_contact_aborts_attempt_even_if_support_recovers(clearance_jum
     for _ in range(105):
         clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
     assert not event.landing_paid.item() and not event.failure_pulse.item()
+
+
+def test_flat_touchdown_tilt_charged_once_at_first_wheel_contact(clearance_jump):
+    from wheelleg.rewards import compute_rewards
+
+    event = clearance_jump
+    weight = event.clearance_training["reward_overrides"]["jump_touchdown_tilt"]
+
+    def cost(roll, pitch):
+        state = {"jump": event, "roll": torch.tensor([roll]), "pitch": torch.tensor([pitch])}
+        return compute_rewards(state, {}, {"jump_touchdown_tilt": weight}, 0.01, 2.5)["jump_touchdown_tilt"].item()
+
+    for _ in range(3):
+        clearance_step(event, (0.28, 0.28))
+    assert cost(0.3, 0.3) == 0  # No extra touchdown penalty in the air.
+    clearance_step(event, (0.0, 0.02), vz=-0.1, contact=(True, False))
+    assert cost(0.0, 0.0) == 0
+    assert cost(0.125, 0.0) == cost(0.0, -0.125) == pytest.approx(-0.25)
+    assert cost(0.125, -0.125) == pytest.approx(-0.5)
+    assert cost(0.30, 0.25) == -1.0
+    clearance_step(event, (0.05, 0.05), vz=0.5)
+    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    assert cost(0.3, 0.3) == 0  # Dual contact and later bounces cannot charge it again.
 
 
 def test_flat_landing_checks_rates_and_recovers_after_bounce(clearance_jump):

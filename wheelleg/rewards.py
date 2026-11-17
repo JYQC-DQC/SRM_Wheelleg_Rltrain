@@ -167,9 +167,6 @@ def jump_apex(s, p):
     event = s["jump"]
     error = jump_height_error(event.scored_height, event.height, event.settings)
     clean_landing = event.landing_pulse & ~event.invalid & ~event.failure_paid
-    if event.clearance_training is not None:
-        # Match the promotion threshold; the separate progress term covers undershoots.
-        return (clean_landing & (error <= 1e-6)).float()
     return torch.exp(-error.square() / event.settings["apex_sigma"]) * clean_landing
 
 
@@ -250,6 +247,13 @@ def jump_landing_recovery(s, p):
     return (1 - score) * (event.active & event.first_touch)
 
 
+def jump_touchdown_tilt(s, p):
+    event = s["jump"]
+    limit = event.settings["landing_tilt_rad"]
+    tilt = (s["roll"].square() + s["pitch"].square()) / limit**2
+    return tilt.clamp(max=1) * event.first_touch_pulse
+
+
 def jump_rebound(s, p):
     event = s["jump"]
     speed = event.clearance_training["stable_vz_m_s"]
@@ -326,6 +330,7 @@ TERMS = {
         jump_prepare,
         jump_air_leg_smoothness,
         jump_landing_recovery,
+        jump_touchdown_tilt,
         jump_rebound,
         jump_fast_touchdown,
         jump_impact,
@@ -343,6 +348,7 @@ EVENT_TERMS = frozenset(
         "jump_landing",
         "jump_impact",
         "jump_fast_touchdown",
+        "jump_touchdown_tilt",
         "jump_asymmetric_landing",
         "tunnel_crossing",
         "jump_air_torque_success",

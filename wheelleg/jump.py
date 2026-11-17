@@ -52,6 +52,7 @@ class JumpEvent:
         self.touchdown_pulse = self.active.clone()
         self.finished = self.active.clone()
         self.first_touch = self.active.clone()
+        self.first_touch_pulse = self.active.clone()
         self.last_air_vz = torch.zeros_like(self.elapsed)
         self.first_touch_speed_pulse = torch.zeros_like(self.elapsed)
         self.takeoff_time = torch.zeros_like(self.elapsed)
@@ -76,6 +77,7 @@ class JumpEvent:
             self.touchdown_pulse,
             self.finished,
             self.first_touch,
+            self.first_touch_pulse,
             self.preparing,
             self.quality_active,
             self.failure_pulse,
@@ -217,6 +219,7 @@ class JumpEvent:
         if require_height is not None:
             height_ok |= ~require_height
         new_touch = flight & contact.any(-1) & ~self.first_touch
+        self.first_touch_pulse.copy_(new_touch)
         if self.clearance_training is not None:
             # Use the last airborne sample; the solver may have already arrested vz on the contact step.
             self.first_touch_speed_pulse.copy_(torch.where(new_touch, (-self.last_air_vz).clamp_min(0), 0.0))
