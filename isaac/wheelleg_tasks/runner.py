@@ -25,6 +25,8 @@ class WheelLegRunner(OnPolicyRunner):
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task in ("p3-jump", "p3-tunnel"):
             contract["jump_event_revision"] = 2
+            if self.env.unwrapped.training.task == "p3-tunnel":
+                contract["tunnel_navigation_revision"] = 1
             contract["jump_event_features"] = JUMP_FEATURES + (TUNNEL_FEATURES if cfg.task == "p3-tunnel" else 0)
             contract["jump_event_stage"] = mutable(cfg.stage)
         if cfg.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]:
@@ -129,6 +131,8 @@ class WheelLegRunner(OnPolicyRunner):
             curriculum = env.jump_curriculum
             level = curriculum.maximum_level
             self.writer.add_scalar("Jump/obstacle_fraction", env.commands.tunnel_obstacle.float().mean(), iteration)
+            self.writer.add_scalar("Jump/basic_last_success_rate", env.commands.basic_jump_gate["last_rate"], iteration)
+            self.writer.add_scalar("Jump/basic_gate_passed", env.commands.basic_jump_gate["passed"], iteration)
             self.writer.add_scalar("Jump/tunnel_level", level + 1, iteration)
             self.writer.add_scalar(
                 "Jump/tunnel_height_m", env.training.stage["tunnel"]["height_curriculum_m"][level], iteration
@@ -161,6 +165,7 @@ class WheelLegRunner(OnPolicyRunner):
             extra["command_curriculum"] = env.command_curriculum.state_dict()
         if env.jump_curriculum is not None:
             extra["jump_curriculum"] = env.jump_curriculum.state_dict()
+            extra["basic_jump_gate"] = env.commands.basic_jump_gate
         if env.air_height_curriculum is not None:
             extra["air_height_curriculum"] = env.air_height_curriculum.state_dict()
         if env.stair_course is not None:
@@ -210,6 +215,7 @@ class WheelLegRunner(OnPolicyRunner):
                 env.command_curriculum.load_state_dict(infos["command_curriculum"])
         if env.jump_curriculum is not None:
             env.jump_curriculum.load_state_dict(infos["jump_curriculum"])
+            env.commands.basic_jump_gate = infos["basic_jump_gate"]
         if env.air_height_curriculum is not None and "air_height_curriculum" in infos:
             if not env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"]):
                 # Saved gate counts belong to an older band definition (or counted every height).

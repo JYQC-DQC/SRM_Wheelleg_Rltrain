@@ -672,6 +672,11 @@ class WheelLegEnv(DirectRLEnv):
         heading_velocity = rotate_xy(data.root_lin_vel_w[:, :2], -yaw)
         linear_error = heading_velocity[:, 0] - tracked[:, 0]
         angular_error = data.root_ang_vel_b[:, 2] - tracked[:, 2]
+        if t.task == "p3-tunnel":
+            # The corridor has a fixed world heading; rotating must not rotate the velocity objective.
+            linear_error = torch.where(
+                self.commands.tunnel_obstacle, data.root_lin_vel_w[:, 0] - tracked[:, 0], linear_error
+            )
         height_error = base_height - height_target
         leg_vector = wheel_b - wheel_b.new_tensor(t.shared["hip_pivot_positions_b_m"])
         second_difference = self.raw_action - 2 * self.previous_action + self.previous_previous_action
@@ -817,6 +822,15 @@ class WheelLegEnv(DirectRLEnv):
             timeout &= ~terminated
         if self.jump is not None:
             physical_terminated = terminated.clone()
+            if t.task == "p3-tunnel":
+                p = t.stage["tunnel"]
+                approach_expired = (
+                    self.commands.tunnel_obstacle
+                    & ~self.jump.active
+                    & ~self.jump.landing_paid
+                    & (self.tunnel_episode_steps * dt >= p["approach_timeout_s"])
+                )
+                timeout |= approach_expired
             stable = (s["roll"].abs() < t.stage["landing_tilt_rad"]) & (s["pitch"].abs() < t.stage["landing_tilt_rad"])
             stable &= (s["linear_error"].abs() < t.stage["landing_speed_error_m_s"]) & ~terminated
             stable &= self.jump.apex_z - self.jump.start_z >= self.jump.height - t.stage["height_tolerance_m"]
@@ -1151,6 +1165,18 @@ class WheelLegEnv(DirectRLEnv):
             terms["stair_impact"] = t.stage["impact_weight"] * self.step_dt * s["hip_torque"].square().amax(-1)
         if t.task == "p3-tunnel":
             p = t.stage["tunnel"]
+            obstacle = self.commands.tunnel_obstacle
+            # Staying upright remains useful, but cannot finance indefinite avoidance of the obstacle.
+            for name in ("track_lin_vel", "track_ang_vel", "track_height", "flat_roll", "flat_pitch"):
+                terms[name] = torch.where(obstacle, terms[name] * p["support_reward_scale"], terms[name])
+            x = self.robot.data.root_pos_w[:, 0] - self.terrain.env_origins[:, 0]
+            limit = self.beam_start_x + p["beam_length_m"] + p["landing_margin_m"]
+            progress = self.tunnel_path.progress(x, limit, obstacle & ~self.tunnel_path.invalid)
+            terms["tunnel_progress"] = p["progress_weight"] * progress
+            terms["tunnel_time"] = p["time_weight"] * self.step_dt * obstacle
+            lateral = self.robot.data.root_pos_w[:, 1] - self.terrain.env_origins[:, 1]
+            terms["tunnel_lateral"] = p["lateral_weight"] * lateral.square() * self.step_dt * obstacle
+            terms["tunnel_heading"] = p["heading_weight"] * (1 - torch.cos(s["yaw"])) * self.step_dt * obstacle
             terms["tunnel_crossing"] = p["crossing_weight"] * self.jump.landing_pulse * self.commands.tunnel_obstacle
             terms["obstacle_contact"] = p["obstacle_contact_weight"] * self.step_dt * self.obstacle_hit
             terms["obstacle_top_contact"] = p["top_contact_weight"] * self.step_dt * self.obstacle_top_hit
@@ -1285,6 +1311,10 @@ class WheelLegEnv(DirectRLEnv):
         if t.task == "p1-recovery":
             recovering &= self.episode_length_buf * self.step_dt < t.stage["rise_duration_s"]
         mode = self.commands.mode(s["yaw"], self.stair_signal, recovering, active, jump_height, phase)
+        if t.task == "p3-tunnel":
+            mode[:, 3] = (self.robot.data.root_pos_w[:, 1] - self.terrain.env_origins[:, 1]) / (
+                t.stage["tunnel"]["lane_width_m"] / 2
+            )
         sensor = self._sensors()
 
         def make_fields(values):
@@ -1433,6 +1463,9 @@ class WheelLegEnv(DirectRLEnv):
         self.command_sample_count[env_ids] = 0
         if self.jump is not None and not self.cfg.evaluation:
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
+            if mixed and t.stage["tunnel"].get("mix_require_basic_success", False):
+                basic = env_ids[~self.commands.tunnel_obstacle[env_ids] & (self.tunnel_episode_steps[env_ids] > 0)]
+                self.commands.record_basic_jump(self.jump.landing_paid[basic] & ~self.jump.invalid[basic])
             interrupted = (
                 env_ids[self.commands.tunnel_obstacle[env_ids] & (self.tunnel_episode_steps[env_ids] > 0)]
                 if mixed

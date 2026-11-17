@@ -195,10 +195,10 @@ training:
     probability: 0.0
     states_npz: null
 mode_semantics:
-- zero
-- zero
-- zero
-- zero
+- tunnel_heading_error_sin_else_zero
+- tunnel_heading_error_cos_else_zero
+- tunnel_obstacle_group_else_zero
+- tunnel_lateral_offset_half_width_else_zero
 - jump_active
 - target_height_scaled
 - phase
@@ -280,6 +280,9 @@ stages:
     tunnel:
       obstacle_fraction: 0.4
       mix_switch_iteration: 2000
+      mix_require_basic_success: true
+      mix_basic_min_events: 100
+      mix_basic_success_rate: 0.7
       obstacle_fraction_after_switch: 0.7
       vx_range_m_s:
       - 2.5
@@ -313,6 +316,12 @@ stages:
       - 0.0
       - 0.0
       crossing_weight: 5.0
+      progress_weight: 0.5
+      time_weight: -0.5
+      lateral_weight: -2.0
+      heading_weight: -1.0
+      support_reward_scale: 0.05
+      approach_timeout_s: 6.0
       obstacle_contact_weight: -5.0
       top_contact_weight: -10.0
       approach_jitter_m:

@@ -3,7 +3,7 @@ import torch
 from .commands import uniform
 
 FEATURES = 16
-TUNNEL_FEATURES = 4
+TUNNEL_FEATURES = 5
 
 
 def jump_height_error(actual: torch.Tensor, target: torch.Tensor, settings: dict) -> torch.Tensor:
@@ -270,10 +270,19 @@ class TunnelTraversal:
         self.entered = torch.zeros_like(self.approached)
         self.cleared = torch.zeros_like(self.approached)
         self.invalid = torch.zeros_like(self.approached)
+        self.progress_max = torch.zeros(count, device=device)
 
     def reset(self, ids: torch.Tensor) -> None:
+        self.progress_max[ids] = 0
         for value in (self.approached, self.entered, self.cleared, self.invalid):
             value[ids] = False
+
+    def progress(self, distance: torch.Tensor, limit: torch.Tensor, enabled: torch.Tensor) -> torch.Tensor:
+        """Pay only newly reached forward distance; reversing cannot replenish it."""
+        reached = torch.minimum(distance.clamp_min(0), limit)
+        increment = (reached - self.progress_max).clamp_min(0) * enabled
+        self.progress_max = torch.where(enabled, torch.maximum(self.progress_max, reached), self.progress_max)
+        return increment
 
     def update(
         self,
@@ -308,7 +317,7 @@ class TunnelTraversal:
         self.cleared |= enabled & self.entered & (rear > end + margin) & ~self.invalid
 
     def features(self) -> torch.Tensor:
-        return torch.stack((self.approached, self.entered, self.cleared, self.invalid), -1).float()
+        return torch.stack((self.approached, self.entered, self.cleared, self.invalid, self.progress_max), -1).float()
 
 
 def tunnel_landing(

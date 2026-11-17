@@ -33,6 +33,7 @@ class Commands:
         self.free_started = torch.zeros(count, dtype=torch.bool, device=device)
         self.course = None  # Assigned by the stairs environment before the first reset.
         self.tunnel_obstacle = None
+        self.basic_jump_gate = dict(attempts=0, successes=0, last_rate=0.0, passed=False)
         if cfg.task == "p3-tunnel":
             fraction = cfg.stage["tunnel"].get("obstacle_fraction", 1.0)
             self.tunnel_obstacle = torch.arange(count, device=device) < round(count * fraction)
@@ -40,9 +41,20 @@ class Commands:
     def set_tunnel_mix(self, ids: torch.Tensor, iteration: float) -> None:
         p = self.cfg.stage["tunnel"]
         fraction = p.get("obstacle_fraction", 1.0)
-        if iteration >= p.get("mix_switch_iteration", float("inf")):
+        gate_ready = not p.get("mix_require_basic_success", False) or self.basic_jump_gate["passed"]
+        if iteration >= p.get("mix_switch_iteration", float("inf")) and gate_ready:
             fraction = p["obstacle_fraction_after_switch"]
         self.tunnel_obstacle[ids] = ids < round(len(self.tunnel_obstacle) * fraction)
+
+    def record_basic_jump(self, success: torch.Tensor) -> None:
+        p = self.cfg.stage["tunnel"]
+        gate = self.basic_jump_gate
+        gate["attempts"] += success.numel()
+        gate["successes"] += int(success.sum())
+        if gate["attempts"] >= p["mix_basic_min_events"]:
+            gate["last_rate"] = gate["successes"] / gate["attempts"]
+            gate["passed"] |= gate["last_rate"] > p["mix_basic_success_rate"]
+            gate["attempts"] = gate["successes"] = 0
 
     def reset(self, ids: torch.Tensor) -> None:
         self.free_started[ids] = False
@@ -231,6 +243,10 @@ class Commands:
             relative = self.reference_yaw - yaw
             mode[:, 5], mode[:, 6] = relative.sin(), relative.cos()
         else:
+            if self.cfg.task == "p3-tunnel":
+                mode[:, 0] = (-yaw).sin()
+                mode[:, 1] = (-yaw).cos()
+                mode[:, 2] = self.tunnel_obstacle
             mode[:, 4] = jump_active
             mode[:, 5] = jump_height * self.cfg.policy.height_scale * jump_active
             mode[:, 6] = phase * jump_active
