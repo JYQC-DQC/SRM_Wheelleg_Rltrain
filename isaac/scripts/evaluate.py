@@ -9,6 +9,15 @@ from wheelleg.tasks import TASKS
 from wheelleg.training import _freeze, load_training, mutable
 
 
+def _latency_percentiles(values) -> dict | None:
+    import torch
+
+    if values.numel() == 0:
+        return None
+    p50, p90 = torch.quantile(values, values.new_tensor([0.5, 0.9])).tolist()
+    return {"count": values.numel(), "p50": p50, "p90": p90}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fixed command evaluation; reset episodes never count as successes")
     parser.add_argument("--task", choices=TASKS, required=True)
@@ -131,6 +140,7 @@ def main() -> None:
                         had_support = torch.zeros_like(alive)
                         rebound_counts = torch.zeros_like(alive, dtype=torch.long)
                         settle_times = torch.full_like(alive, torch.nan, dtype=torch.float32)
+                        takeoff_latencies = torch.full_like(settle_times, torch.nan)
                     start_position = raw.robot.data.root_pos_w.clone()
                     with torch.inference_mode():
                         for step in range(int(duration / raw.step_dt)):
@@ -150,6 +160,10 @@ def main() -> None:
                             info = extras["evaluation"]
                             failed |= alive & info["failed"]
                             if raw.jump is not None:
+                                first_takeoff = alive & info["jump_took_off"] & ~jump_flags["took_off"]
+                                takeoff_latencies = torch.where(
+                                    first_takeoff, info["jump_elapsed_s"], takeoff_latencies
+                                )
                                 supported = info["jump_supported"]
                                 rebound_counts += alive & had_support & ~supported
                                 had_support = supported
@@ -255,6 +269,10 @@ def main() -> None:
                                 else "target_root_rise_m": (case.jump_height if case.jump_count else None),
                             },
                             **{f"jump_{key}": int(mask.sum()) for key, mask in jump_flags.items()},
+                            jump_press_to_confirm_s=_latency_percentiles(
+                                takeoff_latencies[takeoff_latencies.isfinite()]
+                            ),
+                            jump_success_press_to_confirm_s=_latency_percentiles(takeoff_latencies[succeeded]),
                             jump_rebounds=int(rebound_counts.sum()),
                             jump_episodes_with_rebound=int((rebound_counts > 0).sum()),
                             jump_touch_to_stable_mean_s=float(settle_times.nanmean())

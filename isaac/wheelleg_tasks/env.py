@@ -1271,6 +1271,7 @@ class WheelLegEnv(DirectRLEnv):
                 jump_supported=(self.jump.first_touch & s["wheel_contact"].any(-1)).clone(),
                 jump_since_first_touch_s=self.jump.time_since_first_touch(),
                 jump_took_off=self.jump.took_off.clone(),
+                jump_elapsed_s=self.jump.elapsed.clone(),
                 jump_takeoff_speed_ok=(self.jump.took_off & self.jump_vx_qualified).clone(),
                 jump_cleared=(self.tunnel_path.cleared & ~self.tunnel_path.invalid).clone()
                 if t.task == "p3-tunnel"

@@ -503,7 +503,6 @@ def clearance_jump():
     stage = load_training(
         "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
     ).stage
-    stage = dict(stage, crouch_duration_s=0.0)
     event = JumpEvent(stage, 1, "cpu")
     event.reset(torch.arange(1))
     event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), torch.tensor([0.25]))
@@ -546,6 +545,29 @@ def test_flat_clearance_counts_only_both_wheels_pre_touch_after_confirmation(cle
     assert not any(refs[key].item() for key in ("tuck", "prepare", "flight"))
     assert event.height_progress.item() == 0
     assert event.scored_height.item() == pytest.approx(0.27)
+
+
+def test_flat_takeoff_is_state_driven_from_the_press(clearance_jump):
+    from wheelleg.rewards import jump_push_symmetry, jump_takeoff
+
+    event = clearance_jump
+    refs = clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    assert refs["push"].item() and not refs["crouch"].item()
+    state = dict(
+        jump=event,
+        jump_ref=refs,
+        jump_pose_scale=1.0,
+        leg_length=torch.full((1, 2), 0.28),
+        wheel_force=torch.full((1, 2), 10.0),
+        wheel_contact=torch.ones(1, 2, dtype=torch.bool),
+        velocity_w=torch.zeros(1, 3),
+    )
+    assert jump_takeoff(state, {}).item() == jump_push_symmetry(state, {}).item() == 0
+    state["velocity_w"][0, 2] = 0.5
+    assert jump_takeoff(state, {}).item() > 0 and jump_push_symmetry(state, {}).item() == 1
+    for _ in range(3):
+        clearance_step(event, (0.03, 0.03), vz=0.5)
+    assert event.took_off.item() and event.elapsed.item() == pytest.approx(0.04)
 
 
 def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):

@@ -213,6 +213,7 @@ stages:
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
       fast_touchdown_vz_m_s: 2.8  # Only charge unusually fast downward base speed at first contact.
       reward_overrides:
+        jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
         jump_air_leg_smoothness: -0.35
         jump_landing_recovery: -0.8
         jump_rebound: -0.4
@@ -236,8 +237,6 @@ stages:
     height_levels_m: [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40]
     highest_level_probability: 0.60  # Remaining samples are uniform over the unlocked lower levels.
     feasible_height_m: null
-    crouch_duration_s: 0.25
-    crouch_leg_length_m: 0.18
     push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
     tuck_leg_length_m: 0.15
     landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.

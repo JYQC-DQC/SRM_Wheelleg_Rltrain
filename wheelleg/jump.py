@@ -180,7 +180,9 @@ class JumpEvent:
         self.failure_pulse.zero_()
         self.elapsed += dt * self.active
         no_contact = ~contact.any(-1)
-        can_takeoff = self.active & ~self.landed & (self.elapsed >= self.settings["crouch_duration_s"])
+        can_takeoff = self.active & ~self.landed
+        if self.clearance_training is None:
+            can_takeoff &= self.elapsed >= self.settings["crouch_duration_s"]
         clearance = torch.zeros_like(z) if wheel_clearance is None else wheel_clearance.amin(-1)
         candidate = can_takeoff & no_contact & (clearance >= self.settings.get("takeoff_clearance_m", 0.02))
         self.takeoff_time = torch.where(candidate, self.takeoff_time + dt, 0.0)
@@ -336,18 +338,24 @@ class JumpEvent:
 
     def references(self, vz: torch.Tensor, wheel_clearance: torch.Tensor, gravity: float) -> dict[str, torch.Tensor]:
         flight = self.active & self.took_off & ~self.landed
+        before_takeoff = self.active & ~self.took_off
         if self.clearance_training is None:
+            crouch = before_takeoff & (self.elapsed < self.settings["crouch_duration_s"])
+            push = before_takeoff & ~crouch
             prepare = flight & self._near_touchdown(vz, wheel_clearance, gravity)
             tuck = flight & ~prepare
             takeoff_velocity = torch.sqrt(2 * gravity * self.height)
         else:
+            # Start supported upward-motion guidance at the press, with no minimum preload time.
+            crouch = torch.zeros_like(before_takeoff)
+            push = before_takeoff
             flight &= ~self.first_touch
             prepare = flight & self.preparing
             tuck = flight & ~self.tuck_ended
             takeoff_velocity = torch.full_like(self.height, self.clearance_training["takeoff_velocity_hint_m_s"])
         return {
-            "crouch": self.active & ~self.took_off & (self.elapsed < self.settings["crouch_duration_s"]),
-            "push": self.active & ~self.took_off & (self.elapsed >= self.settings["crouch_duration_s"]),
+            "crouch": crouch,
+            "push": push,
             "flight": flight,
             "prepare": prepare,
             "tuck": tuck,

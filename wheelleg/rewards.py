@@ -206,7 +206,12 @@ def jump_takeoff(s, p):
 def jump_push_symmetry(s, p):
     force = s["wheel_force"].clamp_min(0)
     total = force.sum(-1)
-    return (1 - (force[:, 0] - force[:, 1]).abs() / total.clamp_min(1)) * (total > 0) * s["jump_ref"]["push"]
+    push = s["jump_ref"]["push"]
+    event = s["jump"]
+    if event.clearance_training is not None:
+        # With no timed push phase, a balanced but motionless stance is not a push.
+        push = push & (s["velocity_w"][:, 2] >= event.settings["takeoff_upward_velocity_m_s"])
+    return (1 - (force[:, 0] - force[:, 1]).abs() / total.clamp_min(1)) * (total > 0) * push
 
 
 def jump_tuck(s, p):
