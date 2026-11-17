@@ -330,3 +330,56 @@ def test_dense_apex_progress_pays_new_height_only_after_confirmed_takeoff(dt):
     assert not step(0.60, 0.5, False)
     event.reset(ids)
     assert not event.height_progress.any()
+
+
+def test_push_and_landing_extension_only_discount_short_legs():
+    from types import SimpleNamespace
+
+    from wheelleg.rewards import jump_prepare, jump_takeoff
+
+    lengths = torch.tensor([[0.25, 0.25], [0.28, 0.28], [0.31, 0.32], [0.25, 0.32], [0.28, 0.28]])
+    state = {
+        "jump": SimpleNamespace(settings={"push_leg_length_m": 0.28, "landing_leg_length_m": 0.28}),
+        "leg_length": lengths,
+        "guidance_scale": torch.ones(5),
+        "jump_ref": {"push": torch.ones(5), "prepare": torch.ones(5), "takeoff_velocity": torch.ones(5)},
+        "velocity_w": torch.tensor([[0, 0, 0.5], [0, 0, 0.5], [0, 0, 0.5], [0, 0, 0.5], [0, 0, 1.0]]),
+        "wheel_contact": torch.tensor([[True, True], [True, True], [True, True], [True, True], [False, False]]),
+    }
+    push = jump_takeoff(state, {})
+    prepare = jump_prepare(state, {})
+    assert push[0] < push[3] < push[1] == push[2] == 0.5
+    assert push[4] == 0
+    assert prepare[0] < prepare[3] < prepare[1] == prepare[2] == 1
+    state["velocity_w"][1, 2] = 1.5
+    assert jump_takeoff(state, {})[1] == 1  # Extra vertical speed does not pay extra past the target.
+
+
+def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
+    from types import SimpleNamespace
+
+    from wheelleg.jump import jump_height_error, jump_height_overshoot
+    from wheelleg.rewards import jump_apex
+
+    cfg = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    )
+    stage = cfg.stage
+    rise = torch.tensor([0.015, 0.04, 0.09])
+    target = torch.full_like(rise, 0.04)
+    event = SimpleNamespace(
+        height=target,
+        start_z=torch.zeros_like(rise),
+        apex_z=rise,
+        settings=stage,
+        landing_pulse=torch.ones(3, dtype=torch.bool),
+        invalid=torch.zeros(3, dtype=torch.bool),
+        failure_paid=torch.zeros(3, dtype=torch.bool),
+    )
+    assert (jump_height_error(rise, target, stage) <= 1e-6).tolist() == [False, True, True]
+    assert (jump_height_overshoot(rise, target, stage) > 1e-6).tolist() == [False, False, True]
+    score = jump_apex({"jump": event}, {})
+    assert score[0] < score[1] == score[2] == 1.0
+    assert jump_height_error(rise, target, {**stage, "height_is_minimum": False})[-1] > 0
+    event.landing_pulse[-1] = False
+    assert jump_apex({"jump": event}, {})[-1] == 0  # Going high alone never replaces a stable landing.

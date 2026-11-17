@@ -123,10 +123,10 @@ def main() -> None:
                     levels = raw.terrain.terrain_levels.cpu().numpy().copy() if stairs else None
                     errors, valid, displacement = [], [], []
                     motion = []
-                    jump_flags = {
-                        key: torch.zeros_like(alive)
-                        for key in ("took_off", "takeoff_speed_ok", "cleared", "touched_down", "stable")
-                    }
+                    jump_keys = ("took_off", "takeoff_speed_ok", "cleared", "touched_down", "stable")
+                    if cfg.task == "p3-jump":
+                        jump_keys += ("overshot", "height_in_band")
+                    jump_flags = {key: torch.zeros_like(alive) for key in jump_keys}
                     start_position = raw.robot.data.root_pos_w.clone()
                     with torch.inference_mode():
                         for step in range(int(duration / raw.step_dt)):

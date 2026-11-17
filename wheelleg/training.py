@@ -1014,6 +1014,8 @@ def _validate_training(cfg: TrainingConfig) -> None:
             cost = cfg.stage["failure_cost"]
             if type(cost) not in (int, float) or not isfinite(cost) or cost >= 0:
                 raise ValueError("jump.failure_cost must be finite and negative")
+        if "height_is_minimum" in cfg.stage and type(cfg.stage["height_is_minimum"]) is not bool:
+            raise ValueError("jump.height_is_minimum must be a boolean")
         if cfg.stage.get("takeoff_confirmation_s", 0) >= cfg.stage["event_duration_s"]:
             raise ValueError("Jump takeoff confirmation must fit inside the event duration")
         if "height_overshoot_tolerance_m" in cfg.stage:

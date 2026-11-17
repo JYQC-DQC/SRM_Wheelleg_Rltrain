@@ -194,12 +194,12 @@ def jump_crouch(s, p):
 def jump_takeoff(s, p):
     target = s["jump_ref"]["takeoff_velocity"]
     ratio = s["velocity_w"][:, 2] / target.clamp_min(torch.finfo(target.dtype).eps)
-    # Reward supported extension, not positive vertical speed from an unsupported bounce.
+    # Reward supported upward speed. Leg length is a readiness hint, not a timed trajectory or a limit.
     settings = s["jump"].settings
     strength = ratio.clamp(0, 1) * s["wheel_contact"].any(-1)
     if "push_leg_length_m" in settings:
-        error = (s["leg_length"] - settings["push_leg_length_m"]).abs().sum(-1)
-        strength *= torch.exp(-4 * error)
+        shortfall = (settings["push_leg_length_m"] - s["leg_length"]).clamp_min(0).sum(-1)
+        strength *= torch.exp(-4 * shortfall)
     return strength * s["jump_ref"]["push"] * s["guidance_scale"]
 
 
@@ -215,8 +215,9 @@ def jump_tuck(s, p):
 
 
 def jump_prepare(s, p):
-    error = (s["leg_length"] - s["jump"].settings["landing_leg_length_m"]).abs().sum(-1)
-    return torch.exp(-4 * error) * s["jump_ref"]["prepare"] * s["guidance_scale"]
+    # Let the policy choose further extension if it helps the first touch.
+    shortfall = (s["jump"].settings["landing_leg_length_m"] - s["leg_length"]).clamp_min(0).sum(-1)
+    return torch.exp(-4 * shortfall) * s["jump_ref"]["prepare"] * s["guidance_scale"]
 
 
 def jump_impact(s, p):

@@ -6,11 +6,14 @@ FEATURES = 16
 TUNNEL_FEATURES = 5
 
 
+def jump_height_overshoot(actual: torch.Tensor, target: torch.Tensor, settings: dict) -> torch.Tensor:
+    return (actual - (target + settings.get("height_overshoot_tolerance_m", 0.03))).clamp_min(0)
+
+
 def jump_height_error(actual: torch.Tensor, target: torch.Tensor, settings: dict) -> torch.Tensor:
-    """A narrow undershoot band and a wider, bounded overshoot band."""
-    low = (target - settings["height_tolerance_m"] - actual).clamp_min(0)
-    high = (actual - target - settings.get("height_overshoot_tolerance_m", 0.03)).clamp_min(0)
-    return low + high
+    """Capacity targets charge undershoot only; precision targets still charge both sides."""
+    low = ((target - settings["height_tolerance_m"]) - actual).clamp_min(0)
+    return low if settings.get("height_is_minimum", False) else low + jump_height_overshoot(actual, target, settings)
 
 
 class JumpEvent:

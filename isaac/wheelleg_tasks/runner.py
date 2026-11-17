@@ -24,7 +24,7 @@ class WheelLegRunner(OnPolicyRunner):
         if cfg.task == "p1-landing":  # critic gains the landing event state
             contract["landing_event_features"] = LANDING_FEATURES
         if cfg.task in ("p3-jump", "p3-tunnel"):
-            contract["jump_event_revision"] = 3
+            contract["jump_event_revision"] = 4
             if self.env.unwrapped.training.task == "p3-tunnel":
                 contract["tunnel_navigation_revision"] = 1
             contract["jump_event_features"] = JUMP_FEATURES + (TUNNEL_FEATURES if cfg.task == "p3-tunnel" else 0)

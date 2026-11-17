@@ -204,6 +204,7 @@ mode_semantics:
 stages:
   jump:
     moving_probability: 0.5
+    height_is_minimum: true  # For scoring and promotion; keep overshoot as an evaluation diagnostic.
     moving_takeoff_min_fraction: 0.7  # Count a moving jump only if actual vx at takeoff meets this fraction.
     event_duration_s: 1.2
     takeoff_confirmation_s: 0.03
@@ -227,9 +228,9 @@ stages:
     feasible_height_m: null
     crouch_duration_s: 0.25
     crouch_leg_length_m: 0.18
-    push_leg_length_m: 0.26
+    push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
     tuck_leg_length_m: 0.15
-    landing_leg_length_m: 0.26
+    landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.
     landing_prepare_time_s: 0.1
     landing_stable_s: 1.0
     max_touchdown_difference_s: 0.05
@@ -265,9 +266,9 @@ stages:
     feasible_height_m: null
     crouch_duration_s: 0.25
     crouch_leg_length_m: 0.18
-    push_leg_length_m: 0.26
+    push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
     tuck_leg_length_m: 0.15
-    landing_leg_length_m: 0.26
+    landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.
     landing_prepare_time_s: 0.1
     landing_stable_s: 1.0
     max_touchdown_difference_s: 0.05

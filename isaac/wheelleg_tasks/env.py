@@ -19,7 +19,7 @@ from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inve
 from wheelleg.commands import Commands, uniform
 from wheelleg.curriculum import AirHeightCurriculum, CommandCurriculum, JumpCurriculum
 from wheelleg.history import HistoryBuffer
-from wheelleg.jump import JumpEvent, TunnelTraversal, jump_height_error, tunnel_landing
+from wheelleg.jump import JumpEvent, TunnelTraversal, jump_height_error, jump_height_overshoot, tunnel_landing
 from wheelleg.landing import FirstLanding
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.landing_rewards import LandingRewards
@@ -1244,6 +1244,11 @@ class WheelLegEnv(DirectRLEnv):
                 rise = self.jump.apex_z - self.jump.start_z
                 self.extras["evaluation"]["jump_success"] &= jump_height_error(rise, self.jump.height, t.stage) <= 1e-6
                 self.extras["evaluation"]["jump_success"] &= self.jump_vx_qualified
+                overshot = jump_height_overshoot(rise, self.jump.height, t.stage) > 1e-6
+                self.extras["evaluation"].update(
+                    jump_overshot=(self.jump.took_off & overshot).clone(),
+                    jump_height_in_band=(self.extras["evaluation"]["jump_success"] & ~overshot).clone(),
+                )
             self.extras["evaluation"].update(
                 jump_stable=self.jump.landing_pulse.clone(),
                 jump_took_off=self.jump.took_off.clone(),
