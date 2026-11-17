@@ -386,10 +386,15 @@ def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
 
 
 @pytest.mark.parametrize(
-    "scenario,expected",
-    [("recovers_after_old_deadline", True), ("repeated_bounce", False), ("no_touchdown", False)],
+    "scenario,finished_at,success",
+    [
+        ("no_takeoff", 1.20, False),
+        ("long_flight_then_recovers", 9.24, True),
+        ("repeated_bounce", 5.70, False),
+        ("no_touch_before_episode_ends", 8.00, False),
+    ],
 )
-def test_flat_recovery_grace_does_not_renew_on_bounce(scenario, expected):
+def test_flat_jump_uses_separate_takeoff_and_landing_deadlines(scenario, finished_at, success):
     cfg = load_training(
         "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
     )
@@ -400,23 +405,27 @@ def test_flat_recovery_grace_does_not_renew_on_bounce(scenario, expected):
     no = ~yes
     event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), yes)
     dt = 0.01
-    for step in range(1, 600):
-        t = step * dt
-        if t < 0.30:
+    for step in range(1, 1000):
+        if step < 30 or scenario == "no_takeoff":
             contact, z, vz = (True, True), 0.30, 0.0
-        elif t < 0.70 or scenario == "no_touchdown":
-            contact, z, vz = (False, False), 0.36, 0.5
-        elif step == 70:
-            contact, z, vz = (True, False), 0.31, -0.4  # Deadline must start at the first wheel.
-        elif step == 71 or (scenario == "recovers_after_old_deadline" and t >= 1.75):
-            contact, z, vz = (True, True), 0.30, 0.0
-        elif scenario == "repeated_bounce" and (step // 10) % 2:
-            contact, z, vz = (True, True), 0.30, 0.0
+        elif scenario == "long_flight_then_recovers":
+            if step < 430:
+                contact, z, vz = (False, False), 0.36, 0.5
+            elif step == 430:
+                contact, z, vz = (True, False), 0.31, -0.4
+            elif step == 431 or step >= 825:
+                contact, z, vz = (True, True), 0.30, 0.0
+            else:
+                contact, z, vz = (False, False), 0.32, 0.0
+        elif scenario == "repeated_bounce" and step >= 70:
+            # Start the five-second timer on the single-wheel touch, not the subsequent dual contact.
+            contact = (True, False) if step == 70 else (True, True) if (step // 10) % 2 else (False, False)
+            z, vz = 0.30, 0.0
         else:
-            contact, z, vz = (False, False), 0.32, 0.0
+            contact, z, vz = (False, False), 0.36, 0.5
         event.update(
             dt,
-            torch.tensor([5.0 + t]),
+            torch.tensor([5.0 + step * dt]),
             torch.tensor([z]),
             torch.tensor([vz]),
             torch.tensor([contact]),
@@ -424,13 +433,16 @@ def test_flat_recovery_grace_does_not_renew_on_bounce(scenario, expected):
             yes,
             no,
             wheel_clearance=torch.full((1, 2), z - 0.30),
+            failed=torch.tensor([scenario == "no_touch_before_episode_ends" and step == 800]),
             require_height=no,
         )
+        if scenario == "long_flight_then_recovers" and step == 400:
+            assert event.active.item() and not event.first_touch.item()
+            assert event.features()[0, 0].item() == -1.0
         if event.finished.item():
             break
     assert event.finished.item()
-    assert event.landing_paid.item() == expected
-    assert event.failure_paid.item() != expected
-    expected_time = {"recovers_after_old_deadline": 2.74, "repeated_bounce": 3.20, "no_touchdown": 1.20}[scenario]
-    assert event.elapsed.item() == pytest.approx(expected_time, abs=dt / 2)
+    assert event.landing_paid.item() == success
+    assert event.failure_paid.item() != success
+    assert event.elapsed.item() == pytest.approx(finished_at, abs=dt / 2)
     assert event.phase.item() == pytest.approx(1.0)  # Nominal Actor timing is not stretched.

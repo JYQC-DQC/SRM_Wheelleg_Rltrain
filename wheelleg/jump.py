@@ -21,7 +21,7 @@ class JumpEvent:
 
     def __init__(self, settings: dict, count: int, device: str):
         self.settings, self.device = settings, device
-        self.recovery_grace_s = settings.get("landing_recovery_grace_s", 0.0)
+        self.landing_settle_timeout_s = settings.get("landing_settle_timeout_s")
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.remaining = torch.zeros(count, dtype=torch.long, device=device)
         self.elapsed = torch.zeros(count, device=device)
@@ -197,15 +197,13 @@ class JumpEvent:
         self.landing_pulse = landing_ok & (self.stable_time >= self.settings["landing_stable_s"] - dt / 2)
         self.landing_pulse &= ~self.landing_paid
         self.landing_paid |= self.landing_pulse
-        if self.recovery_grace_s:
-            # Bounce recovery is anchored to the first touch, not renewed by later contacts.
-            first_touch_at = torch.where(self.touchdown_time >= 0, self.touchdown_time, self.elapsed[:, None]).amin(-1)
-            deadline = torch.where(
-                self.first_touch,
-                first_touch_at + self.recovery_grace_s + self.settings["landing_stable_s"],
-                self.settings["event_duration_s"],
+        if self.landing_settle_timeout_s is not None:
+            # A confirmed takeoff ends the press deadline. Flight itself has no event timeout.
+            missed_takeoff = ~self.took_off & (self.elapsed >= self.settings["event_duration_s"] - dt / 2)
+            missed_landing = self.first_touch & (
+                self._time_since_first_touch() >= self.landing_settle_timeout_s - dt / 2
             )
-            expired = self.elapsed >= deadline - dt / 2
+            expired = missed_takeoff | missed_landing
         else:
             expired = self.elapsed >= self.settings["event_duration_s"] + self.settings["landing_stable_s"]
         self.failure_pulse = self.active & (expired | self.invalid) & ~self.landing_pulse & ~self.failure_paid
@@ -242,13 +240,24 @@ class JumpEvent:
         self.quality_paid |= self.landing_pulse
         return average.clamp(0, 1) * pay[:, None]
 
+    def _time_since_first_touch(self) -> torch.Tensor:
+        first_touch_at = torch.where(self.touchdown_time >= 0, self.touchdown_time, self.elapsed[:, None]).amin(-1)
+        return self.elapsed - first_touch_at
+
     def features(self) -> torch.Tensor:
-        window = self.settings["event_duration_s"] + self.settings["landing_stable_s"] + self.recovery_grace_s
+        duration = self.settings["event_duration_s"]
+        settle = self.landing_settle_timeout_s
+        window = duration + (self.settings["landing_stable_s"] if settle is None else settle)
+        elapsed = self.elapsed / window
+        if settle is not None:
+            # Reuse the critic's clock slot: takeoff timer, -1 for unbounded flight, then the settle timer.
+            elapsed = torch.where(self.took_off, -1.0, self.elapsed / duration)
+            elapsed = torch.where(self.first_touch, self._time_since_first_touch() / settle, elapsed)
         quality = self.quality_sum / self.quality_time.clamp_min(1e-6)[:, None]
         return torch.nan_to_num(
             torch.cat(
                 (
-                    (self.elapsed / window)[:, None],
+                    elapsed[:, None],
                     (self.takeoff_time / self.settings.get("takeoff_confirmation_s", 0.03))[:, None],
                     (self.takeoff_peak_vz / self.settings.get("takeoff_upward_velocity_m_s", 0.1))[:, None],
                     self.took_off[:, None],

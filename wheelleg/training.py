@@ -1005,12 +1005,17 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "takeoff_clearance_m",
             "takeoff_upward_velocity_m_s",
             "height_overshoot_tolerance_m",
-            "landing_recovery_grace_s",
+            "landing_settle_timeout_s",
         ):
             if key in cfg.stage:
                 value = cfg.stage[key]
                 if type(value) not in (int, float) or not isfinite(value) or value <= 0:
                     raise ValueError(f"jump.{key} must be finite and positive")
+        if (
+            "landing_settle_timeout_s" in cfg.stage
+            and cfg.stage["landing_settle_timeout_s"] < cfg.stage["landing_stable_s"]
+        ):
+            raise ValueError("jump.landing_settle_timeout_s must include landing_stable_s")
         if "failure_cost" in cfg.stage:
             cost = cfg.stage["failure_cost"]
             if type(cost) not in (int, float) or not isfinite(cost) or cost >= 0:
