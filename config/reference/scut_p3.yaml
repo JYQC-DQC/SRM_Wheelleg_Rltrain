@@ -219,10 +219,7 @@ stages:
     between_events_s:
     - 3.0
     - 5.0
-    jump_count_probabilities:
-    - 0.2
-    - 0.8
-    - 0.0
+    jump_count_probabilities: [0.0, 1.0, 0.0]  # Schedule exactly one press per flat training episode.
     height_range_m: [0.04, 0.40]
     height_levels_m: [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40]
     highest_level_probability: 0.60  # Remaining samples are uniform over the unlocked lower levels.
