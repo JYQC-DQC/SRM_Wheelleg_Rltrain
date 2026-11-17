@@ -16,12 +16,20 @@ def jump_height_error(actual: torch.Tensor, target: torch.Tensor, settings: dict
     return low if settings.get("height_is_minimum", False) else low + jump_height_overshoot(actual, target, settings)
 
 
+def landing_rates_ok(vz: torch.Tensor, roll_pitch_rate: torch.Tensor, settings: dict) -> torch.Tensor:
+    return (vz.abs() < settings["stable_vz_m_s"]) & (
+        roll_pitch_rate.abs().amax(-1) < settings["stable_roll_pitch_rate_rad_s"]
+    )
+
+
 class JumpEvent:
     """Contact-driven phases; apex/landing pulses can only occur once per event."""
 
-    def __init__(self, settings: dict, count: int, device: str):
+    def __init__(self, settings: dict, count: int, device: str, *, gravity: float = 9.81):
         self.settings, self.device = settings, device
         self.landing_settle_timeout_s = settings.get("landing_settle_timeout_s")
+        self.clearance_training = settings.get("clearance_jump")
+        self.gravity = gravity
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.remaining = torch.zeros(count, dtype=torch.long, device=device)
         self.elapsed = torch.zeros(count, device=device)
@@ -29,6 +37,9 @@ class JumpEvent:
         self.height = torch.zeros_like(self.elapsed)
         self.start_z = torch.zeros_like(self.elapsed)
         self.apex_z = torch.zeros_like(self.elapsed)
+        self.peak_wheel_clearance = torch.zeros_like(self.elapsed)
+        self.tuck_ended = self.active.clone()
+        self.preparing = self.active.clone()
         self.height_progress = torch.zeros_like(self.elapsed)
         self.air_time = torch.zeros_like(self.elapsed)
         self.stable_time = torch.zeros_like(self.elapsed)
@@ -43,6 +54,8 @@ class JumpEvent:
         self.touchdown_pulse = self.active.clone()
         self.finished = self.active.clone()
         self.first_touch = self.active.clone()
+        self.last_air_vz = torch.zeros_like(self.elapsed)
+        self.first_touch_speed_pulse = torch.zeros_like(self.elapsed)
         self.takeoff_time = torch.zeros_like(self.elapsed)
         self.takeoff_peak_vz = torch.zeros_like(self.elapsed)
         self.quality_sum = torch.zeros(count, 2, device=device)
@@ -65,6 +78,8 @@ class JumpEvent:
             self.touchdown_pulse,
             self.finished,
             self.first_touch,
+            self.tuck_ended,
+            self.preparing,
             self.quality_active,
             self.failure_pulse,
             self.failure_paid,
@@ -78,6 +93,9 @@ class JumpEvent:
             self.stable_time,
             self.start_z,
             self.apex_z,
+            self.peak_wheel_clearance,
+            self.last_air_vz,
+            self.first_touch_speed_pulse,
             self.height_progress,
             self.takeoff_time,
             self.takeoff_peak_vz,
@@ -120,6 +138,11 @@ class JumpEvent:
         ):
             value[ids] = False
         self.first_touch[ids] = False
+        self.tuck_ended[ids] = False
+        self.preparing[ids] = False
+        self.peak_wheel_clearance[ids] = 0
+        self.last_air_vz[ids] = 0
+        self.first_touch_speed_pulse[ids] = 0
         self.elapsed[ids] = 0
         self.air_time[ids] = 0
         self.stable_time[ids] = 0
@@ -166,11 +189,22 @@ class JumpEvent:
         confirmed = candidate & (self.takeoff_time >= self.settings.get("takeoff_confirmation_s", 0.03) - dt * 0.5)
         confirmed &= self.takeoff_peak_vz >= self.settings.get("takeoff_upward_velocity_m_s", 0.1)
         # The running apex is monotone within an attempt. Do not cash any of it in until takeoff is confirmed.
-        old_apex = torch.where(self.took_off, self.apex_z, self.start_z)
+        old_height = torch.where(self.took_off, self.scored_height, 0.0)
         self.took_off |= confirmed
         flight = self.active & self.took_off & ~self.landed
         self.air_time += dt * flight * no_contact
-        self.apex_z = torch.where(candidate | flight, torch.maximum(self.apex_z, z), self.apex_z)
+        apex_sample = candidate | flight
+        airborne = flight & no_contact & ~self.first_touch
+        if self.clearance_training is not None:
+            self.peak_wheel_clearance.copy_(
+                torch.where(airborne, torch.maximum(self.peak_wheel_clearance, clearance), self.peak_wheel_clearance)
+            )
+            apex_sample &= no_contact & ~self.first_touch
+            self.tuck_ended |= airborne & (vz < -self.clearance_training["tuck_end_vz_m_s"])
+            # Wheel clearance changes when the policy moves its legs. Do not switch back to tuck after committing.
+            self.preparing |= airborne & self._near_touchdown(vz, clearance, self.gravity)
+            self.tuck_ended |= self.preparing
+        self.apex_z = torch.where(apex_sample, torch.maximum(self.apex_z, z), self.apex_z)
         self.invalid |= self.active & obstacle_contact
         if failed is not None:
             self.invalid |= self.active & failed
@@ -178,14 +212,19 @@ class JumpEvent:
         self.apex_paid |= self.apex_pulse
         self.quality_active.copy_(flight & candidate & ~self.invalid)
         goal = self.height.clamp_min(torch.finfo(self.height.dtype).eps)
-        previous = ((old_apex - self.start_z) / goal).clamp(0, 1)
-        current = ((self.apex_z - self.start_z) / goal).clamp(0, 1)
-        self.height_progress.copy_(torch.where(self.quality_active, (current - previous).clamp_min(0), 0.0))
+        previous = (old_height / goal).clamp(0, 1)
+        current = (self.scored_height / goal).clamp(0, 1)
+        progress_sample = self.quality_active if self.clearance_training is None else airborne & ~self.invalid
+        self.height_progress.copy_(torch.where(progress_sample, (current - previous).clamp_min(0), 0.0))
         # Invalid first touchdown cannot become success by driving off the roof later.
-        height_ok = jump_height_error(self.apex_z - self.start_z, self.height, self.settings) <= 1e-6
+        height_ok = jump_height_error(self.scored_height, self.height, self.settings) <= 1e-6
         if require_height is not None:
             height_ok |= ~require_height
         new_touch = flight & contact.any(-1) & ~self.first_touch
+        if self.clearance_training is not None:
+            # Use the last airborne sample; the solver may have already arrested vz on the contact step.
+            self.first_touch_speed_pulse.copy_(torch.where(new_touch, (-self.last_air_vz).clamp_min(0), 0.0))
+            self.last_air_vz.copy_(torch.where(airborne, vz, self.last_air_vz))
         self.invalid |= new_touch & (~valid_landing | ~height_ok)
         self.first_touch |= new_touch
         first_touch = flight[:, None] & contact & (self.touchdown_time < 0)
@@ -201,7 +240,7 @@ class JumpEvent:
             # A confirmed takeoff ends the press deadline. Flight itself has no event timeout.
             missed_takeoff = ~self.took_off & (self.elapsed >= self.settings["event_duration_s"] - dt / 2)
             missed_landing = self.first_touch & (
-                self._time_since_first_touch() >= self.landing_settle_timeout_s - dt / 2
+                self.time_since_first_touch() >= self.landing_settle_timeout_s - dt / 2
             )
             expired = missed_takeoff | missed_landing
         else:
@@ -240,7 +279,7 @@ class JumpEvent:
         self.quality_paid |= self.landing_pulse
         return average.clamp(0, 1) * pay[:, None]
 
-    def _time_since_first_touch(self) -> torch.Tensor:
+    def time_since_first_touch(self) -> torch.Tensor:
         first_touch_at = torch.where(self.touchdown_time >= 0, self.touchdown_time, self.elapsed[:, None]).amin(-1)
         return self.elapsed - first_touch_at
 
@@ -252,7 +291,7 @@ class JumpEvent:
         if settle is not None:
             # Reuse the critic's clock slot: takeoff timer, -1 for unbounded flight, then the settle timer.
             elapsed = torch.where(self.took_off, -1.0, self.elapsed / duration)
-            elapsed = torch.where(self.first_touch, self._time_since_first_touch() / settle, elapsed)
+            elapsed = torch.where(self.first_touch, self.time_since_first_touch() / settle, elapsed)
         quality = self.quality_sum / self.quality_time.clamp_min(1e-6)[:, None]
         return torch.nan_to_num(
             torch.cat(
@@ -263,10 +302,14 @@ class JumpEvent:
                     self.took_off[:, None],
                     self.landed[:, None],
                     self.invalid[:, None],
-                    ((self.apex_z - self.start_z) / self.height.clamp_min(0.01))[:, None],
+                    (self.scored_height / self.height.clamp_min(0.01))[:, None],
                     (self.stable_time / self.settings["landing_stable_s"])[:, None],
                     (self.air_time / window)[:, None],
-                    self.apex_paid[:, None],
+                    (
+                        self.apex_paid.float()
+                        if self.clearance_training is None
+                        else 0.5 * (self.tuck_ended.float() + self.preparing.float())
+                    )[:, None],
                     self.landing_paid[:, None],
                     self.failure_paid[:, None],
                     quality,
@@ -281,18 +324,34 @@ class JumpEvent:
     def phase(self) -> torch.Tensor:
         return (self.elapsed / self.settings["event_duration_s"]).clamp(0, 1)
 
+    @property
+    def scored_height(self) -> torch.Tensor:
+        if self.clearance_training is not None:
+            return self.peak_wheel_clearance
+        return self.apex_z - self.start_z
+
+    def _near_touchdown(self, vz: torch.Tensor, clearance: torch.Tensor, gravity: float) -> torch.Tensor:
+        time_to_ground = (vz + torch.sqrt(vz.square() + 2 * gravity * clearance.clamp_min(0))) / gravity
+        return (vz < 0) & (time_to_ground < self.settings["landing_prepare_time_s"])
+
     def references(self, vz: torch.Tensor, wheel_clearance: torch.Tensor, gravity: float) -> dict[str, torch.Tensor]:
         flight = self.active & self.took_off & ~self.landed
-        # Ballistic time remaining, evaluated only for the descending phase.
-        time_to_ground = (vz + torch.sqrt(vz.square() + 2 * gravity * wheel_clearance.clamp_min(0))) / gravity
-        prepare = flight & (vz < 0) & (time_to_ground < self.settings["landing_prepare_time_s"])
+        if self.clearance_training is None:
+            prepare = flight & self._near_touchdown(vz, wheel_clearance, gravity)
+            tuck = flight & ~prepare
+            takeoff_velocity = torch.sqrt(2 * gravity * self.height)
+        else:
+            flight &= ~self.first_touch
+            prepare = flight & self.preparing
+            tuck = flight & ~self.tuck_ended
+            takeoff_velocity = torch.full_like(self.height, self.clearance_training["takeoff_velocity_hint_m_s"])
         return {
             "crouch": self.active & ~self.took_off & (self.elapsed < self.settings["crouch_duration_s"]),
             "push": self.active & ~self.took_off & (self.elapsed >= self.settings["crouch_duration_s"]),
             "flight": flight,
             "prepare": prepare,
-            "tuck": flight & ~prepare,
-            "takeoff_velocity": torch.sqrt(2 * gravity * self.height),
+            "tuck": tuck,
+            "takeoff_velocity": takeoff_velocity,
         }
 
 

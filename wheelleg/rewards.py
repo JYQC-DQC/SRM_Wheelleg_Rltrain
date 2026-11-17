@@ -165,7 +165,7 @@ def spin_speed_error(s, p):
 
 def jump_apex(s, p):
     event = s["jump"]
-    error = jump_height_error(event.apex_z - event.start_z, event.height, event.settings)
+    error = jump_height_error(event.scored_height, event.height, event.settings)
     return (
         torch.exp(-error.square() / event.settings["apex_sigma"])
         * event.landing_pulse
@@ -188,7 +188,7 @@ def jump_flight(s, p):
 
 def jump_crouch(s, p):
     error = (s["leg_length"] - s["jump"].settings["crouch_leg_length_m"]).abs().sum(-1)
-    return torch.exp(-4 * error) * s["jump_ref"]["crouch"] * s["guidance_scale"]
+    return torch.exp(-4 * error) * s["jump_ref"]["crouch"] * s["jump_pose_scale"]
 
 
 def jump_takeoff(s, p):
@@ -200,7 +200,7 @@ def jump_takeoff(s, p):
     if "push_leg_length_m" in settings:
         shortfall = (settings["push_leg_length_m"] - s["leg_length"]).clamp_min(0).sum(-1)
         strength *= torch.exp(-4 * shortfall)
-    return strength * s["jump_ref"]["push"] * s["guidance_scale"]
+    return strength * s["jump_ref"]["push"] * s["jump_pose_scale"]
 
 
 def jump_push_symmetry(s, p):
@@ -210,14 +210,54 @@ def jump_push_symmetry(s, p):
 
 
 def jump_tuck(s, p):
-    error = (s["leg_length"] - s["jump"].settings["tuck_leg_length_m"]).abs().sum(-1)
-    return torch.exp(-4 * error) * s["jump_ref"]["tuck"] * s["guidance_scale"]
+    event = s["jump"]
+    target = event.settings["tuck_leg_length_m"]
+    if event.clearance_training is None:
+        error = (s["leg_length"] - target).abs().sum(-1)
+        quality = torch.exp(-4 * error)
+    else:
+        long = event.settings["push_leg_length_m"]
+        # Score the longer leg: drawing up only one leg cannot buy a high tuck score.
+        quality = ((long - s["leg_length"].amax(-1)) / (long - target)).clamp(0, 1).square()
+    return quality * s["jump_ref"]["tuck"] * s["jump_pose_scale"]
 
 
 def jump_prepare(s, p):
     # Let the policy choose further extension if it helps the first touch.
     shortfall = (s["jump"].settings["landing_leg_length_m"] - s["leg_length"]).clamp_min(0).sum(-1)
-    return torch.exp(-4 * shortfall) * s["jump_ref"]["prepare"] * s["guidance_scale"]
+    return torch.exp(-4 * shortfall) * s["jump_ref"]["prepare"] * s["jump_pose_scale"]
+
+
+def jump_air_leg_smoothness(s, p):
+    change = s["leg_action_second_difference"].square()
+    return (1 - (1 + change).reciprocal()).mean(-1) * s["jump_ref"]["flight"]
+
+
+def jump_landing_recovery(s, p):
+    event = s["jump"]
+    cfg = event.clearance_training
+    vz = s["velocity_w"][:, 2] / cfg["stable_vz_m_s"]
+    spin = s["angular_velocity"][:, :2] / cfg["stable_roll_pitch_rate_rad_s"]
+    tilt = torch.stack((s["roll"], s["pitch"]), -1) / event.settings["landing_tilt_rad"]
+    vx = s["linear_error"] / cfg["recovery_vx_error_m_s"]
+    error = vz.square() + spin.square().sum(-1) + tilt.square().sum(-1) + vx.square()
+    score = torch.exp(-0.5 * error) * s["wheel_contact"].all(-1)
+    # Charge poor recovery rather than paying for each grounded frame: no reward for staying unstable longer.
+    return (1 - score) * (event.active & event.first_touch)
+
+
+def jump_rebound(s, p):
+    event = s["jump"]
+    speed = event.clearance_training["stable_vz_m_s"]
+    rebound = ((s["velocity_w"][:, 2] - speed) / speed).clamp(0, 1)
+    unsupported = ~s["wheel_contact"].any(-1)
+    return rebound * (event.active & event.first_touch & unsupported)
+
+
+def jump_fast_touchdown(s, p):
+    event = s["jump"]
+    limit = event.clearance_training["fast_touchdown_vz_m_s"]
+    return (event.first_touch_speed_pulse - limit).clamp(0, 1)
 
 
 def jump_impact(s, p):
@@ -280,6 +320,10 @@ TERMS = {
         jump_push_symmetry,
         jump_tuck,
         jump_prepare,
+        jump_air_leg_smoothness,
+        jump_landing_recovery,
+        jump_rebound,
+        jump_fast_touchdown,
         jump_impact,
         jump_asymmetric_landing,
         uncommanded_flight,
@@ -294,6 +338,7 @@ EVENT_TERMS = frozenset(
         "jump_height_progress",  # Increment of normalized apex, not a rate per second.
         "jump_landing",
         "jump_impact",
+        "jump_fast_touchdown",
         "jump_asymmetric_landing",
         "tunnel_crossing",
         "jump_air_torque_success",

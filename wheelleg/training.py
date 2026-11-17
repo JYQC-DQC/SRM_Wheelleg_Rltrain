@@ -996,6 +996,27 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if bounds is not None and (len(bounds) != 2 or bounds[0] > bounds[1]):
             raise ValueError(f"commands.{key}: expected [lower, upper]")
     if TASKS[cfg.task].policy == "p3":
+        if "clearance_jump" in cfg.stage:
+            clearance = cfg.stage["clearance_jump"]
+            if cfg.task != "p3-jump" or "moving_probability" not in cfg.stage or not cfg.stage["height_is_minimum"]:
+                raise ValueError("clearance_jump requires staged flat jumping with a minimum-height target")
+            if not 0 < cfg.stage["tuck_leg_length_m"] < cfg.stage["push_leg_length_m"]:
+                raise ValueError("clearance_jump requires 0 < tuck_leg_length_m < push_leg_length_m")
+            for key in (
+                "takeoff_velocity_hint_m_s",
+                "tuck_end_vz_m_s",
+                "stable_vz_m_s",
+                "stable_roll_pitch_rate_rad_s",
+                "recovery_vx_error_m_s",
+                "fast_touchdown_vz_m_s",
+            ):
+                value = clearance[key]
+                if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                    raise ValueError(f"clearance_jump.{key} must be finite and positive")
+            for key in ("jump_air_leg_smoothness", "jump_landing_recovery", "jump_rebound", "jump_fast_touchdown"):
+                value = clearance["reward_overrides"][key]
+                if type(value) not in (int, float) or not isfinite(value) or value > 0:
+                    raise ValueError(f"clearance_jump.reward_overrides.{key} must be finite and nonpositive")
         if cfg.task == "p3-jump" and "moving_takeoff_min_fraction" in cfg.stage:
             fraction = cfg.stage["moving_takeoff_min_fraction"]
             if type(fraction) not in (int, float) or not 0 < fraction <= 1:

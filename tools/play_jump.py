@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import yaml
 
-from wheelleg.jump import JumpEvent, TunnelTraversal, jump_height_error, tunnel_landing
+from wheelleg.jump import JumpEvent, TunnelTraversal, jump_height_error, landing_rates_ok, tunnel_landing
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "sim2sim"))
@@ -133,7 +133,7 @@ class JumpSim(WheelLegSim):
         if cfg.run.get("task") != "p3-jump" or cfg.policy["policy_family"] != "p3":
             raise ValueError("Use a p3-jump checkpoint with its matching saved params/")
         self.stage = cfg.policy["stages"]["jump"]
-        self.jump = JumpEvent(self.stage, 1, "cpu")
+        self.jump = JumpEvent(self.stage, 1, "cpu", gravity=self.cfg.shared["gravity_m_s2"])
         self.traversal = TunnelTraversal(1, "cpu")
         self.test_site = None
         self.ids = torch.tensor([0])
@@ -254,6 +254,14 @@ class JumpSim(WheelLegSim):
         took_off = bool(self.jump.took_off[0])
         stable = max(abs(info["roll"]), abs(info["pitch"])) < self.stage["landing_tilt_rad"]
         stable &= not info["terminated"] and not info["nonwheel_contact"]
+        if self.jump.clearance_training is not None:
+            stable &= bool(
+                landing_rates_ok(
+                    torch.tensor([info["vz"]]),
+                    torch.tensor([[info["angular_xy"]]]),
+                    self.jump.clearance_training,
+                )[0]
+            )
         valid, obstacle_hit = torch.tensor([True]), torch.tensor([False])
         site = self.test_site
         if site is not None and site["kind"] == "tunnel" and bool(self.jump.active[0]):
@@ -311,9 +319,7 @@ class JumpSim(WheelLegSim):
         if bool(self.jump.failure_pulse[0]):
             self.jump_result = "failed: takeoff/settle deadline or physical termination"
         elif bool(self.jump.landing_pulse[0]):
-            height_ok = (
-                float(jump_height_error(self.jump.apex_z - self.jump.start_z, self.jump.height, self.stage)[0]) <= 1e-6
-            )
+            height_ok = float(jump_height_error(self.jump.scored_height, self.jump.height, self.stage)[0]) <= 1e-6
             self.jump_result = "success" if height_ok and self.takeoff_speed_ok else "landed: height/speed below target"
             if site is not None and site["kind"] == "tunnel" and self.jump_result == "success":
                 self.jump_result = "cleared tunnel and landed beyond"
@@ -414,7 +420,13 @@ class JumpPlayer:
             f"{self.sites[self.selected]['name']} | {state} | x{self.slow}\n"
             f"target jump {self.height_m * 100:.1f} cm | vx {self.target[0]:+.2f} m/s "
             f"| wz {self.target[2]:+.2f} rad/s\n"
-            f"{actual}jump: {self.sim.jump_result} | peak base rise {self.sim.peak_rise_m * 100:.1f} cm"
+            f"{actual}jump: {self.sim.jump_result} | "
+            + (
+                f"peak wheel clearance {self.sim.jump.scored_height[0] * 100:.1f} cm | "
+                if self.sim.jump.clearance_training is not None
+                else ""
+            )
+            + f"peak base rise {self.sim.peak_rise_m * 100:.1f} cm"
         )
 
 

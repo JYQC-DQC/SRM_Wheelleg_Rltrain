@@ -19,7 +19,14 @@ from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inve
 from wheelleg.commands import Commands, uniform
 from wheelleg.curriculum import AirHeightCurriculum, CommandCurriculum, JumpCurriculum
 from wheelleg.history import HistoryBuffer
-from wheelleg.jump import JumpEvent, TunnelTraversal, jump_height_error, jump_height_overshoot, tunnel_landing
+from wheelleg.jump import (
+    JumpEvent,
+    TunnelTraversal,
+    jump_height_error,
+    jump_height_overshoot,
+    landing_rates_ok,
+    tunnel_landing,
+)
 from wheelleg.landing import FirstLanding
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.landing_rewards import LandingRewards
@@ -139,7 +146,9 @@ class WheelLegEnv(DirectRLEnv):
             if self.family == "p1" and self.stair_course is None
             else None
         )
-        self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
+        self.jump = JumpEvent(t.stage, n, d, gravity=t.shared["gravity_m_s2"]) if self.family == "p3" else None
+        if self.jump is not None and self.jump.clearance_training is not None:
+            self.reward_weights.update(self.jump.clearance_training["reward_overrides"])
         levels = (
             tuple(h + t.stage["tunnel"]["clearance_margin_m"] for h in t.stage["tunnel"]["height_curriculum_m"])
             if t.task == "p3-tunnel"
@@ -825,6 +834,10 @@ class WheelLegEnv(DirectRLEnv):
                 timeout |= approach_expired
             stable = (s["roll"].abs() < t.stage["landing_tilt_rad"]) & (s["pitch"].abs() < t.stage["landing_tilt_rad"])
             stable &= ~(terminated | body_hit)
+            if self.jump.clearance_training is not None:
+                stable &= landing_rates_ok(
+                    s["velocity_w"][:, 2], s["angular_velocity"][:, :2], self.jump.clearance_training
+                )
             valid = torch.ones_like(stable)
             obstacle_hit = self.obstacle_hit.clone()
             if t.task == "p3-tunnel":
@@ -900,7 +913,7 @@ class WheelLegEnv(DirectRLEnv):
                     # A fall before the simulated press is a driving failure, not an attempt at a sampled height.
                     pressed = self.jump.elapsed[finished] > 0
                     finished, success = finished[pressed], success[pressed]
-                    rise = self.jump.apex_z[finished] - self.jump.start_z[finished]
+                    rise = self.jump.scored_height[finished]
                     success &= jump_height_error(rise, self.jump.height[finished], t.stage) <= 1e-6
                     success &= self.jump_vx_qualified[finished]
                 self._record_jump_curriculum(finished, success, iteration)
@@ -1000,6 +1013,7 @@ class WheelLegEnv(DirectRLEnv):
             s["contact_multiplier"] = one
             s["termination_multiplier"] = one
             s["guidance_scale"] = self.guidance_scale
+            s["jump_pose_scale"] = self.guidance_scale if self.jump.clearance_training is None else 1.0
         if t.task == "p1-landing":
             # Stable penalty scales cannot depend on an airborne-classifier dwell timer: the heavier contact cost is
             # gated by the landing window (birth to first contact + window_s), where the cushioning collisions occur.
@@ -1242,16 +1256,20 @@ class WheelLegEnv(DirectRLEnv):
         }
         if self.cfg.evaluation and self.jump is not None:
             if t.task == "p3-jump":
-                rise = self.jump.apex_z - self.jump.start_z
-                self.extras["evaluation"]["jump_success"] &= jump_height_error(rise, self.jump.height, t.stage) <= 1e-6
-                self.extras["evaluation"]["jump_success"] &= self.jump_vx_qualified
+                rise = self.jump.scored_height
+                height_ok = self.jump.took_off & (jump_height_error(rise, self.jump.height, t.stage) <= 1e-6)
+                self.extras["evaluation"]["jump_success"] &= height_ok & self.jump_vx_qualified
                 overshot = jump_height_overshoot(rise, self.jump.height, t.stage) > 1e-6
                 self.extras["evaluation"].update(
+                    jump_height_ok=height_ok.clone(),
                     jump_overshot=(self.jump.took_off & overshot).clone(),
                     jump_height_in_band=(self.extras["evaluation"]["jump_success"] & ~overshot).clone(),
                 )
+            jump_refs = self.jump.references(s["velocity_w"][:, 2], s["clearance"].amin(-1), t.shared["gravity_m_s2"])
             self.extras["evaluation"].update(
                 jump_stable=self.jump.landing_pulse.clone(),
+                jump_supported=(self.jump.first_touch & s["wheel_contact"].any(-1)).clone(),
+                jump_since_first_touch_s=self.jump.time_since_first_touch(),
                 jump_took_off=self.jump.took_off.clone(),
                 jump_takeoff_speed_ok=(self.jump.took_off & self.jump_vx_qualified).clone(),
                 jump_cleared=(self.tunnel_path.cleared & ~self.tunnel_path.invalid).clone()
@@ -1265,9 +1283,21 @@ class WheelLegEnv(DirectRLEnv):
                         s["linear_error"],
                         (self.jump.elapsed > 0).float(),
                         self.jump.took_off.float(),
+                        (self.jump.apex_z - self.jump.start_z),
+                        self.jump.first_touch.float(),
+                        self.jump.stable_time,
+                        s["velocity_w"][:, 2],
+                        s["angular_velocity"][:, :2].abs().amax(-1),
+                        jump_refs["tuck"].float(),
+                        jump_refs["prepare"].float(),
+                        s["leg_length"][:, 0],
+                        s["leg_length"][:, 1],
+                        s["leg_action_second_difference"].norm(dim=-1),
+                        s["wheel_contact"].sum(-1),
                     ),
                     dim=-1,
                 ),
+                jump_leg_action=self.raw_action[:, self.legs].clone(),
             )
         if self.stair_course is not None:
             self.extras["evaluation"]["stair_success"] = self.stair_course.success.detach().clone()

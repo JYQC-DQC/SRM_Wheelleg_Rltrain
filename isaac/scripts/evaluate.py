@@ -125,8 +125,12 @@ def main() -> None:
                     motion = []
                     jump_keys = ("took_off", "takeoff_speed_ok", "cleared", "touched_down", "stable")
                     if cfg.task == "p3-jump":
-                        jump_keys += ("overshot", "height_in_band")
+                        jump_keys += ("height_ok", "overshot", "height_in_band")
                     jump_flags = {key: torch.zeros_like(alive) for key in jump_keys}
+                    if raw.jump is not None:
+                        had_support = torch.zeros_like(alive)
+                        rebound_counts = torch.zeros_like(alive, dtype=torch.long)
+                        settle_times = torch.full_like(alive, torch.nan, dtype=torch.float32)
                     start_position = raw.robot.data.root_pos_w.clone()
                     with torch.inference_mode():
                         for step in range(int(duration / raw.step_dt)):
@@ -146,11 +150,17 @@ def main() -> None:
                             info = extras["evaluation"]
                             failed |= alive & info["failed"]
                             if raw.jump is not None:
+                                supported = info["jump_supported"]
+                                rebound_counts += alive & had_support & ~supported
+                                had_support = supported
+                                settle_times = torch.where(
+                                    alive & info["jump_stable"], info["jump_since_first_touch_s"], settle_times
+                                )
                                 succeeded |= alive & info["jump_success"]
                                 for key, mask in jump_flags.items():
                                     mask |= alive & info[f"jump_{key}"]
                                 dx = info["position"][:, :1] - start_position[:, :1]
-                                sample = torch.cat((dx, info["jump_motion"]), -1)
+                                sample = torch.cat((dx, info["jump_motion"], info["jump_leg_action"]), -1)
                                 motion.append(torch.where(alive[:, None], sample, torch.nan).cpu().numpy())
                             if stairs:
                                 traversed |= alive & info["stair_traversed"]
@@ -239,8 +249,17 @@ def main() -> None:
                         result.update(
                             vx_m_s=case.command[0],
                             press_distance_m=case.press_distance_m,
-                            target_root_rise_m=case.jump_height if case.jump_count else None,
+                            **{
+                                "target_wheel_clearance_m"
+                                if raw.jump.clearance_training is not None
+                                else "target_root_rise_m": (case.jump_height if case.jump_count else None),
+                            },
                             **{f"jump_{key}": int(mask.sum()) for key, mask in jump_flags.items()},
+                            jump_rebounds=int(rebound_counts.sum()),
+                            jump_episodes_with_rebound=int((rebound_counts > 0).sum()),
+                            jump_touch_to_stable_mean_s=float(settle_times.nanmean())
+                            if jump_flags["stable"].any()
+                            else None,
                         )
                         jump_traces[case.name] = np.stack(motion)
                     report.append(result)
@@ -255,6 +274,18 @@ def main() -> None:
                             "velocity_error_m_s",
                             "press_fired",
                             "takeoff_confirmed",
+                            "peak_base_rise_m",
+                            "first_touch_seen",
+                            "continuous_stable_s",
+                            "world_vz_m_s",
+                            "max_roll_pitch_rate_rad_s",
+                            "tuck_guidance",
+                            "landing_prepare_guidance",
+                            "left_leg_length_m",
+                            "right_leg_length_m",
+                            "leg_action_second_difference_norm",
+                            "wheels_in_contact",
+                            *(f"raw_leg_action_{i}" for i in range(4)),
                         ),
                         **jump_traces,
                     )

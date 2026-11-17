@@ -362,6 +362,7 @@ def test_push_and_landing_extension_only_discount_short_legs():
         "jump": SimpleNamespace(settings={"push_leg_length_m": 0.28, "landing_leg_length_m": 0.28}),
         "leg_length": lengths,
         "guidance_scale": torch.ones(5),
+        "jump_pose_scale": 1.0,
         "jump_ref": {"push": torch.ones(5), "prepare": torch.ones(5), "takeoff_velocity": torch.ones(5)},
         "velocity_w": torch.tensor([[0, 0, 0.5], [0, 0, 0.5], [0, 0, 0.5], [0, 0, 0.5], [0, 0, 1.0]]),
         "wheel_contact": torch.tensor([[True, True], [True, True], [True, True], [True, True], [False, False]]),
@@ -389,8 +390,7 @@ def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
     target = torch.full_like(rise, 0.04)
     event = SimpleNamespace(
         height=target,
-        start_z=torch.zeros_like(rise),
-        apex_z=rise,
+        scored_height=rise,
         settings=stage,
         landing_pulse=torch.ones(3, dtype=torch.bool),
         invalid=torch.zeros(3, dtype=torch.bool),
@@ -496,3 +496,126 @@ def test_staged_flat_samples_highest_open_level_more_often_but_keeps_all_lower_l
         assert not frequencies[cap + 1 :].any()
         torch.testing.assert_close(heights, curriculum.levels[bins])
     assert heights.max().item() == pytest.approx(0.40)
+
+
+@pytest.fixture
+def clearance_jump():
+    stage = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    ).stage
+    stage = dict(stage, crouch_duration_s=0.0)
+    event = JumpEvent(stage, 1, "cpu")
+    event.reset(torch.arange(1))
+    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), torch.tensor([0.25]))
+    return event
+
+
+def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55):
+    event.update(
+        0.01,
+        torch.tensor([6.0]),
+        torch.tensor([z]),
+        torch.tensor([vz]),
+        torch.tensor([contact]),
+        torch.tensor([stable]),
+        torch.tensor([True]),
+        torch.tensor([False]),
+        wheel_clearance=torch.tensor([wheel]),
+        require_height=torch.tensor([False]),
+    )
+    return event.references(torch.tensor([vz]), torch.tensor([min(wheel)]), 9.81)
+
+
+def test_flat_clearance_counts_only_both_wheels_pre_touch_after_confirmation(clearance_jump):
+    event = clearance_jump
+    for _ in range(2):
+        clearance_step(event, (0.35, 0.33))
+        assert not event.took_off.item() and event.scored_height.item() == 0
+    clearance_step(event, (0.30, 0.08), z=0.62)
+    assert event.took_off.item()
+    assert event.scored_height.item() == pytest.approx(0.08)
+    assert event.height_progress.item() == pytest.approx(0.32)
+    clearance_step(event, (0.08, 0.30))
+    assert event.height_progress.item() == 0
+    clearance_step(event, (0.28, 0.27))
+    assert event.scored_height.item() == pytest.approx(0.27)
+    assert event.height_progress.item() == pytest.approx(0.68)
+    clearance_step(event, (0.39, 0.38), vz=-0.5, contact=(True, False))
+    assert event.first_touch.item()
+    refs = clearance_step(event, (0.43, 0.42), vz=1.0)
+    assert not any(refs[key].item() for key in ("tuck", "prepare", "flight"))
+    assert event.height_progress.item() == 0
+    assert event.scored_height.item() == pytest.approx(0.27)
+
+
+def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
+    event = clearance_jump
+    for _ in range(3):
+        refs = clearance_step(event, (0.31, 0.30))
+    assert refs["tuck"].item() and not refs["prepare"].item()
+    assert refs["takeoff_velocity"].item() == event.clearance_training["takeoff_velocity_hint_m_s"]
+    refs = clearance_step(event, (0.29, 0.30), vz=-0.3)
+    assert not refs["tuck"].item() and not refs["prepare"].item()
+    refs = clearance_step(event, (0.08, 0.09), vz=-1.2)
+    assert not refs["tuck"].item() and refs["prepare"].item()
+    # Pulling the legs back up would cross the old ballistic threshold in the opposite direction.
+    refs = clearance_step(event, (0.29, 0.30), vz=-1.2)
+    assert not refs["tuck"].item() and refs["prepare"].item()
+    event.reset(torch.arange(1))
+    assert not event.preparing.item() and not event.tuck_ended.item()
+
+
+def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):
+    from wheelleg.rewards import jump_air_leg_smoothness, jump_tuck
+
+    state = dict(
+        jump=clearance_jump,
+        jump_ref={"tuck": torch.tensor([True] * 4), "flight": torch.tensor([True, True, True, False])},
+        jump_pose_scale=1.0,
+        guidance_scale=0.3,
+        leg_length=torch.tensor([[0.28, 0.28], [0.15, 0.215], [0.15, 0.15], [0.14, 0.14]]),
+        leg_action_second_difference=torch.tensor([[0.0] * 4, [1.0] * 4, [100.0] * 4, [100.0] * 4]),
+    )
+    torch.testing.assert_close(jump_tuck(state, {}), torch.tensor([0.0, 0.25, 1.0, 1.0]))
+    smooth = jump_air_leg_smoothness(state, {})
+    assert 0 == smooth[0] < smooth[1] < smooth[2] < 1
+    assert smooth[3] == 0
+
+
+def test_flat_landing_checks_rates_and_recovers_after_bounce(clearance_jump):
+    from wheelleg.jump import landing_rates_ok
+    from wheelleg.rewards import jump_fast_touchdown, jump_landing_recovery, jump_rebound
+
+    event = clearance_jump
+    rates_ok = landing_rates_ok(
+        torch.tensor([0.0, 0.25, 0.0]), torch.tensor([[0.0, 0.0], [0.0, 0.0], [0.0, 1.3]]), event.clearance_training
+    )
+    assert rates_ok.tolist() == [True, False, False]
+    for _ in range(3):
+        clearance_step(event, (0.28, 0.28))
+    clearance_step(event, (0.03, 0.03), vz=-4.0)
+    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, False), stable=False)
+    assert jump_fast_touchdown({"jump": event}, {}).item() == 1
+    for _ in range(110):
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), stable=bool(rates_ok[2]))
+        assert jump_fast_touchdown({"jump": event}, {}).item() == 0
+    assert not event.landing_paid.item() and event.stable_time.item() == 0
+    state = dict(
+        jump=event,
+        velocity_w=torch.tensor([[1.5, 0.0, 0.0]]),
+        angular_velocity=torch.zeros(1, 3),
+        roll=torch.zeros(1),
+        pitch=torch.zeros(1),
+        linear_error=torch.zeros(1),
+        wheel_contact=torch.ones(1, 2, dtype=torch.bool),
+    )
+    assert jump_landing_recovery(state, {}).item() == 0  # Moving at command speed is stable, not stopping.
+    state["linear_error"].fill_(-1.5)
+    assert jump_landing_recovery(state, {}).item() > 0.9
+    state["wheel_contact"].zero_()
+    state["velocity_w"][0, 2] = 1.0
+    assert jump_rebound(state, {}).item() == 1
+    clearance_step(event, (0.06, 0.06), vz=1.0)
+    for _ in range(100):
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+    assert event.landing_pulse.item() and not event.failure_paid.item()
