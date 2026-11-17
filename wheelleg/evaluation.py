@@ -87,7 +87,9 @@ def evaluation_cases(cfg: TrainingConfig) -> list[EvaluationCase]:
         else:
             vx = cfg.settings["commands"]["vx_range_m_s"]
             speeds = np.unique([0.0, *np.linspace(*vx, 3)])
-            heights = np.unique(np.linspace(*cfg.stage["height_range_m"], 5))
+            heights = cfg.stage.get("height_levels_m")
+            if heights is None:
+                heights = np.unique(np.linspace(*cfg.stage["height_range_m"], 5))
             for i, speed in enumerate(speeds):
                 cmd = (float(speed), 0.0, 0.0)
                 cases.append(EvaluationCase(f"flat_speed{i}_no_press", cmd, e["height_m"]))

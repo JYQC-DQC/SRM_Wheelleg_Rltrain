@@ -462,3 +462,33 @@ def test_flat_jump_uses_separate_takeoff_and_landing_deadlines(scenario, finishe
     assert event.failure_paid.item() != success
     assert event.elapsed.item() == pytest.approx(finished_at, abs=dt / 2)
     assert event.phase.item() == pytest.approx(1.0)  # Nominal Actor timing is not stretched.
+
+
+def test_staged_flat_samples_highest_open_level_more_often_but_keeps_all_lower_levels():
+    from wheelleg.evaluation import evaluation_cases
+
+    cfg = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    )
+    expected = [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40]
+    curriculum = JumpCurriculum(cfg.stage, "cpu", fresh_windows=True)
+    assert curriculum.levels.tolist() == pytest.approx(expected)
+    assert sorted({case.jump_height for case in evaluation_cases(cfg) if case.jump_count}) == pytest.approx(expected)
+    bins, _ = curriculum.sample(100)
+    assert (bins == 0).all()
+    torch.manual_seed(17)
+    assert cfg.stage["curriculum_min_events"] == 500
+    for cap in range(1, len(expected)):
+        previous = torch.full((499,), cap - 1)
+        curriculum.record(previous, torch.arange(499) < 349, cap)
+        assert curriculum.maximum_level == cap - 1  # No promotion before the 500th settled attempt.
+        curriculum.record(previous[:1], torch.ones(1, dtype=torch.bool), cap)
+        assert curriculum.maximum_level == cap  # Exactly 350/500 meets the 70% gate.
+        assert curriculum.latest_rate[cap - 1].item() == pytest.approx(0.70)
+        bins, heights = curriculum.sample(20_000)
+        frequencies = torch.bincount(bins, minlength=len(expected)).float() / len(bins)
+        assert frequencies[cap].item() == pytest.approx(0.60, abs=0.02)
+        assert frequencies[:cap].tolist() == pytest.approx([0.40 / cap] * cap, abs=0.02)
+        assert not frequencies[cap + 1 :].any()
+        torch.testing.assert_close(heights, curriculum.levels[bins])
+    assert heights.max().item() == pytest.approx(0.40)

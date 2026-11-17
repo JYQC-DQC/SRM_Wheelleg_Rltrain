@@ -1041,6 +1041,21 @@ def _validate_training(cfg: TrainingConfig) -> None:
             feasible = limit if feasible is None else min(feasible, limit)
         if heights is not None and (heights[0] <= 0 or heights[1] < heights[0]):
             raise ValueError("Jump height range must be positive and ordered")
+        if "height_levels_m" in cfg.stage or "highest_level_probability" in cfg.stage:
+            levels = cfg.stage.get("height_levels_m")
+            probability = cfg.stage.get("highest_level_probability")
+            if cfg.task != "p3-jump" or "moving_probability" not in cfg.stage:
+                raise ValueError("Explicit height levels and biased sampling apply only to staged p3-jump")
+            if (
+                not isinstance(levels, tuple)
+                or len(levels) < 2
+                or any(type(h) not in (float, int) or not isfinite(h) or h <= 0 for h in levels)
+                or any(b <= a for a, b in zip(levels, levels[1:]))
+                or heights != (levels[0], levels[-1])
+            ):
+                raise ValueError("jump.height_levels_m must increase strictly and match the height_range_m endpoints")
+            if type(probability) not in (float, int) or not 0.5 < probability < 1:
+                raise ValueError("jump.highest_level_probability must be in (0.5, 1) to retain lower-level samples")
         if cfg.task != "p3-tunnel" and heights is not None and feasible is not None and heights[1] > feasible:
             raise ValueError("Jump target exceeds measured feasible_height_m")
         if cfg.task == "p3-tunnel":

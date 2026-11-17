@@ -149,6 +149,8 @@ class JumpCurriculum:
     ):
         self.settings = settings
         self.fresh_windows = fresh_windows
+        if levels is None:
+            levels = settings.get("height_levels_m")
         self.levels = (
             torch.linspace(*settings["height_range_m"], 5, device=device)
             if levels is None
@@ -164,7 +166,13 @@ class JumpCurriculum:
         if "curriculum_demote_rate" in self.settings:
             bins = torch.full((count,), self.maximum_level, dtype=torch.long, device=self.levels.device)
             return bins, self.levels[bins]
-        bins = torch.randint(self.maximum_level + 1, (count,), device=self.levels.device)
+        highest_probability = self.settings.get("highest_level_probability")
+        if highest_probability is None or self.maximum_level == 0:
+            bins = torch.randint(self.maximum_level + 1, (count,), device=self.levels.device)
+        else:
+            lower = torch.randint(self.maximum_level, (count,), device=self.levels.device)
+            highest = torch.rand(count, device=self.levels.device) < highest_probability
+            bins = torch.where(highest, self.maximum_level, lower)
         return bins, self.levels[bins]
 
     def record(self, bins: torch.Tensor, successful: torch.Tensor, iteration: float) -> None:
