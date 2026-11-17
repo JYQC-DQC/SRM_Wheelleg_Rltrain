@@ -383,3 +383,54 @@ def test_flat_overshoot_does_not_reduce_scoring_but_remains_measurable():
     assert jump_height_error(rise, target, {**stage, "height_is_minimum": False})[-1] > 0
     event.landing_pulse[-1] = False
     assert jump_apex({"jump": event}, {})[-1] == 0  # Going high alone never replaces a stable landing.
+
+
+@pytest.mark.parametrize(
+    "scenario,expected",
+    [("recovers_after_old_deadline", True), ("repeated_bounce", False), ("no_touchdown", False)],
+)
+def test_flat_recovery_grace_does_not_renew_on_bounce(scenario, expected):
+    cfg = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    )
+    event = JumpEvent(cfg.stage, 1, "cpu")
+    event.reset(torch.tensor([0]))
+    event.remaining.fill_(1)
+    yes = torch.tensor([True])
+    no = ~yes
+    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), yes)
+    dt = 0.01
+    for step in range(1, 600):
+        t = step * dt
+        if t < 0.30:
+            contact, z, vz = (True, True), 0.30, 0.0
+        elif t < 0.70 or scenario == "no_touchdown":
+            contact, z, vz = (False, False), 0.36, 0.5
+        elif step == 70:
+            contact, z, vz = (True, False), 0.31, -0.4  # Deadline must start at the first wheel.
+        elif step == 71 or (scenario == "recovers_after_old_deadline" and t >= 1.75):
+            contact, z, vz = (True, True), 0.30, 0.0
+        elif scenario == "repeated_bounce" and (step // 10) % 2:
+            contact, z, vz = (True, True), 0.30, 0.0
+        else:
+            contact, z, vz = (False, False), 0.32, 0.0
+        event.update(
+            dt,
+            torch.tensor([5.0 + t]),
+            torch.tensor([z]),
+            torch.tensor([vz]),
+            torch.tensor([contact]),
+            yes,
+            yes,
+            no,
+            wheel_clearance=torch.full((1, 2), z - 0.30),
+            require_height=no,
+        )
+        if event.finished.item():
+            break
+    assert event.finished.item()
+    assert event.landing_paid.item() == expected
+    assert event.failure_paid.item() != expected
+    expected_time = {"recovers_after_old_deadline": 2.74, "repeated_bounce": 3.20, "no_touchdown": 1.20}[scenario]
+    assert event.elapsed.item() == pytest.approx(expected_time, abs=dt / 2)
+    assert event.phase.item() == pytest.approx(1.0)  # Nominal Actor timing is not stretched.

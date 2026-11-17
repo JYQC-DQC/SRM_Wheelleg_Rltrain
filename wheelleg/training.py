@@ -1005,6 +1005,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "takeoff_clearance_m",
             "takeoff_upward_velocity_m_s",
             "height_overshoot_tolerance_m",
+            "landing_recovery_grace_s",
         ):
             if key in cfg.stage:
                 value = cfg.stage[key]

@@ -21,6 +21,7 @@ class JumpEvent:
 
     def __init__(self, settings: dict, count: int, device: str):
         self.settings, self.device = settings, device
+        self.recovery_grace_s = settings.get("landing_recovery_grace_s", 0.0)
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.remaining = torch.zeros(count, dtype=torch.long, device=device)
         self.elapsed = torch.zeros(count, device=device)
@@ -196,8 +197,17 @@ class JumpEvent:
         self.landing_pulse = landing_ok & (self.stable_time >= self.settings["landing_stable_s"] - dt / 2)
         self.landing_pulse &= ~self.landing_paid
         self.landing_paid |= self.landing_pulse
-        # Keep the event alive through the required post-landing validation window.
-        expired = self.elapsed >= self.settings["event_duration_s"] + self.settings["landing_stable_s"]
+        if self.recovery_grace_s:
+            # Bounce recovery is anchored to the first touch, not renewed by later contacts.
+            first_touch_at = torch.where(self.touchdown_time >= 0, self.touchdown_time, self.elapsed[:, None]).amin(-1)
+            deadline = torch.where(
+                self.first_touch,
+                first_touch_at + self.recovery_grace_s + self.settings["landing_stable_s"],
+                self.settings["event_duration_s"],
+            )
+            expired = self.elapsed >= deadline - dt / 2
+        else:
+            expired = self.elapsed >= self.settings["event_duration_s"] + self.settings["landing_stable_s"]
         self.failure_pulse = self.active & (expired | self.invalid) & ~self.landing_pulse & ~self.failure_paid
         self.failure_paid |= self.failure_pulse
         finished = self.active & (self.failure_pulse | self.landing_pulse)
@@ -233,7 +243,7 @@ class JumpEvent:
         return average.clamp(0, 1) * pay[:, None]
 
     def features(self) -> torch.Tensor:
-        window = self.settings["event_duration_s"] + self.settings["landing_stable_s"]
+        window = self.settings["event_duration_s"] + self.settings["landing_stable_s"] + self.recovery_grace_s
         quality = self.quality_sum / self.quality_time.clamp_min(1e-6)[:, None]
         return torch.nan_to_num(
             torch.cat(

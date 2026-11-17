@@ -205,6 +205,7 @@ stages:
   jump:
     moving_probability: 0.5
     height_is_minimum: true  # For scoring and promotion; keep overshoot as an evaluation diagnostic.
+    landing_recovery_grace_s: 1.5  # After first touch, before the continuous stability window must start.
     moving_takeoff_min_fraction: 0.7  # Count a moving jump only if actual vx at takeoff meets this fraction.
     event_duration_s: 1.2
     takeoff_confirmation_s: 0.03
