@@ -279,10 +279,10 @@ stages:
       approach_distance_m: null
       trigger_distance_m: null
       height_curriculum_m:
-      - 0.108
-      - 0.162
-      - 0.216
-      - 0.270
+      - 0.054
+      - 0.1215
+      - 0.189
+      - 0.2565
       - 0.324
       clearance_margin_m: 0.03
       landing_margin_m: 0.05
@@ -307,3 +307,4 @@ stages:
     curriculum_demote_rate: 0.2
     height_tolerance_m: 0.01
 guide_version: '2.2'
+

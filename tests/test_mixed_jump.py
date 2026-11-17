@@ -113,7 +113,7 @@ def test_tunnel_curriculum_strict_thresholds_stale_episodes_and_resume():
     torch.testing.assert_close(restored.latest_rate, curriculum.latest_rate)
 
 
-@pytest.mark.parametrize("level, top", [(1, 0.108), (2, 0.162), (3, 0.216), (4, 0.270), (5, 0.324)])
+@pytest.mark.parametrize("level, top", [(1, 0.054), (2, 0.1215), (3, 0.189), (4, 0.2565), (5, 0.324)])
 def test_generated_tunnel_height_and_dimensions(level, top):
     model = mujoco.MjModel.from_xml_path(str(ROOT / f"assets/tunnel/tunnel_level{level}.xml"))
     beam = model.geom("TunnelBeam")

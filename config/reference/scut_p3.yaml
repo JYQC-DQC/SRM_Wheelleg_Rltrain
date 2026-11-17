@@ -305,10 +305,10 @@ stages:
       approach_distance_m: 2.5
       trigger_distance_m: 1.1
       height_curriculum_m:
-      - 0.108
-      - 0.162
-      - 0.216
-      - 0.27
+      - 0.054
+      - 0.1215
+      - 0.189
+      - 0.2565
       - 0.324
       clearance_margin_m: 0.03
       landing_margin_m: 0.05
@@ -336,3 +336,4 @@ stages:
     height_tolerance_m: 0.01
     simulation_height_limit_m: 0.4
 guide_version: '2.2'
+
