@@ -133,7 +133,7 @@ class JumpSim(WheelLegSim):
         if cfg.run.get("task") != "p3-jump" or cfg.policy["policy_family"] != "p3":
             raise ValueError("Use a p3-jump checkpoint with its matching saved params/")
         self.stage = cfg.policy["stages"]["jump"]
-        self.jump = JumpEvent(self.stage, 1, "cpu", gravity=self.cfg.shared["gravity_m_s2"])
+        self.jump = JumpEvent(self.stage, 1, "cpu")
         self.traversal = TunnelTraversal(1, "cpu")
         self.test_site = None
         self.ids = torch.tensor([0])

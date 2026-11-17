@@ -146,7 +146,7 @@ class WheelLegEnv(DirectRLEnv):
             if self.family == "p1" and self.stair_course is None
             else None
         )
-        self.jump = JumpEvent(t.stage, n, d, gravity=t.shared["gravity_m_s2"]) if self.family == "p3" else None
+        self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         if self.jump is not None and self.jump.clearance_training is not None:
             self.reward_weights.update(self.jump.clearance_training["reward_overrides"])
         levels = (

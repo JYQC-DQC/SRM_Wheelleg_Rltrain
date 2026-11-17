@@ -207,7 +207,7 @@ stages:
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
     clearance_jump:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
-      tuck_end_vz_m_s: 0.25  # Allow a little past the apex, then end tuck guidance for this attempt.
+      tuck_end_vz_m_s: 0.25  # At this downward speed, switch directly from tuck to landing extension.
       stable_vz_m_s: 0.20
       stable_roll_pitch_rate_rad_s: 1.0
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
@@ -240,7 +240,6 @@ stages:
     push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
     tuck_leg_length_m: 0.15
     landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.
-    landing_prepare_time_s: 0.1
     landing_stable_s: 1.0
     max_touchdown_difference_s: 0.05
     apex_sigma: 0.0025

@@ -576,15 +576,18 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
         refs = clearance_step(event, (0.31, 0.30))
     assert refs["tuck"].item() and not refs["prepare"].item()
     assert refs["takeoff_velocity"].item() == event.clearance_training["takeoff_velocity_hint_m_s"]
-    refs = clearance_step(event, (0.29, 0.30), vz=-0.3)
+    refs = clearance_step(event, (0.29, 0.30), vz=-0.10)
+    assert refs["tuck"].item() and not refs["prepare"].item()
+    # Still far above ground, but already descending: start landing extension immediately.
+    refs = clearance_step(event, (0.29, 0.30), vz=-0.25)
+    assert not refs["tuck"].item() and refs["prepare"].item()
+    for wheel, vz in (((0.08, 0.09), -1.2), ((0.30, 0.31), 0.1)):
+        refs = clearance_step(event, wheel, vz=vz)
+        assert not refs["tuck"].item() and refs["prepare"].item()
+    refs = clearance_step(event, (0.0, 0.01), vz=-0.5, contact=(True, False))
     assert not refs["tuck"].item() and not refs["prepare"].item()
-    refs = clearance_step(event, (0.08, 0.09), vz=-1.2)
-    assert not refs["tuck"].item() and refs["prepare"].item()
-    # Pulling the legs back up would cross the old ballistic threshold in the opposite direction.
-    refs = clearance_step(event, (0.29, 0.30), vz=-1.2)
-    assert not refs["tuck"].item() and refs["prepare"].item()
     event.reset(torch.arange(1))
-    assert not event.preparing.item() and not event.tuck_ended.item()
+    assert not event.preparing.item()
 
 
 def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):

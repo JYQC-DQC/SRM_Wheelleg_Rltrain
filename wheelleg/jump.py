@@ -25,11 +25,10 @@ def landing_rates_ok(vz: torch.Tensor, roll_pitch_rate: torch.Tensor, settings: 
 class JumpEvent:
     """Contact-driven phases; apex/landing pulses can only occur once per event."""
 
-    def __init__(self, settings: dict, count: int, device: str, *, gravity: float = 9.81):
+    def __init__(self, settings: dict, count: int, device: str):
         self.settings, self.device = settings, device
         self.landing_settle_timeout_s = settings.get("landing_settle_timeout_s")
         self.clearance_training = settings.get("clearance_jump")
-        self.gravity = gravity
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.remaining = torch.zeros(count, dtype=torch.long, device=device)
         self.elapsed = torch.zeros(count, device=device)
@@ -38,7 +37,6 @@ class JumpEvent:
         self.start_z = torch.zeros_like(self.elapsed)
         self.apex_z = torch.zeros_like(self.elapsed)
         self.peak_wheel_clearance = torch.zeros_like(self.elapsed)
-        self.tuck_ended = self.active.clone()
         self.preparing = self.active.clone()
         self.height_progress = torch.zeros_like(self.elapsed)
         self.air_time = torch.zeros_like(self.elapsed)
@@ -78,7 +76,6 @@ class JumpEvent:
             self.touchdown_pulse,
             self.finished,
             self.first_touch,
-            self.tuck_ended,
             self.preparing,
             self.quality_active,
             self.failure_pulse,
@@ -138,7 +135,6 @@ class JumpEvent:
         ):
             value[ids] = False
         self.first_touch[ids] = False
-        self.tuck_ended[ids] = False
         self.preparing[ids] = False
         self.peak_wheel_clearance[ids] = 0
         self.last_air_vz[ids] = 0
@@ -202,10 +198,8 @@ class JumpEvent:
                 torch.where(airborne, torch.maximum(self.peak_wheel_clearance, clearance), self.peak_wheel_clearance)
             )
             apex_sample &= no_contact & ~self.first_touch
-            self.tuck_ended |= airborne & (vz < -self.clearance_training["tuck_end_vz_m_s"])
-            # Wheel clearance changes when the policy moves its legs. Do not switch back to tuck after committing.
-            self.preparing |= airborne & self._near_touchdown(vz, clearance, self.gravity)
-            self.tuck_ended |= self.preparing
+            # Give the legs the descent to extend; wheel clearance depends on the action and can oscillate.
+            self.preparing |= airborne & (vz <= -self.clearance_training["tuck_end_vz_m_s"])
         self.apex_z = torch.where(apex_sample, torch.maximum(self.apex_z, z), self.apex_z)
         self.invalid |= self.active & obstacle_contact
         if failed is not None:
@@ -307,11 +301,7 @@ class JumpEvent:
                     (self.scored_height / self.height.clamp_min(0.01))[:, None],
                     (self.stable_time / self.settings["landing_stable_s"])[:, None],
                     (self.air_time / window)[:, None],
-                    (
-                        self.apex_paid.float()
-                        if self.clearance_training is None
-                        else 0.5 * (self.tuck_ended.float() + self.preparing.float())
-                    )[:, None],
+                    (self.apex_paid.float() if self.clearance_training is None else self.preparing.float())[:, None],
                     self.landing_paid[:, None],
                     self.failure_paid[:, None],
                     quality,
@@ -351,7 +341,7 @@ class JumpEvent:
             push = before_takeoff
             flight &= ~self.first_touch
             prepare = flight & self.preparing
-            tuck = flight & ~self.tuck_ended
+            tuck = flight & ~self.preparing
             takeoff_velocity = torch.full_like(self.height, self.clearance_training["takeoff_velocity_hint_m_s"])
         return {
             "crouch": crouch,
