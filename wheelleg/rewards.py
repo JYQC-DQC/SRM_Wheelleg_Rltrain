@@ -167,7 +167,12 @@ def jump_apex(s, p):
     event = s["jump"]
     error = jump_height_error(event.scored_height, event.height, event.settings)
     clean_landing = event.landing_pulse & ~event.invalid & ~event.failure_paid
-    return torch.exp(-error.square() / event.settings["apex_sigma"]) * clean_landing
+    score = torch.exp(-error.square() / event.settings["apex_sigma"])
+    if event.settings.get("body_wheel_jump") is not None:
+        target = (event.height - event.settings["height_tolerance_m"]).clamp_min(torch.finfo(event.height.dtype).eps)
+        height_fraction = (event.scored_height / target).clamp(0, 1)
+        score = torch.minimum(score, height_fraction) * event.apex_pose_quality
+    return score * clean_landing
 
 
 def jump_height_progress(s, p):
@@ -177,10 +182,26 @@ def jump_height_progress(s, p):
 def jump_takeoff_response(s, p):
     event = s["jump"]
     speed_ok = s["jump_vx_qualified"]
-    height_ok = jump_height_error(event.scored_height, event.height, event.settings) <= 1e-6
-    success = event.landing_pulse & event.took_off & ~event.invalid & ~event.failure_paid & speed_ok & height_ok
+    target_ok = (
+        jump_height_error(event.scored_height, event.height, event.settings) <= 1e-6
+        if event.settings.get("body_wheel_jump") is None
+        else event.target_reached
+    )
+    success = event.landing_pulse & event.took_off & ~event.invalid & ~event.failure_paid & speed_ok & target_ok
     latency = event.takeoff_latency_s / event.clearance_training["takeoff_response_scale_s"]
     return torch.exp(-latency.square()) * success
+
+
+def jump_settle_response(s, p):
+    event = s["jump"]
+    profile = event.settings.get("body_wheel_jump")
+    if profile is None:
+        return torch.zeros_like(event.height)
+    clean = event.landing_pulse & event.took_off & event.first_touch & ~event.invalid & ~event.failure_paid
+    success = clean & s["jump_vx_qualified"] & event.target_reached
+    # Only the time to recover, not the compulsory hold, should reduce the bonus.
+    recovery_s = (event.time_since_first_touch() - event.settings["landing_stable_s"]).clamp_min(0)
+    return torch.exp(-(recovery_s / profile["settle_response_scale_s"]).square()) * success
 
 
 def jump_landing(s, p):
@@ -324,6 +345,7 @@ TERMS = {
         jump_apex,
         jump_height_progress,
         jump_takeoff_response,
+        jump_settle_response,
         jump_landing,
         jump_flight,
         jump_crouch,
@@ -348,6 +370,7 @@ EVENT_TERMS = frozenset(
         "jump_apex",
         "jump_height_progress",  # Increment of normalized apex, not a rate per second.
         "jump_takeoff_response",
+        "jump_settle_response",
         "jump_landing",
         "jump_impact",
         "jump_fast_touchdown",
