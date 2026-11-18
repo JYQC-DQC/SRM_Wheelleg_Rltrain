@@ -952,9 +952,10 @@ class WheelLegEnv(DirectRLEnv):
                 actual_vx = s["linear_error"] + s["tracked_command"][:, 0]
                 qualified = (target_vx <= 0) | (actual_vx >= takeoff_min_fraction * target_vx)
                 self.jump_vx_qualified = torch.where(takeoff, qualified, self.jump_vx_qualified)
-                # Freeze the shaping scale at liftoff; normal crouch speed loss is allowed.
-                full_credit_vx = (takeoff_min_fraction * target_vx).clamp_min(1e-6)
-                progress_scale = torch.where(target_vx > 0, (actual_vx / full_credit_vx).clamp(0, 1), 1.0)
+                # Full height-progress credit allows 10% speed loss, independently of pass/fail.
+                full_credit_vx = (0.90 * target_vx).clamp_min(1e-6)
+                speed_fraction = (actual_vx / full_credit_vx).clamp(0, 1)
+                progress_scale = torch.where(target_vx > 0, speed_fraction.square(), 1.0)
                 self.jump_progress_vx_scale = torch.where(takeoff, progress_scale, self.jump_progress_vx_scale)
             self.jump.fail_pending(terminated | timeout | obstacle_hit)
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
