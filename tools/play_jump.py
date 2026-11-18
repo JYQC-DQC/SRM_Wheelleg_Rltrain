@@ -546,10 +546,10 @@ def run_viewer(player: JumpPlayer, panel: bool) -> None:
         if left or right:
             action = mujoco.mjtMouse.mjMOUSE_MOVE_V if right else mujoco.mjtMouse.mjMOUSE_ROTATE_V
             height = max(glfw.get_window_size(win)[1], 1)
-            mujoco.mjv_moveCamera(sim.model, action, dx / height, dy / height, scene, camera)
+            mujoco.mjv_moveCamera(sim.model, action, dx / height, dy / height, camera)
 
     def scroll(win, xoffset, yoffset):
-        mujoco.mjv_moveCamera(sim.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * yoffset, scene, camera)
+        mujoco.mjv_moveCamera(sim.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * yoffset, camera)
 
     glfw.set_key_callback(window, key_callback)
     glfw.set_cursor_pos_callback(window, cursor)
