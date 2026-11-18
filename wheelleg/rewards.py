@@ -199,9 +199,9 @@ def jump_settle_response(s, p):
         return torch.zeros_like(event.height)
     clean = event.landing_pulse & event.took_off & event.first_touch & ~event.invalid & ~event.failure_paid
     success = clean & s["jump_vx_qualified"] & event.target_reached
-    # Only the time to recover, not the compulsory hold, should reduce the bonus.
-    recovery_s = (event.time_since_first_touch() - event.settings["landing_stable_s"]).clamp_min(0)
-    return torch.exp(-(recovery_s / profile["settle_response_scale_s"]).square()) * success
+    # Start at first wheel contact; bounces reset the stable hold, not this clock.
+    total_s = event.time_since_first_touch()
+    return torch.exp(-(total_s / profile["settle_response_scale_s"]).square()) * success
 
 
 def jump_landing(s, p):

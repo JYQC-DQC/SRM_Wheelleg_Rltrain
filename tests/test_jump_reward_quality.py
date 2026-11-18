@@ -24,7 +24,7 @@ def test_apex_combines_smooth_height_score_with_physical_cap_and_pose():
     torch.testing.assert_close(jump_apex(state, {}), torch.tensor([0.0, 0.3, exp(-0.64), 0.4, 0.0, 0.0]))
 
 
-def test_response_terms_use_full_target_and_settle_bonus_excludes_stable_hold():
+def test_response_terms_use_full_target_and_settle_bonus_includes_stable_hold():
     # The first three attempts succeed with progressively longer recoveries. The remaining attempts
     # miss the combined target, moving speed, clean landing, failure latch, or settlement pulse.
     event = SimpleNamespace(
@@ -46,7 +46,7 @@ def test_response_terms_use_full_target_and_settle_bonus_excludes_stable_hold():
     )
 
     weight = 0.20
-    expected = weight * torch.tensor([1.0, exp(-((0.1 / 0.6) ** 2)), exp(-1.0)] + [0.0] * 5)
+    expected = weight * torch.tensor([exp(-((t / 0.6) ** 2)) for t in (0.99, 1.10, 1.60)] + [0.0] * 5)
     # Event rewards pay their full configured amount, independent of dt or the continuous-term clip.
     payout = compute_rewards(state, {}, {"jump_settle_response": weight}, 0.01, 0.001)
     torch.testing.assert_close(payout["jump_settle_response"], expected)
