@@ -198,10 +198,9 @@ def jump_settle_response(s, p):
     if profile is None:
         return torch.zeros_like(event.height)
     clean = event.landing_pulse & event.took_off & event.first_touch & ~event.invalid & ~event.failure_paid
-    success = clean & s["jump_vx_qualified"] & event.target_reached
     # Start at first wheel contact; bounces reset the stable hold, not this clock.
     total_s = event.time_since_first_touch()
-    return torch.exp(-(total_s / profile["settle_response_scale_s"]).square()) * success
+    return torch.exp(-(total_s / profile["settle_response_scale_s"]).square()) * clean
 
 
 def jump_landing(s, p):

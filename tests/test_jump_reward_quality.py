@@ -24,11 +24,11 @@ def test_apex_combines_smooth_height_score_with_physical_cap_and_pose():
     torch.testing.assert_close(jump_apex(state, {}), torch.tensor([0.0, 0.3, exp(-0.64), 0.4, 0.0, 0.0]))
 
 
-def test_response_terms_use_full_target_and_settle_bonus_includes_stable_hold():
+def test_settle_bonus_is_for_clean_landing_independent_of_height_and_takeoff_speed():
     # The first three attempts succeed with progressively longer recoveries. The remaining attempts
     # miss the combined target, moving speed, clean landing, failure latch, or settlement pulse.
     event = SimpleNamespace(
-        settings=dict(landing_stable_s=1.0, body_wheel_jump={"settle_response_scale_s": 0.6}),
+        settings=dict(landing_stable_s=0.8, body_wheel_jump={"settle_response_scale_s": 1.4}),
         clearance_training={"takeoff_response_scale_s": 0.6},
         height=torch.full((8,), 0.04),
         target_reached=torch.tensor([True, True, True, False, True, True, True, True]),
@@ -38,15 +38,15 @@ def test_response_terms_use_full_target_and_settle_bonus_includes_stable_hold():
         invalid=torch.tensor([False, False, False, False, False, True, False, False]),
         failure_paid=torch.tensor([False, False, False, False, False, False, True, False]),
         takeoff_latency_s=torch.full((8,), 0.2),
-        time_since_first_touch=lambda: torch.tensor([0.99, 1.10, 1.60, 0.99, 0.99, 0.99, 0.99, 2.0]),
+        time_since_first_touch=lambda: torch.tensor([0.80, 1.20, 2.00, 0.80, 0.80, 0.80, 0.80, 2.0]),
     )
     state = {"jump": event, "jump_vx_qualified": torch.tensor([True, True, True, True, False, True, True, True])}
     torch.testing.assert_close(
         jump_takeoff_response(state, {}), torch.tensor([exp(-((0.2 / 0.6) ** 2))] * 3 + [0.0] * 5)
     )
 
-    weight = 0.20
-    expected = weight * torch.tensor([exp(-((t / 0.6) ** 2)) for t in (0.99, 1.10, 1.60)] + [0.0] * 5)
+    weight = 0.35
+    expected = weight * torch.tensor([exp(-((t / 1.4) ** 2)) for t in (0.80, 1.20, 2.00, 0.80, 0.80)] + [0.0] * 3)
     # Event rewards pay their full configured amount, independent of dt or the continuous-term clip.
     payout = compute_rewards(state, {}, {"jump_settle_response": weight}, 0.01, 0.001)
     torch.testing.assert_close(payout["jump_settle_response"], expected)

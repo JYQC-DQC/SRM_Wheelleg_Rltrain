@@ -411,7 +411,7 @@ def test_flat_clearance_awards_partial_undershoot_but_does_not_penalize_overshoo
     "scenario,finished_at,success",
     [
         ("no_takeoff", 1.20, False),
-        ("long_flight_then_recovers", 9.24, True),
+        ("long_flight_then_recovers", 9.04, True),
         ("repeated_bounce", 5.70, False),
         ("no_touch_before_episode_ends", 8.00, False),
     ],
@@ -585,7 +585,7 @@ def test_takeoff_response_latches_latency_and_only_pays_on_full_success(clearanc
         clearance_step(event, (peak, peak))
     assert event.takeoff_latency_s.item() == pytest.approx(0.20)
     assert bonus() == 0  # Not paid in the air, even if the target was met.
-    for step in range(100):
+    for step in range(80):
         clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), failed=body_hit and step == 0)
     assert bonus() == pytest.approx(0.20 * exp(-((0.2 / 0.6) ** 2)) if paid else 0.0)
     clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
@@ -760,6 +760,8 @@ def test_flat_landing_checks_rates_and_recovers_after_bounce(clearance_jump):
     state["velocity_w"][0, 2] = 1.0
     assert jump_rebound(state, {}).item() == 1
     clearance_step(event, (0.06, 0.06), vz=1.0)
-    for _ in range(100):
+    for _ in range(79):
         clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+        assert not event.landing_pulse.item()
+    clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
     assert event.landing_pulse.item() and not event.failure_paid.item()
