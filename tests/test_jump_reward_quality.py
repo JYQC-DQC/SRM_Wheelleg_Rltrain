@@ -21,6 +21,21 @@ def test_runup_uses_ramped_command_and_skips_unsupported_or_post_press_samples()
     assert not negative[1:].any()
 
 
+def test_symmetric_runup_replaces_both_terms_and_uses_even_tiny_ramped_commands():
+    from wheelleg.rewards import runup_velocity_terms
+
+    positive = torch.tensor([.01] * 7)
+    ordinary_error = torch.tensor([-.001] * 7)
+    out_pos, out_err, penalty = runup_velocity_terms(
+        torch.tensor([True] * 5 + [False] * 2), torch.tensor([.77, .43, 1.41, 0., 3., 0., 2.]),
+        torch.tensor([.6, .6, 2., .02, 3., 0., 3.]), positive, ordinary_error, .01, 2.,
+    )
+    assert not out_pos[:5].any() and not out_err[:5].any()
+    torch.testing.assert_close(penalty, -.02 * torch.tensor([.17, .17, .59, .02, 0., 0., 0.]).square())
+    torch.testing.assert_close(out_pos[5:], positive[5:])
+    torch.testing.assert_close(out_err[5:], ordinary_error[5:])
+
+
 def test_adaptive_lr_limit_applies_to_each_optimizer_step_and_scheduler_feedback():
     from wheelleg.adaptive_lr import install_adaptive_lr_limit
 

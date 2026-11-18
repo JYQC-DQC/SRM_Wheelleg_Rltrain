@@ -15,10 +15,15 @@ class AirRetractionTracker:
         self._peak = torch.zeros(num_envs, 2, device=device, dtype=dtype)
         self._trough = torch.zeros_like(self._peak)
         self._active = torch.zeros(num_envs, device=device, dtype=torch.bool)
+        # Both diagnostics are [environment, leg]; the fourth-excursion mask is a one-frame pulse.
+        self.excursion_count = torch.zeros_like(self._peak, dtype=torch.long)
+        self.fourth_excursion = torch.zeros_like(self._peak, dtype=torch.bool)
 
     def reset(self, ids: torch.Tensor) -> None:
-        """Use the next eligible frame as the baseline for just these environments."""
+        """Start a new jump and take the next eligible frame as its baseline."""
         self._active[ids] = False
+        self.excursion_count[ids] = 0
+        self.fourth_excursion[ids] = False
 
     @torch.no_grad()
     def update(self, lengths_m: torch.Tensor, eligible: torch.Tensor) -> torch.Tensor:
@@ -34,7 +39,11 @@ class AirRetractionTracker:
         # A fall back to an already charged trough contributes nothing.
         previous, current = peak - old_trough, peak - trough
         # Account for float32 cancellation when e.g. 0.300 - 0.295 should equal the tolerance.
-        delta = torch.where(current > threshold, current, 0.0) - torch.where(previous > threshold, previous, 0.0)
+        previous_qualified, qualified = previous > threshold, current > threshold
+        delta = torch.where(qualified, current, 0.0) - torch.where(previous_qualified, previous, 0.0)
+        new_excursion = eligible[:, None] & qualified & ~previous_qualified
+        self.excursion_count.add_(new_excursion)
+        self.fourth_excursion.copy_(new_excursion & (self.excursion_count == 4))
         self._peak.copy_(peak)
         self._trough.copy_(trough)
         self._active.copy_(eligible)

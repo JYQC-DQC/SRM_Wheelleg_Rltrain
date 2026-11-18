@@ -77,7 +77,7 @@ training:
     height_duration_s:
     - 2.0
     - 6.0
-    vx_range_m_s: [0.6, 2.0]
+    vx_range_m_s: [0.6, 3.0]
     wz_range_rad_s:
     - 0.0
     - 0.0
@@ -206,9 +206,7 @@ stages:
   jump:
     moving_probability: 0.5
     runup_tracking:
-      linear_share: 0.25  # Share of existing +1/s tracking budget; no additional standing bonus.
-      underspeed_deadband_m_s: 0.15
-      underspeed_cost: 0.15  # Per second per squared m/s beyond the deadband.
+      squared_error_cost: 2.0  # Per second per squared m/s; replaces both ordinary forward terms on support before press.
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
     body_wheel_jump:
       ppo_update:
@@ -231,6 +229,8 @@ stages:
         hold_cost_per_s: 1.0
         retract_tolerance_m: 0.005
         retract_cost_per_m: 5.0  # 10 cm mean qualifying excursion costs one full +0.5 height-progress award.
+        retract_multipliers: [1.0, 1.75, 2.5]
+        retract_fourth_cost: 0.5  # Once per leg on excursion four; average over both legs.
     clearance_jump:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.

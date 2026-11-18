@@ -224,9 +224,11 @@ def test_tunnel_roof_cannot_be_reported_as_success(playground):
     assert sim.jump_result.startswith("failed")
 
 
-@pytest.mark.parametrize("values", [(float("nan"), 0.0, 0.0), (0.2, 3.0, 0.0), (0.2, 0.0, float("inf"))])
+@pytest.mark.parametrize("values", [(float("nan"), 0.0, 0.0), (0.2, 3.01, 0.0), (0.2, 0.0, float("inf"))])
 def test_invalid_operator_targets_fail_at_input_boundary(playground, values):
     sim, sites, p = playground
     player = JumpPlayer(sim, sites, p["controls"])
+    player.set_targets(0.2, 3.0, 0.0)
+    assert player.target[0] == 3.0
     with pytest.raises(ValueError):
         player.set_targets(*values)

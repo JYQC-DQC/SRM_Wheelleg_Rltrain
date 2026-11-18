@@ -23,6 +23,16 @@ def runup_tracking(command, error, supported_before_press, ordinary, weight, dt,
     return torch.where(eligible, positive, ordinary), torch.where(eligible, penalty, 0.0)
 
 
+def runup_velocity_terms(eligible, actual_vx, ramped_vx, ordinary_positive, ordinary_error, dt, cost):
+    """Replace, rather than stack, forward tracking terms during a supported moving run-up."""
+    penalty = -cost * (actual_vx - ramped_vx).square() * dt
+    return (
+        torch.where(eligible, 0.0, ordinary_positive),
+        torch.where(eligible, 0.0, ordinary_error),
+        torch.where(eligible, penalty, 0.0),
+    )
+
+
 def track_ang_vel(s, p):
     return torch.exp(-s["angular_error"].square() / p["angular_sigma"]) * s["tracking_mask"] * s["height_gate"]
 

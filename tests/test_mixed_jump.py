@@ -201,7 +201,7 @@ def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
     commands.step(30.0, torch.zeros(64, dtype=torch.bool))
     torch.testing.assert_close(commands.value, target)
     flat_cases = evaluation_cases(flat)
-    assert sorted({case.command[0] for case in flat_cases if case.jump_count}) == pytest.approx([0.0, 0.6, 1.3, 2.0])
+    assert sorted({case.command[0] for case in flat_cases if case.jump_count}) == pytest.approx([0.0, 0.6, 1.8, 3.0])
     assert sum(case.jump_count == 0 for case in flat_cases) == 4
     tunnel = load_training("p3-tunnel", robot, policy)
     commands = Commands(tunnel, 64, "cpu")
@@ -559,6 +559,67 @@ def test_air_fold_only_credits_safe_apex_and_stops_on_first_touch(clearance_jump
     assert e.first_touch.item() and e.air_fold_cost.item() == 0 and e.air_retract_cost.item() == 0
     clearance_step(e, (0.32, 0.31), lengths=(0.08, 0.08))  # A bounce does not re-arm either cost.
     assert e.air_fold_cost.item() == 0 and e.scored_height.item() == pytest.approx(0.30)
+
+
+@pytest.mark.parametrize(
+    ("guard_overrides", "second", "later", "fourth_cost"),
+    [
+        pytest.param({}, 1.0, 1.0, 0.0, id="legacy"),
+        pytest.param(dict(retract_multipliers=[1.0, 1.75, 2.5]), 1.75, 2.5, 0.5, id="default-fourth-cost"),
+        pytest.param(
+            dict(retract_multipliers=[1.0, 1.75, 2.5], retract_fourth_cost=0.8), 1.75, 2.5, 0.8, id="custom-fourth-cost"
+        ),
+    ],
+)
+def test_air_retraction_cost_per_leg_until_first_touch(clearance_jump, guard_overrides, second, later, fourth_cost):
+    body_wheel = dict(clearance_jump.body_wheel)
+    guard = dict(body_wheel["air_leg_guard"])
+    guard.pop("retract_multipliers", None)
+    guard.pop("retract_fourth_cost", None)
+    guard.update(guard_overrides)
+    body_wheel["air_leg_guard"] = guard
+    settings = dict(clearance_jump.settings, body_wheel_jump=body_wheel, jump_count_probabilities=[0.0, 0.0, 1.0])
+    e = JumpEvent(settings, 1, "cpu")
+    e.reset(torch.arange(1))
+    trigger_args = (torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), torch.tensor([0.25]))
+    e.trigger(*trigger_args, body_clearance_m=torch.tensor([0.10]))
+
+    for length in (0.25, 0.25, 0.25, 0.24):
+        clearance_step(e, (0.30, 0.30), lengths=(length, length))
+        assert e.air_retract_cost.item() == 0  # Ascent is not eligible.
+
+    per_m = guard["retract_cost_per_m"]
+    for lengths, weighted_mean_m, fixed_cost in [
+        ((0.25, 0.25), 0.0, 0.0),
+        ((0.24, 0.25), 0.005, 0.0),
+        ((0.25, 0.25), 0.0, 0.0),
+        ((0.24, 0.24), 0.005 * (second + 1), 0.0),  # Left on its second excursion, right on its first.
+        ((0.25, 0.25), 0.0, 0.0),
+        ((0.24, 0.24), 0.005 * (later + second), 0.0),
+        ((0.25, 0.25), 0.0, 0.0),
+        ((0.24, 0.24), 0.010 * later, fourth_cost / 2),  # Left enters the fourth excursion.
+        ((0.238, 0.25), 0.001 * later, 0.0),
+        ((0.237, 0.24), 0.0055 * later, fourth_cost / 2),  # Right enters; left only adds depth.
+        ((0.235, 0.238), 0.002 * later, 0.0),
+        ((0.25, 0.25), 0.0, 0.0),
+        ((0.24, 0.24), 0.010 * later, 0.0),  # A fifth excursion keeps the last tier, not the fixed cost.
+        ((0.25, 0.25), 0.0, 0.0),
+    ]:
+        clearance_step(e, (0.20, 0.20), vz=-0.4, lengths=lengths)
+        expected = torch.tensor([per_m * weighted_mean_m + fixed_cost])
+        torch.testing.assert_close(e.air_retract_cost, expected, atol=1e-6, rtol=0)
+
+    clearance_step(e, (0.0, 0.01), vz=-0.4, contact=(True, False), lengths=(0.24, 0.24))
+    assert e.first_touch.item() and e.air_retract_cost.item() == 0
+    for length in (0.25, 0.24):
+        clearance_step(e, (0.20, 0.20), vz=-0.4, lengths=(length, length))
+        assert e.air_retract_cost.item() == 0
+    torch.testing.assert_close(e.retraction.excursion_count, torch.tensor([[5, 5]]))
+
+    clearance_step(e, (0.0, 0.0), contact=(True, True), failed=True)
+    e.trigger(*trigger_args, require_trigger_time=False, body_clearance_m=torch.tensor([0.10]))
+    assert e.active.item()
+    torch.testing.assert_close(e.retraction.excursion_count, torch.tensor([[0, 0]]))
 
 
 def test_stand_walk_reward_gate_ends_after_jump_settlement(clearance_jump):

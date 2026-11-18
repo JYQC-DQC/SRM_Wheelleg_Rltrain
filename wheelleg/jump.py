@@ -56,6 +56,15 @@ class JumpEvent:
         self.air_guard = (self.body_wheel or {}).get("air_leg_guard")
         if self.air_guard is not None:
             self.retraction = AirRetractionTracker(count, self.air_guard["retract_tolerance_m"], device)
+            multipliers = self.air_guard.get("retract_multipliers")
+            self.retract_multipliers = None if multipliers is None else self.elapsed.new_tensor(multipliers)
+            if self.retract_multipliers is not None and self.retract_multipliers.shape != (3,):
+                raise ValueError(
+                    "retract_multipliers must specify three values for the first, second, and later excursions"
+                )
+            # An old configuration with neither key keeps the unweighted length-only cost.
+            default_fourth_cost = 0.5 if multipliers is not None else 0.0
+            self.retract_fourth_cost = self.air_guard.get("retract_fourth_cost", default_fourth_cost)
             self.deepest_intrusion = torch.zeros_like(self.elapsed)
             self.air_fold_cost = torch.zeros_like(self.elapsed)
             self.air_retract_cost = torch.zeros_like(self.elapsed)
@@ -283,7 +292,13 @@ class JumpEvent:
             self.preparing |= airborne & (vz <= -self.clearance_training["tuck_end_vz_m_s"])
             if self.air_guard is not None:
                 retract = self.retraction.update(leg_length_m, airborne & self.preparing)
+                if self.retract_multipliers is not None:
+                    tier = self.retraction.excursion_count.clamp(1, 3) - 1
+                    retract = retract * self.retract_multipliers[tier]
                 self.air_retract_cost = self.air_guard["retract_cost_per_m"] * retract.mean(-1)
+                if self.retract_fourth_cost:
+                    fourth = self.retraction.fourth_excursion.to(retract.dtype)
+                    self.air_retract_cost += self.retract_fourth_cost * fourth.mean(-1)
         self.apex_z = torch.where(apex_sample, torch.maximum(self.apex_z, z), self.apex_z)
         self.invalid |= self.active & obstacle_contact
         if failed is not None:

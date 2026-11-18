@@ -33,7 +33,7 @@ from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.landing_rewards import LandingRewards
 from wheelleg.observation import OBS_DIM
 from wheelleg.randomization import disturbance_progress, perturb_sensors
-from wheelleg.rewards import EVENT_TERMS, compute_rewards, runup_tracking
+from wheelleg.rewards import EVENT_TERMS, compute_rewards, runup_tracking, runup_velocity_terms
 from wheelleg.safety import airborne_enabled, nonfinite_pose, numerical_failure
 from wheelleg.stairs import StairCourse, advance_height_assist, scan_course
 from wheelleg.tasks import TASKS
@@ -1125,10 +1125,18 @@ class WheelLegEnv(DirectRLEnv):
                 if "runup_tracking" in t.stage and "track_lin_vel" in terms:
                     before_press = stand_walk_allowed & (self.jump.elapsed == 0) & ~self.jump.active
                     supported = s["wheel_contact"].any(-1)
-                    terms["track_lin_vel"], terms["jump_runup_underspeed"] = runup_tracking(
-                        s["tracked_command"][:, 0], s["linear_error"], before_press & supported,
-                        terms["track_lin_vel"], weights["track_lin_vel"], self.step_dt, t.stage["runup_tracking"],
-                    )
+                    runup = t.stage["runup_tracking"]
+                    if "squared_error_cost" in runup:
+                        moving = self.commands.target[:, 0] > 0
+                        terms["track_lin_vel"], terms["lin_vel_error"], terms["jump_runup_vx_error"] = runup_velocity_terms(
+                            moving & supported & before_press, s["heading_velocity"][:, 0], self.commands.value[:, 0],
+                            terms["track_lin_vel"], terms["lin_vel_error"], self.step_dt, runup["squared_error_cost"],
+                        )
+                    else:  # Reproduce saved runs using the previous asymmetric reward.
+                        terms["track_lin_vel"], terms["jump_runup_underspeed"] = runup_tracking(
+                            s["tracked_command"][:, 0], s["linear_error"], before_press & supported,
+                            terms["track_lin_vel"], weights["track_lin_vel"], self.step_dt, runup,
+                        )
             if "jump_apex" in terms:
                 terms["jump_apex"] *= self.jump_vx_qualified
             if "jump_height_progress" in terms:

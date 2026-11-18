@@ -46,14 +46,42 @@ def test_reset_only_selected_ids():
     tracker.update(torch.full((3, 2), 40 * TICK_M), eligible)
     tracker.update(torch.full((3, 2), 30 * TICK_M), eligible)
     tracker.reset(torch.tensor([2, 0]))
+    torch.testing.assert_close(tracker.excursion_count, torch.tensor([[0, 0], [1, 1], [0, 0]]))
     actual = tracker.update(torch.full((3, 2), 25 * TICK_M), eligible)
     torch.testing.assert_close(actual, torch.tensor([[0, 0], [5, 5], [0, 0]]) * TICK_M, rtol=0, atol=0)
     actual = tracker.update(torch.full((3, 2), 22 * TICK_M), eligible)
     torch.testing.assert_close(actual, torch.tensor([[3, 3], [3, 3], [3, 3]]) * TICK_M, rtol=0, atol=0)
+    torch.testing.assert_close(tracker.excursion_count, torch.ones((3, 2), dtype=torch.long))
 
 
 def test_half_centimeter_equality_then_charge_full_excursion():
     t = AirRetractionTracker(1, 0.005, "cpu")
-    for length, expected in [(0.30, 0), (0.295, 0), (0.294, .006), (.293, .001), (.31, 0), (.30, .01)]:
-        torch.testing.assert_close(t.update(torch.full((1, 2), length), torch.tensor([True])),
-                                   torch.full((1, 2), float(expected)), atol=1e-7, rtol=0)
+    for length, expected, count in [
+        (0.30, 0.0, 0),
+        (0.295, 0.0, 0),
+        (0.294, 0.006, 1),
+        (0.293, 0.001, 1),
+        (0.31, 0.0, 1),
+        (0.30, 0.01, 2),
+    ]:
+        actual = t.update(torch.full((1, 2), length), torch.tensor([True]))
+        torch.testing.assert_close(actual, torch.full((1, 2), expected), atol=1e-7, rtol=0)
+        torch.testing.assert_close(t.excursion_count, torch.full((1, 2), count))
+
+
+def test_fourth_excursion_pulses_per_leg_and_ignores_ineligible_frames():
+    tracker = AirRetractionTracker(2, 2 * TICK_M, "cpu")
+    for _ in range(3):
+        tracker.update(torch.full((2, 2), 40 * TICK_M), torch.tensor([True, True]))
+        tracker.update(torch.tensor([[30, 40], [30, 30]]) * TICK_M, torch.tensor([True, True]))
+    tracker.update(torch.full((2, 2), 40 * TICK_M), torch.tensor([True, True]))
+    tracker.update(torch.full((2, 2), 30 * TICK_M), torch.tensor([True, False]))
+    torch.testing.assert_close(tracker.excursion_count, torch.tensor([[4, 1], [3, 3]]))
+    torch.testing.assert_close(tracker.fourth_excursion, torch.tensor([[True, False], [False, False]]))
+
+    tracker.update(torch.full((2, 2), 25 * TICK_M), torch.tensor([True, True]))
+    torch.testing.assert_close(tracker.excursion_count, torch.tensor([[4, 1], [3, 3]]))
+    torch.testing.assert_close(tracker.fourth_excursion, torch.zeros((2, 2), dtype=torch.bool))
+    tracker.update(torch.full((2, 2), 20 * TICK_M), torch.tensor([True, True]))
+    torch.testing.assert_close(tracker.excursion_count, torch.tensor([[4, 1], [4, 4]]))
+    torch.testing.assert_close(tracker.fourth_excursion, torch.tensor([[False, False], [True, True]]))
