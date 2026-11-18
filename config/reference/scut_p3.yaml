@@ -231,10 +231,14 @@ stages:
         retract_cost_per_m: 5.0  # 10 cm mean qualifying excursion costs one full +0.5 height-progress award.
         retract_multipliers: [1.0, 1.75, 2.5]
         retract_fourth_cost: 0.5  # Once per leg on excursion four; average over both legs.
+        retract_base_threshold_m: 0.01
+        retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
     clearance_jump:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
-      tuck_end_vz_m_s: 0.25  # At this downward speed, switch directly from tuck to landing extension.
+      tuck_end_vz_m_s: 0.25  # Descent must be confirmed AND the body must have dropped from its measured apex.
+      prepare_drop_fraction: 0.20  # Of body rise since confirmed liftoff, independent of commanded height.
+      prepare_drop_range_m: [0.005, 0.04]
       stable_vz_m_s: 0.20
       stable_roll_pitch_rate_rad_s: 1.0
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.

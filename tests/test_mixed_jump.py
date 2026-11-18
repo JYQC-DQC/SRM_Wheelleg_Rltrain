@@ -576,6 +576,8 @@ def test_air_retraction_cost_per_leg_until_first_touch(clearance_jump, guard_ove
     guard = dict(body_wheel["air_leg_guard"])
     guard.pop("retract_multipliers", None)
     guard.pop("retract_fourth_cost", None)
+    guard.pop("retract_base_threshold_m", None)
+    guard.pop("retract_base_cost", None)
     guard.update(guard_overrides)
     body_wheel["air_leg_guard"] = guard
     settings = dict(clearance_jump.settings, body_wheel_jump=body_wheel, jump_count_probabilities=[0.0, 0.0, 1.0])
@@ -605,7 +607,7 @@ def test_air_retraction_cost_per_leg_until_first_touch(clearance_jump, guard_ove
         ((0.24, 0.24), 0.010 * later, 0.0),  # A fifth excursion keeps the last tier, not the fixed cost.
         ((0.25, 0.25), 0.0, 0.0),
     ]:
-        clearance_step(e, (0.20, 0.20), vz=-0.4, lengths=lengths)
+        clearance_step(e, (0.20, 0.20), z=0.54, vz=-0.4, lengths=lengths)
         expected = torch.tensor([per_m * weighted_mean_m + fixed_cost])
         torch.testing.assert_close(e.air_retract_cost, expected, atol=1e-6, rtol=0)
 
@@ -733,8 +735,10 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
     assert refs["takeoff_velocity"].item() == event.clearance_training["takeoff_velocity_hint_m_s"]
     refs = clearance_step(event, (0.29, 0.30), vz=-0.10)
     assert refs["tuck"].item() and not refs["prepare"].item()
-    # Still far above ground, but already descending: start landing extension immediately.
-    refs = clearance_step(event, (0.29, 0.30), vz=-0.25)
+    clearance_step(event, (0.29, 0.30), z=0.75, vz=0.4)
+    refs = clearance_step(event, (0.10, 0.10), z=0.74, vz=-0.4)
+    assert refs["tuck"].item() and not refs["prepare"].item()  # Descent alone or swinging wheels is not enough.
+    refs = clearance_step(event, (0.29, 0.30), z=0.71, vz=-0.4)
     assert not refs["tuck"].item() and refs["prepare"].item()
     for wheel, vz in (((0.08, 0.09), -1.2), ((0.30, 0.31), 0.1)):
         refs = clearance_step(event, wheel, vz=vz)
@@ -743,6 +747,23 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
     assert not refs["tuck"].item() and not refs["prepare"].item()
     event.reset(torch.arange(1))
     assert not event.preparing.item()
+
+
+def test_low_jump_delays_prepare_then_charges_large_retraction_once_per_excursion(clearance_jump):
+    e = clearance_jump
+    for _ in range(3):
+        clearance_step(e, (0.03, 0.03), z=.50)
+    clearance_step(e, (.04,.04), z=.52)
+    refs = clearance_step(e, (.03,.03), z=.519, vz=-.4)
+    assert refs['tuck'].item()
+    # A 2 cm rise, below the target: only a 5 mm drop is required.
+    for length, cost in [(.30,0), (.295,0), (.293,.035), (.290,.015), (.289,.155), (.288,.005),
+                         (.30,0), (.289,.15 + .011*5*1.75)]:
+        refs = clearance_step(e, (.03,.03), z=.514, vz=-.4, lengths=(length,length))
+        assert refs['prepare'].item()
+        assert e.air_retract_cost.item() == pytest.approx(cost, abs=1e-6)
+    clearance_step(e, (0., .01), contact=(True,False), lengths=(.22,.22))
+    assert e.air_retract_cost.item() == 0
 
 
 def test_joint_apex_cannot_be_bought_with_stationary_body_or_separate_peaks(clearance_jump):

@@ -52,10 +52,15 @@ class JumpEvent:
             self.band_rows = torch.arange(count, device=device)
             self.band_scored_height = torch.zeros_like(self.elapsed)
         self.preparing = self.active.clone()
+        self.delay_extension = self.clearance_training is not None and "prepare_drop_fraction" in self.clearance_training
+        if self.delay_extension:
+            self.flight_start_z = torch.zeros_like(self.elapsed)
+            self.flight_peak_z = torch.zeros_like(self.elapsed)
         self.height_progress = torch.zeros_like(self.elapsed)
         self.air_guard = (self.body_wheel or {}).get("air_leg_guard")
         if self.air_guard is not None:
-            self.retraction = AirRetractionTracker(count, self.air_guard["retract_tolerance_m"], device)
+            self.retraction = AirRetractionTracker(count, self.air_guard["retract_tolerance_m"], device,
+                                                  base_threshold_m=self.air_guard.get("retract_base_threshold_m"))
             multipliers = self.air_guard.get("retract_multipliers")
             self.retract_multipliers = None if multipliers is None else self.elapsed.new_tensor(multipliers)
             if self.retract_multipliers is not None and self.retract_multipliers.shape != (3,):
@@ -255,6 +260,7 @@ class JumpEvent:
         old_height = torch.where(self.took_off, self.progress_height, 0.0)
         if self.clearance_training is not None:
             self.takeoff_latency_s.copy_(torch.where(confirmed & ~self.took_off, self.elapsed, self.takeoff_latency_s))
+        new_flight = confirmed & ~self.took_off
         self.took_off |= confirmed
         flight = self.active & self.took_off & ~self.landed
         self.air_time += dt * flight * no_contact
@@ -288,14 +294,26 @@ class JumpEvent:
                     raise ValueError("body_wheel_jump requires wheel and chassis clearance and both leg angles")
                 self._record_joint_peak(score_frame, clearance, body_clearance_m, leg_angle_rad)
             apex_sample &= no_contact & ~self.first_touch
-            # Give the legs the descent to extend; wheel clearance depends on the action and can oscillate.
-            self.preparing |= airborne & (vz <= -self.clearance_training["tuck_end_vz_m_s"])
+            prepare = airborne & (vz <= -self.clearance_training["tuck_end_vz_m_s"])
+            if self.delay_extension:
+                # Initialize on each liftoff, including second jumps. Wheel motion must not set the apex.
+                self.flight_start_z = torch.where(new_flight, z, self.flight_start_z)
+                peak = torch.where(new_flight, z, torch.maximum(self.flight_peak_z, z))
+                self.flight_peak_z = torch.where(airborne, peak, self.flight_peak_z)
+                rise = self.flight_peak_z - self.flight_start_z
+                drop = (rise * self.clearance_training["prepare_drop_fraction"]).clamp(
+                    *self.clearance_training["prepare_drop_range_m"]
+                )
+                prepare &= self.flight_peak_z - z >= drop - 1e-6
+            self.preparing |= prepare
             if self.air_guard is not None:
                 retract = self.retraction.update(leg_length_m, airborne & self.preparing)
                 if self.retract_multipliers is not None:
                     tier = self.retraction.excursion_count.clamp(1, 3) - 1
                     retract = retract * self.retract_multipliers[tier]
                 self.air_retract_cost = self.air_guard["retract_cost_per_m"] * retract.mean(-1)
+                if self.retraction.base_threshold_m is not None:
+                    self.air_retract_cost += self.air_guard["retract_base_cost"] * self.retraction.base_crossing.to(retract.dtype).mean(-1)
                 if self.retract_fourth_cost:
                     fourth = self.retraction.fourth_excursion.to(retract.dtype)
                     self.air_retract_cost += self.retract_fourth_cost * fourth.mean(-1)
