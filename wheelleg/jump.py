@@ -44,6 +44,12 @@ class JumpEvent:
         self.peak_wheel_at_apex = torch.zeros_like(self.elapsed)
         self.peak_leg_angle_rad = torch.zeros_like(self.elapsed)
         self.apex_pose_quality = torch.zeros_like(self.elapsed)
+        self.band_width = (self.body_wheel or {}).get("apex_band_m")
+        if self.band_width is not None:
+            # Five rolling height bins, not a time buffer: even long flights have bounded storage.
+            self.band_frames = self.elapsed.new_zeros((count, 5, 4))  # joint height, body, wheel, worst leg angle
+            self.band_rows = torch.arange(count, device=device)
+            self.band_scored_height = torch.zeros_like(self.elapsed)
         self.preparing = self.active.clone()
         self.height_progress = torch.zeros_like(self.elapsed)
         self.air_time = torch.zeros_like(self.elapsed)
@@ -72,6 +78,9 @@ class JumpEvent:
         self.quality_paid = self.active.clone()
 
     def reset(self, ids: torch.Tensor) -> None:
+        if self.band_width is not None:
+            self.band_frames[ids] = 0
+            self.band_scored_height[ids] = 0
         for value in (
             self.active,
             self.took_off,
@@ -137,6 +146,9 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.band_width is not None:
+            self.band_frames[ids] = 0
+            self.band_scored_height[ids] = 0
         if self.body_wheel is not None:
             if body_clearance_m is None:
                 raise ValueError("body_wheel_jump requires chassis-bottom clearance at the press")
@@ -215,7 +227,7 @@ class JumpEvent:
         confirmed = candidate & (self.takeoff_time >= self.settings.get("takeoff_confirmation_s", 0.03) - dt * 0.5)
         confirmed &= self.takeoff_peak_vz >= self.settings.get("takeoff_upward_velocity_m_s", 0.1)
         # The running apex is monotone within an attempt. Do not cash any of it in until takeoff is confirmed.
-        old_height = torch.where(self.took_off, self.scored_height, 0.0)
+        old_height = torch.where(self.took_off, self.progress_height, 0.0)
         if self.clearance_training is not None:
             self.takeoff_latency_s.copy_(torch.where(confirmed & ~self.took_off, self.elapsed, self.takeoff_latency_s))
         self.took_off |= confirmed
@@ -243,7 +255,7 @@ class JumpEvent:
         self.quality_active.copy_(flight & candidate & ~self.invalid)
         goal = self.height.clamp_min(torch.finfo(self.height.dtype).eps)
         previous = (old_height / goal).clamp(0, 1)
-        current = (self.scored_height / goal).clamp(0, 1)
+        current = (self.progress_height / goal).clamp(0, 1)
         progress_sample = self.quality_active if self.clearance_training is None else airborne & ~self.invalid
         self.height_progress.copy_(torch.where(progress_sample, (current - previous).clamp_min(0), 0.0))
         if self.body_wheel is not None:
@@ -353,13 +365,19 @@ class JumpEvent:
         return (self.elapsed / self.settings["event_duration_s"]).clamp(0, 1)
 
     @property
-    def pressed_before_touch(self) -> torch.Tensor:
+    def suppress_stand_walk(self) -> torch.Tensor:
         # update() clears active on a failed landing/takeoff before rewards are computed.
         pressed = self.active | (self.finished & (self.elapsed > 0))
-        return pressed & ~self.first_touch
+        return pressed if self.band_width is not None else pressed & ~self.first_touch
 
     @property
     def scored_height(self) -> torch.Tensor:
+        if self.band_width is not None:
+            return self.band_scored_height
+        return self.progress_height
+
+    @property
+    def progress_height(self) -> torch.Tensor:
         if self.body_wheel is not None:
             return self.peak_joint_clearance
         if self.clearance_training is not None:
@@ -371,6 +389,9 @@ class JumpEvent:
         rise = body_m - self.start_body_clearance
         joint = torch.minimum(wheels_m, torch.minimum(body_m - cfg["body_margin_m"], rise / cfg["body_rise_fraction"]))
         angle = leg_angle_rad.abs().amax(-1)
+        if self.band_width is not None:
+            self._record_apex_band(airborne, joint, body_m, wheels_m, angle)
+            return
         # If a peak is held, allow a better pose there, never a better pose at a lower height.
         better = (joint > self.peak_joint_clearance) | (
             (joint == self.peak_joint_clearance) & (angle < self.peak_leg_angle_rad)
@@ -385,6 +406,48 @@ class JumpEvent:
             (self.apex_pose_quality, quality),
         ):
             dest.copy_(torch.where(record, value, dest))
+
+    def _record_apex_band(self, airborne, joint, body, wheel, angle):
+        slots = self.band_frames.shape[1]
+        step = self.band_width / slots
+        self.peak_joint_clearance.copy_(
+            torch.where(airborne, torch.maximum(joint, self.peak_joint_clearance), self.peak_joint_clearance)
+        )
+        top = torch.floor(self.peak_joint_clearance / step)
+        bucket = torch.floor(joint / step)
+        col = bucket.long().remainder(slots)
+        old = self.band_frames[self.band_rows, col]
+        threshold = self.height - self.settings["height_tolerance_m"] - 1e-6
+        # Never combine a below-target upright pose with another frame's passing height.
+        ok, old_ok = joint >= threshold, old[:, 0] >= threshold
+        better = (ok & ~old_ok) | (
+            (ok == old_ok) & ((angle < old[:, 3]) | ((angle == old[:, 3]) & (joint > old[:, 0])))
+        )
+        replace = (
+            airborne
+            & (joint > 0)
+            & (bucket > top - slots)
+            & ((old[:, 0] == 0) | (torch.floor(old[:, 0] / step) != bucket) | better)
+        )
+        self.band_frames[self.band_rows, col] = torch.where(
+            replace[:, None], torch.stack((joint, body, wheel, angle), -1), old
+        )
+        heights, angles = self.band_frames[..., 0], self.band_frames[..., 3]
+        valid = (heights > 0) & (torch.floor(heights / step) > top[:, None] - slots)
+        passing = valid & (heights >= threshold[:, None])
+        eligible = valid & (~passing.any(-1)[:, None] | passing)
+        best_angle = angles.masked_fill(~eligible, torch.inf).amin(-1, keepdim=True)
+        index = heights.masked_fill(~(eligible & (angles == best_angle)), -torch.inf).argmax(-1)
+        best = self.band_frames[self.band_rows, index]
+        self.band_scored_height.copy_(best[:, 0])
+        self.peak_body_at_apex.copy_(best[:, 1])
+        self.peak_wheel_at_apex.copy_(best[:, 2])
+        self.peak_leg_angle_rad.copy_(best[:, 3])
+        cfg = self.body_wheel
+        self.apex_pose_quality.copy_(
+            torch.exp(-((best[:, 3] - cfg["leg_deadband_rad"]).clamp_min(0) / cfg["leg_pose_scale_rad"]).square())
+            * valid.any(-1)
+        )
 
     @property
     def apex_pose_ok(self) -> torch.Tensor:

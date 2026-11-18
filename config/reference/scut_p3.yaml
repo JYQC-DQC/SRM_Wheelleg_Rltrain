@@ -206,6 +206,7 @@ stages:
     moving_probability: 0.5
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
     body_wheel_jump:
+      apex_band_m: 0.005  # Select one frame in the top five millimetre bins.
       body_margin_m: 0.03  # Wheel target H; chassis collision bottom must clear H + margin.
       body_rise_fraction: 0.5  # Require genuine elevation relative to the pose at the press.
       leg_deadband_rad: 0.26179939  # 15 degrees off gravity is free.

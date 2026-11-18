@@ -1107,7 +1107,7 @@ class WheelLegEnv(DirectRLEnv):
         if t.task == "p3-jump":
             if self.jump.clearance_training is not None:
                 # Suppress only ordinary positive tracking terms, not their paired error penalties.
-                stand_walk_allowed = ~self.jump.pressed_before_touch
+                stand_walk_allowed = ~self.jump.suppress_stand_walk
                 for name in ("track_lin_vel", "track_ang_vel", "track_height", "flat_roll", "flat_pitch"):
                     if name in terms:
                         terms[name] *= stand_walk_allowed

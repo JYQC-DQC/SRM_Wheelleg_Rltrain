@@ -998,6 +998,8 @@ def _validate_training(cfg: TrainingConfig) -> None:
     if TASKS[cfg.task].policy == "p3":
         if "body_wheel_jump" in cfg.stage:
             profile = cfg.stage["body_wheel_jump"]
+            if "apex_band_m" in profile and not 0 < profile["apex_band_m"] <= cfg.stage["height_tolerance_m"]:
+                raise ValueError("apex_band_m must be positive and no wider than the height tolerance")
             if cfg.task != "p3-jump" or "clearance_jump" not in cfg.stage:
                 raise ValueError("body_wheel_jump requires flat clearance_jump")
             for key in ("body_margin_m", "body_rise_fraction", "leg_pose_scale_rad", "settle_response_scale_s"):

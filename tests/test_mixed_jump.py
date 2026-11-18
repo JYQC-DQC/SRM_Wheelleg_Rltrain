@@ -540,24 +540,28 @@ def clearance_step(
     return event.references(torch.tensor([vz]), torch.tensor([min(wheel)]), 9.81)
 
 
-def test_stand_walk_reward_gate_ends_at_first_wheel_contact(clearance_jump):
+def test_stand_walk_reward_gate_ends_after_jump_settlement(clearance_jump):
     event = clearance_jump
-    assert event.pressed_before_touch.item()
+    assert event.suppress_stand_walk.item()
     for _ in range(3):
         clearance_step(event, (0.28, 0.28))
-    assert event.pressed_before_touch.item()
+    assert event.suppress_stand_walk.item()
     clearance_step(event, (0.0, 0.0), vz=-0.5, contact=(True, False))
-    assert not event.pressed_before_touch.item()
+    assert event.suppress_stand_walk.item()
     clearance_step(event, (0.05, 0.05), vz=0.5)
-    assert not event.pressed_before_touch.item()  # A rebound does not undo first touch.
+    assert event.suppress_stand_walk.item()  # Still suppressed after a bounce.
+    for _ in range(80):
+        clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True))
+        assert event.suppress_stand_walk.item()
+    assert event.landing_pulse.item()
     event.reset(torch.arange(1))
-    assert not event.pressed_before_touch.item()
+    assert not event.suppress_stand_walk.item()
     event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), body_clearance_m=torch.tensor([0.10]))
     clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), failed=True)
-    assert event.failure_pulse.item() and not event.active.item() and event.pressed_before_touch.item()
+    assert event.failure_pulse.item() and not event.active.item() and event.suppress_stand_walk.item()
     event.reset(torch.arange(1))
     event.fail_pending(torch.tensor([True]))
-    assert not event.pressed_before_touch.item()  # A failure before the press does not suppress ordinary rewards.
+    assert not event.suppress_stand_walk.item()  # A failure before the press does not suppress ordinary rewards.
 
 
 @pytest.mark.parametrize(
@@ -693,6 +697,26 @@ def test_wheel_only_snapshot_keeps_legacy_scoring(clearance_jump):
     for _ in range(3):
         clearance_step(e, (0.30, 0.28), body=0.10, angles=(1.0, -1.0))
     assert e.target_reached.item() and e.scored_height.item() == pytest.approx(0.28)
+
+
+def test_peak_band_evicts_old_frames_and_never_borrows_below_threshold_pose(clearance_jump):
+    e = clearance_jump
+
+    def frame(h, angle):
+        clearance_step(e, (h, h), body=0.60, angles=(angle, angle))
+
+    for _ in range(3):
+        frame(0.2395, 0.1)
+    frame(0.2402, 0.90)
+    assert not e.target_reached.item()  # Good pose at 23.95 cm is below the 24 cm pass threshold.
+    frame(0.2422, 0.2)
+    frame(0.2432, 0.90)
+    assert e.target_reached.item() and e.scored_height.item() == pytest.approx(0.2422)
+    frame(0.2473, 0.90)
+    assert not e.target_reached.item()  # Good frame has left the band.
+    frame(0.2462, 0.1)
+    assert e.target_reached.item() and e.scored_height.item() == pytest.approx(0.2462)
+    assert e.height_progress.item() == 0  # Descending within the band never pays progress twice.
 
 
 def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):
