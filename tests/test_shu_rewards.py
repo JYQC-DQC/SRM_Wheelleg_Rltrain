@@ -164,10 +164,10 @@ def test_height_annealing_and_gate_affect_positive_motion_only():
     state["wz_active"].fill_(True)
     state["vx_cmd"].fill_(0.2)
     state["wz_cmd"].fill_(0.3)
-    state["height_error"][:] = torch.tensor([0.03, -0.03, 0.03, 0.055, -0.08, 0.11, 0], dtype=torch.float64)
+    state["height_error"][:] = torch.tensor([0.02, -0.02, 0.02, 0.05, -0.08, 0.11, 0], dtype=torch.float64)
     p["height_fraction"] = torch.tensor([0.5, 0.7, 0.8, 0.9, 0.8, 0.8, 0], dtype=torch.float64)
     terms = shu_reward_terms(state, torch.full((7,), DRIVE), p, _DT)
-    t, w = (math.exp(-(0.03**2) / sigma) for sigma in (0.001, 0.025))
+    t, w = (math.exp(-(0.02**2) / sigma) for sigma in (0.001, 0.025))
     gate_mid = (math.exp(-0.5) - math.exp(-2)) / (1 - math.exp(-2))
     vx_pos = math.exp(-(((0.5 + 0.2) / 0.4) ** 2))
     wz_pos = math.exp(-(((1.0 + 0.3) / 0.6) ** 2))
@@ -177,7 +177,7 @@ def test_height_annealing_and_gate_affect_positive_motion_only():
             (t + 2 * w) / 3,
             (t + w) / 2,
             t,
-            math.exp(-(0.055**2) / 0.001),
+            math.exp(-(0.05**2) / 0.001),
             math.exp(-(0.08**2) / 0.001),
             math.exp(-(0.11**2) / 0.001),
             1,

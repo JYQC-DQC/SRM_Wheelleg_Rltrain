@@ -105,7 +105,7 @@ def shu_reward_terms(
         1.0 + wide_weight
     )
     h_abs = h_error.abs()
-    u = ((h_abs - 0.03) / 0.05).clamp(0.0, 1.0)
+    u = ((h_abs - 0.02) / 0.06).clamp(0.0, 1.0)
     # Same normalized exponential as (exp(-k*u**2)-exp(-k))/(1-exp(-k)), without cancellation for small k.
     k = torch.as_tensor(p["height_gate_shape"], device=h_error.device, dtype=h_error.dtype)
     u_sq = u.square()
