@@ -71,8 +71,8 @@ training:
     height_duration_s:
     - 2.0
     - 6.0
-    vx_range_m_s: null
-    wz_range_rad_s: null
+    vx_range_m_s: [-2.7, 2.7]
+    wz_range_rad_s: [-6.283185307179586, 6.283185307179586]  # +/-2*pi rad/s
     height_range_m: null
     linear_slew_m_s2: 2.0
     angular_slew_rad_s2: 10.0
