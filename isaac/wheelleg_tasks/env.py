@@ -180,6 +180,7 @@ class WheelLegEnv(DirectRLEnv):
             (self.jump_curriculum, JumpCurriculum(t.stage, d, fresh_windows=True)) if staged_flat else ()
         )
         self.jump_vx_qualified = torch.ones(n, dtype=torch.bool, device=d)
+        self.jump_progress_vx_scale = torch.ones(n, device=d)
         self.jump_bins = torch.zeros(n, dtype=torch.long, device=d)
         self.command_error_sum = torch.zeros(n, 3, device=d)  # |vx 误差| m/s, |wz 误差| rad/s, |高度误差| m
         self.command_abs_sum = torch.zeros(n, 2, device=d)  # |vx 指令| m/s, |wz 指令| rad/s
@@ -416,6 +417,7 @@ class WheelLegEnv(DirectRLEnv):
             )
             started = (self.jump.active & ~was_active).nonzero().flatten()
             self.jump_vx_qualified[started] = True
+            self.jump_progress_vx_scale[started] = 1.0
             if t.task == "p3-tunnel":
                 self.jump_bins[started] = self.tunnel_bins[started]
             elif not self.cfg.evaluation and len(started):
@@ -950,6 +952,10 @@ class WheelLegEnv(DirectRLEnv):
                 actual_vx = s["linear_error"] + s["tracked_command"][:, 0]
                 qualified = (target_vx <= 0) | (actual_vx >= takeoff_min_fraction * target_vx)
                 self.jump_vx_qualified = torch.where(takeoff, qualified, self.jump_vx_qualified)
+                # Freeze the shaping scale at liftoff; normal crouch speed loss is allowed.
+                full_credit_vx = (takeoff_min_fraction * target_vx).clamp_min(1e-6)
+                progress_scale = torch.where(target_vx > 0, (actual_vx / full_credit_vx).clamp(0, 1), 1.0)
+                self.jump_progress_vx_scale = torch.where(takeoff, progress_scale, self.jump_progress_vx_scale)
             self.jump.fail_pending(terminated | timeout | obstacle_hit)
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
             # Success and failure are true episode terminals. Only an ordinary
@@ -1111,9 +1117,10 @@ class WheelLegEnv(DirectRLEnv):
                 for name in ("track_lin_vel", "track_ang_vel", "track_height", "flat_roll", "flat_pitch"):
                     if name in terms:
                         terms[name] *= stand_walk_allowed
-            for name in ("jump_apex", "jump_height_progress"):
-                if name in terms:
-                    terms[name] *= self.jump_vx_qualified
+            if "jump_apex" in terms:
+                terms["jump_apex"] *= self.jump_vx_qualified
+            if "jump_height_progress" in terms:
+                terms["jump_height_progress"] *= self.jump_progress_vx_scale
         if self.stair_course is not None:
             motion_terms = compute_rewards(
                 s,
