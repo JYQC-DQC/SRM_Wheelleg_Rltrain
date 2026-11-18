@@ -90,8 +90,8 @@ training:
     heading_max_wz: null
   shu_rewards:
     # Shapes are implemented; unapproved tolerances require explicit tuning before training.
-    vx_tol_max: null
-    vx_tol_knee: null
+    vx_tol_max: 0.50
+    vx_tol_knee: 0.625
     wz_tol_max: null
     wz_tol_knee: null
     vx_error_sigma: 2.5
