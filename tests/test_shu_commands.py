@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from wheelleg.shu_commands import ShuCommands
-from wheelleg.shu_curriculum import BRAKE_REVERSE, COMBINED, STAND, STRAIGHT, TURN, FlatCommandCurriculum
+from wheelleg.shu_curriculum import BRAKE_REVERSE, COMBINED, DASH, STAND, STRAIGHT, TURN, FlatCommandCurriculum
 
 
 def settings(kind=STRAIGHT, **overrides):
@@ -16,12 +16,11 @@ def settings(kind=STRAIGHT, **overrides):
         height_duration_s=(0.02, 0.02),
         vx_range_m_s=(-4, 4),
         wz_range_rad_s=(-5, 5),
-        dash_range_m_s=(-4.5, 4.5),
+        dash_speed_abs_m_s=(2.0, 3.0),
         height_range_m=(0.16, 0.36),
         combined_wz_limit_rad_s=2.0,
         linear_slew_m_s2=2.0,
         angular_slew_rad_s2=10.0,
-        height_slew_m_s=0.3,
         heading_kp=2.0,
         heading_max_wz=3.0,
     )
@@ -35,6 +34,30 @@ def ordinary(c, yaw=None):
 
 def observed(c):
     return torch.stack((c.value[:, 0], c.value[:, 2], c.height[:, 0]), -1)
+
+
+@pytest.mark.parametrize("fraction", [0.25, 1.0])
+def test_dash_targets_use_two_signed_bands(fraction):
+    torch.manual_seed(21)
+    ids = torch.arange(2048)
+    c = ShuCommands(settings(DASH), len(ids), "cpu", flat=FlatCommandCurriculum(fraction, 512, "cpu"))
+    c.reset(ids)
+    vx = c.target[:, 0]
+    assert ((vx.abs() >= 2 * fraction) & (vx.abs() <= 3 * fraction)).all()
+    assert 0.45 < (vx > 0).float().mean() < 0.55
+
+
+def test_resampled_height_is_issued_in_one_tick():
+    ids = torch.arange(4)
+    c = ShuCommands.for_mixed(settings(height_duration_s=(2, 2)), len(ids), "cpu")
+    c.reset(ids)
+    c.height.fill_(0.1)
+    c.height_remaining.zero_()
+    ordinary(c)
+    torch.testing.assert_close(c.height, c.height_target, rtol=0, atol=0)
+    torch.testing.assert_close(c.height_rate, (c.height[:, 0] - 0.1) / 0.01)
+    ordinary(c)
+    assert not c.height_rate.any()
 
 
 def test_exact_100hz_segments_and_actual_issued_errors_not_endpoint_or_raw_target():

@@ -76,7 +76,6 @@ training:
     height_range_m: null
     linear_slew_m_s2: 2.0
     angular_slew_rad_s2: 10.0
-    height_slew_m_s: null
     segment_probabilities:
     - 0.1
     - 0.25
@@ -84,8 +83,8 @@ training:
     - 0.25
     - 0.1
     - 0.15
-    dash_range_m_s: null
-    combined_wz_limit_rad_s: null
+    dash_speed_abs_m_s: [2.0, 3.0]  # uniform magnitude; equally likely forward or reverse
+    combined_wz_limit_rad_s: 4.0
     heading_kp: 3.0
     heading_max_wz: 6.283185307179586  # +/-2*pi rad/s at full curriculum
   shu_rewards:
@@ -257,12 +256,4 @@ stages:
     stuck_window_s: null
     stuck_distance_m: null
     disturbance_phase: 2
-mode_semantics:
-- normal
-- stair
-- zero
-- recover
-- zero
-- zero
-- zero
 guide_version: '2.1'

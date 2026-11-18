@@ -15,6 +15,8 @@ from wheelleg.evaluation import evaluation_cases
 from wheelleg.jump import JumpEvent, TrainingJumpButton
 from wheelleg.rewards import compute_rewards
 from wheelleg.safety import airborne_enabled, leaky_termination, numerical_failure
+from wheelleg.shu_rewards import joint_costs
+from wheelleg.tensor_ops import rotate_xy
 from wheelleg.training import _validate_p3_button_schedule, load_training, mutable
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,12 +41,16 @@ def env_methods():
         "_sample_jump",
         "_measure",
         "_get_dones",
+        "_get_rewards",
     }
     module = ast.Module(
         body=[node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name in names], type_ignores=[]
     )
     namespace = dict(
         torch=torch,
+        compute_rewards=compute_rewards,
+        rotate_xy=rotate_xy,
+        joint_costs=joint_costs,
         airborne_enabled=airborne_enabled,
         numerical_failure=numerical_failure,
         leaky_termination=leaky_termination,
@@ -74,7 +80,6 @@ def fake_env(task):
         height_duration_s=(3.0, 3.0),
         linear_slew_m_s2=0.5,
         angular_slew_rad_s2=1.0,
-        height_slew_m_s=0.2,
     )
     stage.update(height_range_m=(0.2, 0.2), event_duration_s=0.8, landing_stable_s=0.02, landing_tilt_rad=0.1)
     if task == "p2-spin":
@@ -113,6 +118,7 @@ def fake_env(task):
                 body_lin_vel_w=torch.zeros(1, 2, 3),
                 projected_gravity_b=vel,
                 joint_vel=act,
+                joint_pos=act,
             )
         ),
         contact=NS(data=NS(net_forces_w_history=torch.zeros(1, 3, 3, 3), net_forces_w=torch.zeros(1, 3, 3))),
@@ -127,6 +133,13 @@ def fake_env(task):
         wheel_channels=[2, 5],
         joints=list(range(6)),
         legs=[0, 1, 3, 4],
+        lower=torch.full((6,), -1.0),
+        upper=torch.ones(6),
+        num_envs=1,
+        family=task[:2],
+        extras={},
+        reward_sums={},
+        previous_position=root.clone(),
         _sim_step_counter=0,
         _stage_command_tick=-1,
         _jump_sample_tick=-1,
@@ -139,6 +152,8 @@ def fake_env(task):
         commands_fixed=False,
         raw_action=act.clone(),
         previous_action=act.clone(),
+        second_action=act.clone(),
+        prev_qd=act.clone(),
         torque=act.clone(),
         numerical_bad=zero.clone(),
         bad_action=zero.clone(),
@@ -158,6 +173,40 @@ def bind_jump_samples(env_methods, env):
     env._record_contacts = lambda tick: env_methods._record_contacts(env, tick)
     env._measure = lambda: env_methods._measure(env)
     env._sample_jump = lambda: env_methods._sample_jump(env)
+
+
+@pytest.mark.parametrize("task", ["p2-spin", "p3-jump", "p3-tunnel"])
+def test_specialists_inherit_ground_rewards_and_height_step(env_methods, task):
+    e = fake_env(task)
+    c = e.commands
+    t = e.training
+    t.settings["reward_parameters"]["contact_force_n"] = 1.0
+    for key, v in t.settings["rewards"].items():
+        if v is None:
+            t.settings["rewards"][key] = 0
+    t.stage.update(flight_tracking_scale=0.5, jump_smooth_scale=0.4)
+    frozen = torch.tensor([True])
+    c.height.fill_(0.2)
+    c.height_remaining.zero_()
+    c.step(0.01, frozen)
+    assert c.height.item() == pytest.approx(0.2) and c.height_rate.item() == 0
+    c.step(0.01, ~frozen)
+    assert c.height.item() == pytest.approx(0.3) and c.height_rate.item() == pytest.approx(10.0)
+    e.state = env_methods._measure(e)
+    e.state.update(terminated=~frozen, height_error=torch.tensor([0.08]), undesired_force=torch.tensor([[2.0, 3.0]]))
+    e.raw_action.fill_(1)
+    e.jump_interval = ~frozen
+    assert torch.isfinite(env_methods._get_rewards(e)).all()
+    assert e.reward_sums["undesired_contact"].item() == pytest.approx(-0.02)
+    assert e.reward_sums["vertical_velocity"].item() == pytest.approx(-0.01)
+    assert e.reward_sums["action_smoothness_leg"].item() == pytest.approx(-0.002)
+    if e.jump is not None:
+        e.reward_sums.clear()
+        e.jump_interval = frozen
+        e.jump.active.fill_(True)
+        env_methods._get_rewards(e)
+        assert e.reward_sums["vertical_velocity"].item() == e.reward_sums["track_height"].item() == 0
+        assert e.reward_sums["action_smoothness_leg"].item() == pytest.approx(-0.0008)
 
 
 def sample_interval(env_methods, env, supports):
@@ -381,8 +430,8 @@ def test_pending_templates_are_not_ready_and_p3_has_no_generated_cases():
     for task in ("p2-spin", "p3-jump", "p3-tunnel"):
         conf = cfg(task)
         missing = conf.missing()
-        assert "policy.training.reward_clip" in missing
-        assert "policy.training.commands.angular_slew_rad_s2" in missing
+        assert conf.settings["reward_clip"] == 1.0
+        assert conf.settings["commands"]["angular_slew_rad_s2"] == 10.0
         assert not any(
             "press_time" in field or "press_distance" in field or "disturbance" in field for field in missing
         )

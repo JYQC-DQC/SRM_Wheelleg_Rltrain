@@ -54,7 +54,7 @@ training:
   save_interval: 500
   episode_length_s: 40.0
   init_noise_std: 1.0
-  reward_clip: null
+  reward_clip: 1.0  # per second; contacts have their own -2/s floor
   ppo:
     value_loss_coef: 2.0
     use_clipped_value_loss: true
@@ -69,53 +69,43 @@ training:
     desired_kl: 0.01
     max_grad_norm: 1.0
   commands:
-    segment_duration_s: null
-    height_duration_s: null
+    segment_duration_s: [3.0, 15.0]
+    height_duration_s: [2.0, 6.0]
     height_range_m: null
-    linear_slew_m_s2: null
-    angular_slew_rad_s2: null
-    height_slew_m_s: null
+    linear_slew_m_s2: 2.0
+    angular_slew_rad_s2: 10.0
   reward_parameters:
-    linear_sigma: null
-    angular_sigma: null
-    height_sigma: null
-    roll_sigma: null
-    pitch_sigma: null
-    fork_deadzone_m: null
-    stand_deadzone: null
+    vx_tol_max: 0.50
+    vx_tol_knee: 0.625
+    wz_tol_max: 0.50
+    wz_tol_knee: 0.625
+    vx_error_sigma: 2.5
+    wz_error_sigma: 2.5
+    height_gate_shape: 2.0
+    height_sigma: 0.001
+    fork_deadzone_m: 0.05  # threshold term only, never deducted from squared offset
     contact_force_n: null
     spin_velocity_sigma: null
     spin_heading_sigma: null
-    air_wheel_torque_sigma: null
-    fork_square_scale: null
-    leg_length_symmetry_scale: null
+    fork_square_scale: 5.0
   rewards:
-    track_lin_vel: null
-    lin_vel_error: null
-    track_ang_vel: null
-    ang_vel_error: null
-    track_height: null
-    height_error: null
-    flat_roll: null
-    flat_pitch: null
-    roll_penalty: null
-    pitch_penalty: null
-    vertical_velocity: null
-    angular_xy: null
-    no_fork: null
-    no_fork_square: null
-    undesired_contact: null
-    stand_still: null
-    joint_torque: null
-    wheel_power: null
-    action_rate: null
-    termination: null
+    track_ang_vel: 1.0
+    ang_vel_error: -1.0
+    track_height: 1.0
+    orientation: -1.0
+    vertical_velocity: -1.0
+    angular_xy: -0.2
+    no_fork: -1.0
+    no_fork_square: -1.0
+    undesired_contact: -2.0
+    stand_still: -1.0
+    termination: -4.0
     spin_velocity: null
     spin_speed: null
     spin_heading: null
     spin_velocity_error: null
     spin_speed_error: null
-    leg_symmetry: null
+    leg_symmetry: 0.0
   evaluation:
     observation_delay_steps: null
     action_delay_steps: null
@@ -133,12 +123,4 @@ stages:
     spin_probabilities: null
     hardware_spin_limit_rad_s: null
     center_drift_tolerance_m: null
-mode_semantics:
-- zero
-- spin
-- zero
-- zero
-- zero
-- zero
-- zero
 guide_version: '2.1'

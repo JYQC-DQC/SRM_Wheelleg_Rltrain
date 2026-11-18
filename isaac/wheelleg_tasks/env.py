@@ -16,9 +16,9 @@ from wheelleg.commands import Commands, uniform
 from wheelleg.history import HistoryBuffer
 from wheelleg.jump import JumpEvent, TrainingJumpButton, collision_bounds_w, tunnel_geometry
 from wheelleg.randomization import disturbance_progress, perturb_sensors
-from wheelleg.rewards import EVENT_TERMS, compute_rewards
+from wheelleg.rewards import compute_rewards
 from wheelleg.safety import airborne_enabled, leaky_termination, numerical_failure
-from wheelleg.shu_rewards import RELEASE
+from wheelleg.shu_rewards import RELEASE, joint_costs
 from wheelleg.shu_terrain import MixedTerrainRuntime, route_progress_and_stuck
 from wheelleg.tasks import TASKS
 from wheelleg.tensor_ops import (
@@ -88,6 +88,9 @@ class WheelLegEnv(DirectRLEnv):
         self.policy_history = HistoryBuffer(n, d)
         self.history_tick = -1
         self.shu = ShuP1(self, cfg.flat_transfer) if self.family == "p1" else None
+        if self.shu is None:
+            self.second_action = torch.zeros_like(self.raw_action)
+            self.prev_qd = torch.zeros_like(self.raw_action)
         simulate_jump_button = cfg.simulate_jump_button
         self.commands = (
             self.shu.commands if self.shu is not None else Commands(t, n, d, sample_jump_motion=simulate_jump_button)
@@ -225,12 +228,16 @@ class WheelLegEnv(DirectRLEnv):
         if self.shu is not None:
             self.shu.second_action.copy_(self.previous_action)
             self.shu.event.begin_step()
+        else:
+            self.second_action.copy_(self.previous_action)
+            self.prev_qd.copy_(self.robot.data.joint_vel[:, self.joints])
         self.previous_action.copy_(self.raw_action)
         self.bad_action = ~torch.isfinite(actions).all(-1)
         self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
         self.contact_peaks.zero_()
         self.obstacle_hit.zero_()
         if self.jump is not None:
+            self.jump_interval = self.jump.active.clone()
             self.jump.begin_step()
             self.jump_blocked.zero_()
             # _apply_action can see the previous interval's last sensor sample before stepping.
@@ -572,6 +579,10 @@ class WheelLegEnv(DirectRLEnv):
             s.update(
                 tracking_mask=one,
                 height_mask=one,
+                vx_cmd=self.commands.value[:, 0],
+                wz_cmd=self.commands.value[:, 2],
+                ground_drive=torch.ones_like(self.airborne) if self.jump is None else ~self.jump_interval,
+                height_rate=self.commands.height_rate,
                 requested_speed=self.commands.value[:, :2].norm(dim=-1),
                 airborne=self.airborne,
                 contact_multiplier=torch.where(self.airborne, 25.0, 1.0),
@@ -591,7 +602,7 @@ class WheelLegEnv(DirectRLEnv):
             if self.jump is not None:
                 s["jump"] = self.jump
                 flight = self.jump.flight
-                s["height_mask"] = (~self.jump.active | self.jump.first_touch).float()
+                s["height_mask"] = s["ground_drive"].float()
                 s["tracking_mask"] = torch.where(flight, t.stage["flight_tracking_scale"], 1.0)
                 s["termination_multiplier"] = one
                 s["contact_multiplier"] = one
@@ -600,6 +611,19 @@ class WheelLegEnv(DirectRLEnv):
             terms = compute_rewards(
                 s, t.settings["reward_parameters"], weights, self.step_dt, t.settings["reward_clip"]
             )
+            s.update(
+                joint_pos=self.robot.data.joint_pos[:, self.joints],
+                joint_vel=self.robot.data.joint_vel[:, self.joints],
+                previous_joint_vel=self.prev_qd,
+                previous_previous_action=self.second_action,
+            )
+            costs = joint_costs(s, self.lower[self.legs], self.upper[self.legs], self.step_dt)
+            for name, cost in costs.items():
+                # Ground driving is agreed; takeoff-specific smoothing is not. Torque and limits always apply.
+                enabled = one
+                if self.jump is not None and name not in ("joint_torque", "leg_soft_limits"):
+                    enabled = torch.where(s["ground_drive"], one, t.stage["jump_smooth_scale"])
+                terms[name] = -cost.clamp_max(1) * enabled * self.step_dt
         if self.scanner is not None:
             progress, stuck_start, stuck_time, stuck = route_progress_and_stuck(
                 self.mixed_curriculum.reward_active,
@@ -620,11 +644,6 @@ class WheelLegEnv(DirectRLEnv):
             terms["stair_impact"] = t.stage["impact_weight"] * self.step_dt * s["hip_torque"].square().amax(-1)
         self.previous_position.copy_(self.robot.data.root_pos_w)
         for name, value in terms.items():
-            terms[name] = (
-                value
-                if self.shu is not None or name in EVENT_TERMS
-                else value.clamp(-t.settings["reward_clip"], t.settings["reward_clip"])
-            )
             # SCUT wheelbipe25_v3/env.py:4007-4018: mask with where, never NaN * 0.
             terms[name] = torch.where(self.numerical_bad, 0.0, terms[name])
             if name not in self.reward_sums:

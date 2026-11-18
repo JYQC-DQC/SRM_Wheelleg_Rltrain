@@ -2,21 +2,23 @@
 
 import torch
 
+from .shu_rewards import motion_bonus, motion_height_factor
+
 
 def track_lin_vel(s, p):
-    return torch.exp(-s["linear_error"].square() / p["linear_sigma"]) * s["tracking_mask"]
+    return motion_bonus(s["vx_cmd"], s["linear_error"], p["vx_tol_max"], p["vx_tol_knee"]) * s["motion_bonus_mask"]
 
 
 def lin_vel_error(s, p):
-    return (0.25 * s["linear_error"]).square() * s["tracking_mask"]
+    return -torch.expm1(-s["linear_error"].square() / p["vx_error_sigma"]) * s["tracking_mask"] * (s["vx_cmd"] != 0)
 
 
 def track_ang_vel(s, p):
-    return torch.exp(-s["angular_error"].square() / p["angular_sigma"]) * s["tracking_mask"]
+    return motion_bonus(s["wz_cmd"], s["angular_error"], p["wz_tol_max"], p["wz_tol_knee"]) * s["motion_bonus_mask"]
 
 
 def ang_vel_error(s, p):
-    return (0.5 * s["angular_error"]).square() * s["tracking_mask"]
+    return -torch.expm1(-s["angular_error"].square() / p["wz_error_sigma"]) * s["tracking_mask"]
 
 
 def track_height(s, p):
@@ -44,7 +46,11 @@ def pitch_penalty(s, p):
 
 
 def vertical_velocity(s, p):
-    return s["velocity"][:, 2].square() * s["height_mask"]
+    return (s["velocity_w"][:, 2] - s["height_rate"]).square() * s["ground_drive"]
+
+
+def orientation(s, p):
+    return 100 * s["gravity"][:, :2].square().sum(-1) * s["ground_drive"]
 
 
 def angular_xy(s, p):
@@ -58,7 +64,7 @@ def no_fork(s, p):
 
 def no_fork_square(s, p):
     dx = (s["wheel_position_b"][:, 0, 0] - s["wheel_position_b"][:, 1, 0]).abs()
-    return (p["fork_square_scale"] * (dx - p["fork_deadzone_m"]).clamp_min(0)).square()
+    return (p["fork_square_scale"] * dx).square() * s["ground_drive"]
 
 
 def leg_symmetry(s, p):
@@ -68,11 +74,14 @@ def leg_symmetry(s, p):
 
 
 def undesired_contact(s, p):
-    return (s["undesired_force"] > p["contact_force_n"]).float().sum(-1) * s["contact_multiplier"]
+    return (s["undesired_force"] > p["contact_force_n"]).any(-1).float()
 
 
 def stand_still(s, p):
-    return s["velocity"][:, :2].square().sum(-1) * (s["requested_speed"] < p["stand_deadzone"])
+    yaw = s["yaw"]
+    vx, vy = s["velocity_w"][:, :2].unbind(-1)
+    slip = (vx * yaw.cos() + vy * yaw.sin()).abs() + (vy * yaw.cos() - vx * yaw.sin()).abs()
+    return slip * (s["requested_speed"] == 0) * s["ground_drive"]
 
 
 def joint_torque(s, p):
@@ -100,9 +109,7 @@ def spin_speed(s, p):
 
 
 def spin_heading(s, p):
-    return torch.exp(-s["heading_error"].square() / p["spin_heading_sigma"]) * (
-        s["requested_speed"] > p["stand_deadzone"]
-    )
+    return torch.exp(-s["heading_error"].square() / p["spin_heading_sigma"]) * (s["requested_speed"] > 0)
 
 
 def spin_velocity_error(s, p):
@@ -135,6 +142,7 @@ TERMS = {
         roll_penalty,
         pitch_penalty,
         vertical_velocity,
+        orientation,
         angular_xy,
         no_fork,
         no_fork_square,
@@ -164,10 +172,13 @@ def compute_rewards(state: dict, parameters: dict, weights: dict, dt: float, cli
     if unresolved:
         raise ValueError(f"Reward weights must be configured (explicit zero disables): {', '.join(unresolved)}")
     # Event weights are total payouts: neither dt nor the continuous-term clip applies.
+    if "tracking_mask" in state:
+        gate = motion_height_factor(state["height_error"], parameters["height_gate_shape"])
+        state["motion_bonus_mask"] = state["tracking_mask"] * torch.where(state["ground_drive"], gate, 1.0)
     return {
         name: TERMS[name](state, parameters) * weight
         if name in EVENT_TERMS
-        else (TERMS[name](state, parameters) * weight * dt).clamp(-clip, clip)
+        else (TERMS[name](state, parameters) * weight).clamp(-2 if name == "undesired_contact" else -clip, clip) * dt
         for name, weight in weights.items()
         if weight != 0
     }

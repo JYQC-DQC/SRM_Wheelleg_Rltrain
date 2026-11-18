@@ -42,12 +42,11 @@ class ShuCommands:
             "height_duration_s",
             "vx_range_m_s",
             "wz_range_rad_s",
-            "dash_range_m_s",
+            "dash_speed_abs_m_s",
             "height_range_m",
             "combined_wz_limit_rad_s",
             "linear_slew_m_s2",
             "angular_slew_rad_s2",
-            "height_slew_m_s",
             "heading_kp",
             "heading_max_wz",
         ):
@@ -57,7 +56,7 @@ class ShuCommands:
         for key in (
             "vx_range_m_s",
             "wz_range_rad_s",
-            "dash_range_m_s",
+            "dash_speed_abs_m_s",
             "height_range_m",
             "segment_duration_s",
             "height_duration_s",
@@ -65,6 +64,8 @@ class ShuCommands:
             lo, hi = p[key]
             if not (isfinite(lo) and isfinite(hi) and lo <= hi):
                 raise ValueError(f"invalid {key} interval")
+        if p["dash_speed_abs_m_s"][0] <= 0:
+            raise ValueError("dash_speed_abs_m_s requires positive magnitudes")
         for key in ("segment_duration_s", "height_duration_s"):
             lo, hi = self._ticks(key)
             if lo <= 0 or lo > hi:
@@ -73,7 +74,6 @@ class ShuCommands:
             "combined_wz_limit_rad_s",
             "linear_slew_m_s2",
             "angular_slew_rad_s2",
-            "height_slew_m_s",
             "heading_kp",
             "heading_max_wz",
         ):
@@ -194,7 +194,8 @@ class ShuCommands:
         self._whole_drive[ids] = True
         self.target[ids] = 0
         vx = self._uniform(ids, "vx_range_m_s") * f
-        dash = self._uniform(ids, "dash_range_m_s") * f
+        magnitude = self._uniform(ids, "dash_speed_abs_m_s") * f
+        dash = torch.where(torch.rand_like(magnitude) < 0.5, magnitude, -magnitude)
         vx_lo, vx_hi = self.settings["vx_range_m_s"]
         reverse = (-incoming).clamp(vx_lo * f, vx_hi * f)
         reverse = torch.where(torch.rand_like(reverse) < 0.5, reverse, 0.0)
@@ -318,12 +319,9 @@ class ShuCommands:
         due |= new & ((self.height_target[:, 0] - mid).abs() > (hi - lo) / 2 * self.fraction)
         self._height_held.copy_(recovering)
         self._heights((due & ~recovering).nonzero().flatten())
-        delta = (self.height_target - self.height).clamp(
-            -self.settings["height_slew_m_s"] * _DT, self.settings["height_slew_m_s"] * _DT
-        )
-        delta.masked_fill_(recovering[:, None], 0.0)
-        self.height += delta
-        self.height_rate.copy_(delta[:, 0] / _DT)
+        issued_height = torch.where(recovering[:, None], self.height, self.height_target)
+        self.height_rate.copy_((issued_height[:, 0] - self.height[:, 0]) / _DT)
+        self.height.copy_(issued_height)
         latch = (self.steps == 0) | (~self._driving & driving)
         self._driving.copy_(driving)
         self._recovering.copy_(recovering)

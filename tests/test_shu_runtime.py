@@ -238,12 +238,11 @@ def make_runtime(runtime, stage, proof=None):
         height_duration_s=[2, 2],
         vx_range_m_s=[4.0, 4.0],
         wz_range_rad_s=[-5.0, 5.0],
-        dash_range_m_s=[-4.5, 4.5],
+        dash_speed_abs_m_s=[2.0, 3.0],
         height_range_m=[0.27, 0.27],
         combined_wz_limit_rad_s=2.0,
         linear_slew_m_s2=2.0,
         angular_slew_rad_s2=10.0,
-        height_slew_m_s=0.3,
         heading_kp=2.0,
         heading_max_wz=3.0,
     )

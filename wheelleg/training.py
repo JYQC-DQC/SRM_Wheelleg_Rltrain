@@ -54,12 +54,11 @@ _SHU_COMMANDS = (
     "vx_range_m_s",
     "wz_range_rad_s",
     "height_range_m",
-    "dash_range_m_s",
+    "dash_speed_abs_m_s",
     "segment_duration_s",
     "height_duration_s",
     "linear_slew_m_s2",
     "angular_slew_rad_s2",
-    "height_slew_m_s",
     "segment_probabilities",
     "combined_wz_limit_rad_s",
     "heading_kp",
@@ -101,8 +100,16 @@ _SHU_STAGE = {
     "p1-flat": ("recovery_probability", "min_segments", "initial_fraction", "error_floor", "relative_error"),
     "p1-landing": ("height_edges_m",),
     "p2-spin": ("spin_rates_rad_s", "spin_probabilities", "center_drift_tolerance_m"),
-    "p3-jump": ("height_range_m", "event_duration_s", "landing_stable_s", "landing_tilt_rad", "flight_tracking_scale"),
+    "p3-jump": (
+        "height_range_m",
+        "event_duration_s",
+        "landing_stable_s",
+        "landing_tilt_rad",
+        "flight_tracking_scale",
+        "jump_smooth_scale",
+    ),
     "p3-tunnel": (
+        "jump_smooth_scale",
         "height_range_m",
         "event_duration_s",
         "landing_stable_s",
@@ -437,7 +444,6 @@ def _validate_training(cfg: TrainingConfig) -> None:
             "heading_max_wz",
             "linear_slew_m_s2",
             "angular_slew_rad_s2",
-            "height_slew_m_s",
         ):
             value = commands.get(key)
             if value is not None and (type(value) not in (float, int) or not isfinite(value) or value <= 0):
@@ -454,7 +460,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
             raise ValueError("leg_symmetry and no_fork must not be enabled together")
     ranges = ("height_range_m", "segment_duration_s", "height_duration_s")
     if family == "p1":
-        ranges += ("vx_range_m_s", "wz_range_rad_s", "dash_range_m_s")
+        ranges += ("vx_range_m_s", "wz_range_rad_s", "dash_speed_abs_m_s")
     elif cfg.task == "p3-jump":
         ranges += ("vx_range_m_s",)
     for key in ranges:
@@ -462,6 +468,8 @@ def _validate_training(cfg: TrainingConfig) -> None:
             bounds = _values(commands[key], f"commands.{key}", 2)
             if len(bounds) == 2 and bounds[0] > bounds[1]:
                 raise ValueError(f"commands.{key}: expected [lower, upper]")
+            if key == "dash_speed_abs_m_s" and any(v <= 0 for v in bounds):
+                raise ValueError(f"commands.{key}: expected positive magnitudes")
     if cfg.task == "p2-spin":
         rates, weights = cfg.stage.get("spin_rates_rad_s"), cfg.stage.get("spin_probabilities")
         for key, seq in (("spin_rates_rad_s", rates), ("spin_probabilities", weights)):
@@ -489,9 +497,10 @@ def _validate_training(cfg: TrainingConfig) -> None:
             value = stage.get(key)
             if value is not None and (type(value) not in (float, int) or not isfinite(value) or value <= 0):
                 raise ValueError(f"P3 {key}: expected a finite positive value")
-        scale = stage.get("flight_tracking_scale")
-        if scale is not None and (type(scale) not in (float, int) or not 0 <= scale <= 1):
-            raise ValueError("P3 flight_tracking_scale: expected a fraction in [0,1]")
+        for key in ("flight_tracking_scale", "jump_smooth_scale"):
+            scale = stage.get(key)
+            if scale is not None and (type(scale) not in (float, int) or not 0 <= scale <= 1):
+                raise ValueError(f"P3 {key}: expected a fraction in [0,1]")
         window = stage.get("press_time_range_s")
         if window is not None:
             known = _values(window, "press_time_range_s", 2)

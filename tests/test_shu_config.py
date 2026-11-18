@@ -89,7 +89,7 @@ def test_real_p2_p3_templates_block_unmeasured(task, required):
     assert "robot.asset.usd_path" in missing
     assert f"policy.stages.{spec.stage}.{required}" in missing
     assert not any("shu_spawn" in field for field in missing)
-    assert ("policy.training.commands.vx_range_m_s" in missing) == (task == "p3-jump")
+    assert "policy.training.commands.vx_range_m_s" not in missing
     assert ("robot.asset.collision_body_names" in missing) == (task == "p3-tunnel")
     with pytest.raises(ValueError, match="Training is not ready"):
         cfg.require_ready()
@@ -224,7 +224,7 @@ def test_reject_invalid_partial_reset_map(tmp_path, section, key, value):
         load_training("p1-landing", write(tmp_path / "r.yaml", r), policy("p1"))
 
 
-def test_shu_p3_template_has_no_experimental_recipe():
+def test_shu_p3_inherits_ground_recipe_without_inventing_jump_parameters():
     data = read(policy("p3"))
     training, stages = data["training"], data["stages"]
     assert set(stages) == {"jump", "tunnel"}
@@ -238,9 +238,24 @@ def test_shu_p3_template_has_no_experimental_recipe():
         "beam_offset_from_entrance_m": 1.35,
         "beam_length_m": 0.35,
     }
-    for key in ("commands", "reward_parameters", "rewards", "evaluation"):
-        assert all(v is None for v in training[key].values()), key
-    assert training["reward_clip"] is None
+    flat = read(policy("p1"))["training"]
+    for family in ("p2", "p3"):
+        cfg = read(policy(family))["training"]
+        for key in (
+            "vx_tol_max",
+            "vx_tol_knee",
+            "wz_tol_max",
+            "wz_tol_knee",
+            "vx_error_sigma",
+            "wz_error_sigma",
+            "height_gate_shape",
+        ):
+            assert cfg["reward_parameters"][key] == flat["shu_rewards"][key]
+        for key in ("height_duration_s", "linear_slew_m_s2", "angular_slew_rad_s2"):
+            assert cfg["commands"][key] == flat["commands"][key]
+        assert "height_slew_m_s" not in cfg["commands"] and cfg["reward_clip"] == 1.0
+    assert training["commands"]["vx_range_m_s"] == flat["commands"]["vx_range_m_s"]
+    assert training["rewards"]["jump_landing"] is None and training["rewards"]["tunnel_crossing"] is None
     assert "disturbance" not in training  # no automatic external push on P3
 
 

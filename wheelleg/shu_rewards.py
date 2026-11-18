@@ -9,6 +9,37 @@ DRIVE, AIR, CATCH, RISE, RELEASE = range(5)
 _LEGS = (0, 1, 3, 4)  # LF, LR, LW, RF, RR, RW (docs/INTERFACE.md)
 
 
+def motion_bonus(target, error, maximum, knee):
+    speed = target.abs()
+    relative = error / torch.where(speed > 0, speed, 1.0)
+    return torch.where(speed > 0, torch.exp(-(relative * ((knee + speed) / maximum)).square()), 0.0)
+
+
+def motion_height_factor(h_error, shape):
+    u = ((h_error.abs() - 0.02) / 0.06).clamp(0.0, 1.0)
+    k = torch.as_tensor(shape, device=u.device, dtype=u.dtype)
+    factor = torch.exp(-k * u.square()) * torch.expm1(-k * (1 - u.square())) / torch.expm1(-k)
+    return torch.where(h_error.abs() >= 0.08, 0.0, factor)
+
+
+def joint_costs(s, lo, hi, dt):
+    q = s["joint_pos"][:, _LEGS]
+    margin = 0.015 * (hi - lo)
+    excess = ((lo + margin - q).clamp_min(0.0) + (q - (hi - margin)).clamp_min(0.0)).sum(-1)
+    qd = s["joint_vel"]
+    qdd = (qd - s["previous_joint_vel"]) / dt
+    da = s["action"] - s["previous_action"]
+    dda = da[:, _LEGS] - (s["previous_action"] - s["previous_previous_action"])[:, _LEGS]
+    return dict(
+        leg_joint_vel=5e-5 * qd[:, _LEGS].square().sum(-1),
+        joint_acc=2.5e-7 * qdd.square().sum(-1),
+        action_rate=0.01 * da.square().sum(-1),
+        action_smoothness_leg=0.05 * dda.square().sum(-1),
+        joint_torque=1e-4 * s["torque"].square().sum(-1),
+        leg_soft_limits=excess,
+    )
+
+
 def shu_reward_terms(
     state: Mapping[str, torch.Tensor],
     phase: torch.Tensor,
@@ -104,22 +135,10 @@ def shu_reward_terms(
     height = (torch.exp(-h_error.square() / 0.001) + wide_weight * torch.exp(-h_error.square() / 0.025)) / (
         1.0 + wide_weight
     )
-    h_abs = h_error.abs()
-    u = ((h_abs - 0.02) / 0.06).clamp(0.0, 1.0)
-    # Same normalized exponential as (exp(-k*u**2)-exp(-k))/(1-exp(-k)), without cancellation for small k.
-    k = torch.as_tensor(p["height_gate_shape"], device=h_error.device, dtype=h_error.dtype)
-    u_sq = u.square()
-    height_gate = torch.exp(-k * u_sq) * torch.expm1(-k * (1 - u_sq)) / torch.expm1(-k)
-    height_gate = torch.where(h_abs >= 0.08, 0.0, height_gate)
+    height_gate = motion_height_factor(h_error, p["height_gate_shape"])
 
     def tracking(axis: str, target: torch.Tensor, error: torch.Tensor) -> torch.Tensor:
-        speed = target.abs()
-        # Exact zero can occur during an active segment (slew/reversal). Pay no bonus;
-        # do not change the segment masks or suppress the separate error penalty.
-        # Divide by |cmd| first so tiny nonzero commands have no fixed tolerance floor.
-        relative_error = error / torch.where(speed > 0, speed, 1.0)
-        scaled_error = relative_error * ((p[f"{axis}_tol_knee"] + speed) / p[f"{axis}_tol_max"])
-        return torch.where(speed > 0, torch.exp(-scaled_error.square()) * height_gate, 0.0)
+        return motion_bonus(target, error, p[f"{axis}_tol_max"], p[f"{axis}_tol_knee"]) * height_gate
 
     gx, gy = s["gravity"][:, :2].unbind(-1)
     tilt = -100.0 * (torch.where(air, 0.0, gx.square()) + gy.square())
@@ -131,14 +150,7 @@ def shu_reward_terms(
         other_contact | (leg_contact & ~rise), -2.0, torch.where(leg_contact, -1.0, torch.zeros_like(vz_w))
     )
 
-    q = s["joint_pos"][:, _LEGS]
-    lo, hi = p["leg_lower_rad"], p["leg_upper_rad"]
-    margin = 0.015 * (hi - lo)
-    excess = ((lo + margin - q).clamp_min(0.0) + (q - (hi - margin)).clamp_min(0.0)).sum(-1)
-    qd = s["joint_vel"]
-    qdd = (qd - s["previous_joint_vel"]) / dt
-    da = s["action"] - s["previous_action"]
-    dda_leg = da[:, _LEGS] - (s["previous_action"] - s["previous_previous_action"])[:, _LEGS]
+    costs = joint_costs(s, p["leg_lower_rad"], p["leg_upper_rad"], dt)
     smooth_scale = torch.where(drop, 0.4, one)
 
     def paid(rate: torch.Tensor, enabled: torch.Tensor, lower: float = -1.0, upper: float = 1.0) -> torch.Tensor:
@@ -160,12 +172,10 @@ def shu_reward_terms(
         "no_fork_square": paid(-(5.0 * dx).square(), on_ground_terms),
         "no_fork": paid(-(dx.abs() > 0.05).to(dx.dtype), drive & s["fork_threshold_enabled"]),
         "undesired_contact": paid(contact_rate, on_ground_terms, -2.0, 0.0),
-        "leg_joint_vel": paid(-5e-5 * smooth_scale * qd[:, _LEGS].square().sum(-1), controlled),
-        "joint_acc": paid(-2.5e-7 * smooth_scale * qdd.square().sum(-1), controlled),
-        "action_rate": paid(-0.01 * smooth_scale * da.square().sum(-1), controlled),
-        "action_smoothness_leg": paid(-0.05 * smooth_scale * dda_leg.square().sum(-1), controlled),
-        "joint_torque": paid(-1e-4 * s["torque"].square().sum(-1), controlled),
-        "leg_soft_limits": paid(-excess, controlled),
+        **{
+            name: paid(-cost * (1 if name in ("joint_torque", "leg_soft_limits") else smooth_scale), controlled)
+            for name, cost in costs.items()
+        },
         "air_wheel_center": paid(4.0 * torch.expm1(-center_error_sq / 0.02).mean(-1), air, -4.0, 0.0),
         "air_wheel_speed": paid(6.0 * torch.expm1(-rim_error_sq.mean(-1) / 1.0), air, -6.0, 0.0),
     }
