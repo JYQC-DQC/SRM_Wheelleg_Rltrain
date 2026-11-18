@@ -281,7 +281,7 @@ class JumpSim(WheelLegSim):
             wheel_clearance=wheel_z - ground - self.cfg.shared["wheel_radius_m"],
             support_z=float(ground.mean()),
         )
-        if self.body_wheel_jump:
+        if self.body_wheel_jump and bool(self.jump.active[0]):
             body, wheels, angles = self._jump_geometry()
             info.update(body_clearance_m=body, wheel_clearance=wheels, leg_angle_rad=angles)
         return info
@@ -298,6 +298,9 @@ class JumpSim(WheelLegSim):
             self.time += 1 / self.cfg.policy_hz
             return self._measure(command, height, peaks, np.zeros(6), 0.0, False)
         info = super().step(command, height)
+        if not bool(self.jump.active[0]):
+            info["jump_result"] = self.jump_result
+            return info
         took_off = bool(self.jump.took_off[0])
         stable = max(abs(info["roll"]), abs(info["pitch"])) < self.stage["landing_tilt_rad"]
         stable &= not info["terminated"] and not info["nonwheel_contact"]
@@ -373,7 +376,19 @@ class JumpSim(WheelLegSim):
             )
         self.peak_rise_m = float(self.jump.apex_z[0] - self.jump.start_z[0])
         if bool(self.jump.failure_pulse[0]):
-            self.jump_result = "failed: takeoff/settle deadline or physical termination"
+            if info["numerical"]:
+                reason = "numerical termination"
+            elif info["nonwheel_contact"]:
+                reason = "non-wheel contact"
+            elif info["terminated"]:
+                reason = "physical termination"
+            elif bool(obstacle_hit[0]) or (bool(self.jump.first_touch[0]) and not bool(valid[0])):
+                reason = "obstacle or invalid landing site"
+            elif not bool(self.jump.took_off[0]):
+                reason = f"no confirmed liftoff in {self.stage['event_duration_s']:g} s"
+            else:
+                reason = f"not stable within {self.stage['landing_settle_timeout_s']:g} s of wheel contact"
+            self.jump_result = f"failed: {reason}"
         elif bool(self.jump.landing_pulse[0]):
             target_ok = bool(self.jump.target_reached[0])
             self.jump_result = "success" if target_ok and self.takeoff_speed_ok else "landed: target not met"
@@ -415,6 +430,7 @@ class JumpPlayer:
         self.sim.reset(Spawn(x_m=self.sites[index]["spawn_xy_m"][0], y_m=self.sites[index]["spawn_xy_m"][1]))
         self.target[:] = self.command[:] = 0
         self.failed = self.paused = False
+        self.press_status = ""
         self.info = None
 
     def stop(self) -> None:
@@ -430,9 +446,14 @@ class JumpPlayer:
         elif key == glfw.KEY_X:
             self.stop()
         elif key == glfw.KEY_SPACE:
-            if not (self.failed or self.paused):
-                # This is a manual press, not an automatic request waiting for a stable stance.
-                self.sim.press_jump(self.height_m)
+            if self.failed or self.sim.estopped:
+                self.press_status = "Space ignored: reset with R"
+            elif self.paused:
+                self.press_status = "Space ignored: paused (P resumes)"
+            elif not self.sim.press_jump(self.height_m):
+                self.press_status = "Space ignored: previous jump still active"
+            else:
+                self.press_status = ""
         elif key in (glfw.KEY_P, glfw.KEY_KP_DIVIDE):
             self.paused = not self.paused
         elif key in (glfw.KEY_Z, glfw.KEY_KP_7):
@@ -491,7 +512,7 @@ class JumpPlayer:
             f"{self.sites[self.selected]['name']} | {state} | x{self.slow}\n"
             f"target jump {self.height_m * 100:.1f} cm | vx {self.target[0]:+.2f} m/s "
             f"| wz {self.target[2]:+.2f} rad/s | body height {self.body_height_target_m * 100:.1f} cm\n"
-            f"{actual}jump: {self.sim.jump_result} | "
+            f"{actual}{self.press_status + chr(10) if self.press_status else ''}jump: {self.sim.jump_result} | "
             + (
                 f"peak {'joint' if self.sim.body_wheel_jump else 'wheel'} clearance "
                 f"{self.sim.jump.scored_height[0] * 100:.1f} cm | "
@@ -611,6 +632,7 @@ def run_viewer(player: JumpPlayer, panel: bool) -> None:
     glfw.set_scroll_callback(window, scroll)
     controls = control_panel(player) if panel else None
     last, budget = time.perf_counter(), 0.0
+    next_status = last
     try:
         while not glfw.window_should_close(window):
             now = time.perf_counter()
@@ -618,7 +640,9 @@ def run_viewer(player: JumpPlayer, panel: bool) -> None:
             last = now
             glfw.poll_events()
             if controls:
-                controls[1].set(player.status())
+                if now >= next_status:
+                    controls[1].set(player.status())
+                    next_status = now + 0.1
                 controls[0].update()
             while budget >= 1 / sim.cfg.policy_hz:
                 player.step()
