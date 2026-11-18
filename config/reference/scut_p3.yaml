@@ -272,7 +272,7 @@ stages:
     highest_level_probability: 0.60  # Remaining samples are uniform over the unlocked lower levels.
     feasible_height_m: null
     push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
-    tuck_leg_length_m: 0.15
+    tuck_leg_length_m: 0.17
     landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.
     landing_stable_s: 0.8
     max_touchdown_difference_s: 0.05

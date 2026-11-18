@@ -833,10 +833,10 @@ def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):
         jump_ref={"tuck": torch.tensor([True] * 4), "flight": torch.tensor([True, True, True, False])},
         jump_pose_scale=1.0,
         guidance_scale=0.3,
-        leg_length=torch.tensor([[0.28, 0.28], [0.15, 0.215], [0.15, 0.15], [0.14, 0.14]]),
+        leg_length=torch.tensor([[0.28, 0.28], [0.15, 0.171], [0.17, 0.17], [0.14, 0.14]]),
         leg_action_second_difference=torch.tensor([[0.0] * 4, [1.0] * 4, [100.0] * 4, [100.0] * 4]),
     )
-    torch.testing.assert_close(jump_tuck(state, {}), torch.tensor([0.0, 0.25, 1.0, 1.0]))
+    torch.testing.assert_close(jump_tuck(state, {}), torch.tensor([0.0, (0.109 / 0.11) ** 2, 1.0, 1.0]))
     smooth = jump_air_leg_smoothness(state, {})
     assert 0 == smooth[0] < smooth[1] < smooth[2] < 1
     assert smooth[3] == 0
