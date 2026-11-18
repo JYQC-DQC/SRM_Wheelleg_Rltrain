@@ -201,7 +201,7 @@ def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
     commands.step(30.0, torch.zeros(64, dtype=torch.bool))
     torch.testing.assert_close(commands.value, target)
     flat_cases = evaluation_cases(flat)
-    assert sorted({case.command[0] for case in flat_cases if case.jump_count}) == pytest.approx([0.0, 0.6, 1.55, 2.5])
+    assert sorted({case.command[0] for case in flat_cases if case.jump_count}) == pytest.approx([0.0, 0.6, 1.3, 2.0])
     assert sum(case.jump_count == 0 for case in flat_cases) == 4
     tunnel = load_training("p3-tunnel", robot, policy)
     commands = Commands(tunnel, 64, "cpu")
@@ -457,6 +457,7 @@ def test_flat_jump_uses_separate_takeoff_and_landing_deadlines(scenario, finishe
             wheel_clearance=torch.full((1, 2), z - 0.30),
             body_clearance_m=torch.tensor([z - 0.20]),
             leg_angle_rad=torch.zeros(1, 2),
+            leg_length_m=torch.full((1, 2), 0.25),
             failed=torch.tensor([scenario == "no_touch_before_episode_ends" and step == 800]),
             require_height=no,
         )
@@ -520,7 +521,8 @@ def clearance_jump():
 
 
 def clearance_step(
-    event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55, failed=False, body=0.60, angles=(0.0, 0.0)
+    event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55, failed=False, body=0.60, angles=(0.0, 0.0),
+    lengths=(0.25, 0.25),
 ):
     event.update(
         0.01,
@@ -534,10 +536,27 @@ def clearance_step(
         wheel_clearance=torch.tensor([wheel]),
         body_clearance_m=torch.tensor([body]),
         leg_angle_rad=torch.tensor([angles]),
+        leg_length_m=torch.tensor([lengths]),
         failed=torch.tensor([failed]),
         require_height=torch.tensor([False]),
     )
     return event.references(torch.tensor([vz]), torch.tensor([min(wheel)]), 9.81)
+
+
+def test_air_fold_only_credits_safe_apex_and_stops_on_first_touch(clearance_jump):
+    e = clearance_jump
+    for _ in range(3):
+        clearance_step(e, (0.30, 0.30), lengths=(0.125, 0.20))
+    assert e.took_off.item() and e.air_fold_cost.item() > 2.5
+    assert e.scored_height.item() == 0 and e.height_progress.item() == 0
+    clearance_step(e, (0.30, 0.30), lengths=(0.125, 0.20))
+    assert e.air_fold_cost.item() == pytest.approx(0.01)
+    clearance_step(e, (0.20, 0.20), lengths=(0.15, 0.20))
+    assert e.scored_height.item() == pytest.approx(0.20) and e.air_fold_cost.item() == 0
+    clearance_step(e, (0.00, 0.01), vz=-0.4, contact=(True, False), lengths=(0.08, 0.08))
+    assert e.first_touch.item() and e.air_fold_cost.item() == 0 and e.air_retract_cost.item() == 0
+    clearance_step(e, (0.32, 0.31), lengths=(0.08, 0.08))  # A bounce does not re-arm either cost.
+    assert e.air_fold_cost.item() == 0 and e.scored_height.item() == pytest.approx(0.20)
 
 
 def test_stand_walk_reward_gate_ends_after_jump_settlement(clearance_jump):

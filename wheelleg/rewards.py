@@ -368,6 +368,8 @@ EVENT_TERMS = frozenset(
         "termination",
         "jump_apex",
         "jump_height_progress",  # Increment of normalized apex, not a rate per second.
+        "jump_air_fold",
+        "jump_prepare_retraction",
         "jump_takeoff_response",
         "jump_settle_response",
         "jump_landing",

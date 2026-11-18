@@ -928,6 +928,8 @@ class WheelLegEnv(DirectRLEnv):
             takeoff_min_fraction = t.stage.get("moving_takeoff_min_fraction")
             was_airborne = self.jump.took_off.clone() if takeoff_min_fraction is not None else None
             geometry = {k: s[k] for k in ("body_clearance_m", "leg_angle_rad")} if self.body_wheel_jump else {}
+            if self.jump.air_guard is not None:
+                geometry["leg_length_m"] = s["leg_length"]
             self.jump.update(
                 dt,
                 self.episode_length_buf * dt,
@@ -1124,6 +1126,9 @@ class WheelLegEnv(DirectRLEnv):
                 terms["jump_apex"] *= self.jump_vx_qualified
             if "jump_height_progress" in terms:
                 terms["jump_height_progress"] *= self.jump_progress_vx_scale
+            if self.jump.air_guard is not None:
+                terms["jump_air_fold"] = -self.jump.air_fold_cost
+                terms["jump_prepare_retraction"] = -self.jump.air_retract_cost
         if self.stair_course is not None:
             motion_terms = compute_rewards(
                 s,

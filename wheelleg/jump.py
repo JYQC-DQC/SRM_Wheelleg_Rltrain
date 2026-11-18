@@ -1,5 +1,6 @@
 import torch
 
+from .air_retraction import AirRetractionTracker
 from .commands import uniform
 
 FEATURES = 16
@@ -52,6 +53,12 @@ class JumpEvent:
             self.band_scored_height = torch.zeros_like(self.elapsed)
         self.preparing = self.active.clone()
         self.height_progress = torch.zeros_like(self.elapsed)
+        self.air_guard = (self.body_wheel or {}).get("air_leg_guard")
+        if self.air_guard is not None:
+            self.retraction = AirRetractionTracker(count, self.air_guard["retract_tolerance_m"], device)
+            self.deepest_intrusion = torch.zeros_like(self.elapsed)
+            self.air_fold_cost = torch.zeros_like(self.elapsed)
+            self.air_retract_cost = torch.zeros_like(self.elapsed)
         self.air_time = torch.zeros_like(self.elapsed)
         self.stable_time = torch.zeros_like(self.elapsed)
         self.touchdown_time = torch.full((count, 2), -1.0, device=device)
@@ -78,6 +85,11 @@ class JumpEvent:
         self.quality_paid = self.active.clone()
 
     def reset(self, ids: torch.Tensor) -> None:
+        if self.air_guard is not None:
+            self.deepest_intrusion[ids] = 0
+            self.air_fold_cost[ids] = 0
+            self.air_retract_cost[ids] = 0
+            self.retraction.reset(ids)
         if self.band_width is not None:
             self.band_frames[ids] = 0
             self.band_scored_height[ids] = 0
@@ -146,6 +158,9 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.air_guard is not None:
+            self.deepest_intrusion[ids] = 0
+            self.retraction.reset(ids)
         if self.band_width is not None:
             self.band_frames[ids] = 0
             self.band_scored_height[ids] = 0
@@ -208,6 +223,7 @@ class JumpEvent:
         require_height: torch.Tensor | None = None,
         body_clearance_m: torch.Tensor | None = None,
         leg_angle_rad: torch.Tensor | None = None,
+        leg_length_m: torch.Tensor | None = None,
     ) -> None:
         self.apex_pulse.zero_()
         self.landing_pulse.zero_()
@@ -235,6 +251,21 @@ class JumpEvent:
         self.air_time += dt * flight * no_contact
         apex_sample = candidate | flight
         airborne = flight & no_contact & ~self.first_touch
+        score_frame = airborne
+        if self.air_guard is not None:
+            if leg_length_m is None:
+                raise ValueError("air_leg_guard requires both sagittal leg lengths")
+            guard = self.air_guard
+            margin = guard["margin_m"]
+            intrusion_m = (guard["sim_floor_m"] + margin - leg_length_m.amin(-1)).clamp_min(0)
+            depth = torch.where(airborne, intrusion_m / margin, 0.0)
+            # Unsafe frames cannot buy progress, apex quality, or a passing height.
+            score_frame = airborne & (depth == 0)
+            # Remain monotone beyond the nominal stop without making a bad jump vastly worse than no jump.
+            severity = depth.clamp_max(1) + (1 - torch.exp(-(depth - 1).clamp_min(0))) / 6
+            extra = (severity - self.deepest_intrusion).clamp_min(0)
+            self.deepest_intrusion = torch.maximum(self.deepest_intrusion, severity)
+            self.air_fold_cost = guard["depth_cost"] * extra + guard["hold_cost_per_s"] * severity * dt
         if self.clearance_training is not None:
             self.peak_wheel_clearance.copy_(
                 torch.where(airborne, torch.maximum(self.peak_wheel_clearance, clearance), self.peak_wheel_clearance)
@@ -242,10 +273,13 @@ class JumpEvent:
             if self.body_wheel is not None:
                 if wheel_clearance is None or body_clearance_m is None or leg_angle_rad is None:
                     raise ValueError("body_wheel_jump requires wheel and chassis clearance and both leg angles")
-                self._record_joint_peak(airborne, clearance, body_clearance_m, leg_angle_rad)
+                self._record_joint_peak(score_frame, clearance, body_clearance_m, leg_angle_rad)
             apex_sample &= no_contact & ~self.first_touch
             # Give the legs the descent to extend; wheel clearance depends on the action and can oscillate.
             self.preparing |= airborne & (vz <= -self.clearance_training["tuck_end_vz_m_s"])
+            if self.air_guard is not None:
+                retract = self.retraction.update(leg_length_m, airborne & self.preparing)
+                self.air_retract_cost = self.air_guard["retract_cost_per_m"] * retract.mean(-1)
         self.apex_z = torch.where(apex_sample, torch.maximum(self.apex_z, z), self.apex_z)
         self.invalid |= self.active & obstacle_contact
         if failed is not None:

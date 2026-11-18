@@ -219,6 +219,13 @@ stages:
       leg_pose_scale_rad: 0.52359878  # 30 degrees past the deadband gives exp(-1) quality.
       max_leg_angle_rad: 0.78539816  # Beyond 45 degrees this peak cannot pass the curriculum.
       settle_response_scale_s: 1.4  # Decay scale for total time including the 0.8 s hold, not a deadline.
+      air_leg_guard:
+        sim_floor_m: 0.125  # V14_2 nominal zero-pose hip-to-wheel length; NOT a measured hardware stop.
+        margin_m: 0.02
+        depth_cost: 3.0  # Cost per full margin of NEW deepest penetration, not per frame.
+        hold_cost_per_s: 1.0
+        retract_tolerance_m: 0.01
+        retract_cost_per_m: 4.0  # Mean excess excursion of the two legs; no dt multiplier.
     clearance_jump:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
