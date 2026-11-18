@@ -238,7 +238,7 @@ stages:
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
       tuck_end_vz_m_s: 0.25  # Descent must be confirmed AND the body must have dropped from its measured apex.
       prepare_drop_fraction: 0.20  # Of body rise since confirmed liftoff, independent of commanded height.
-      prepare_drop_range_m: [0.005, 0.04]
+      prepare_drop_range_m: [0.005, 0.07]
       stable_vz_m_s: 0.20
       stable_roll_pitch_rate_rad_s: 1.0
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.

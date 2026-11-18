@@ -735,10 +735,13 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
     assert refs["takeoff_velocity"].item() == event.clearance_training["takeoff_velocity_hint_m_s"]
     refs = clearance_step(event, (0.29, 0.30), vz=-0.10)
     assert refs["tuck"].item() and not refs["prepare"].item()
-    clearance_step(event, (0.29, 0.30), z=0.75, vz=0.4)
-    refs = clearance_step(event, (0.10, 0.10), z=0.74, vz=-0.4)
+    # A 45 cm rise from confirmed liftoff would request 9 cm, capped at 7 cm.
+    clearance_step(event, (0.29, 0.30), z=1.00, vz=0.4)
+    refs = clearance_step(event, (0.10, 0.10), z=0.96, vz=-0.4)
     assert refs["tuck"].item() and not refs["prepare"].item()  # Descent alone or swinging wheels is not enough.
-    refs = clearance_step(event, (0.29, 0.30), z=0.71, vz=-0.4)
+    refs = clearance_step(event, (0.29, 0.30), z=0.931, vz=-0.4)
+    assert refs["tuck"].item() and not refs["prepare"].item()
+    refs = clearance_step(event, (0.29, 0.30), z=0.93, vz=-0.4)
     assert not refs["tuck"].item() and refs["prepare"].item()
     for wheel, vz in (((0.08, 0.09), -1.2), ((0.30, 0.31), 0.1)):
         refs = clearance_step(event, wheel, vz=vz)
