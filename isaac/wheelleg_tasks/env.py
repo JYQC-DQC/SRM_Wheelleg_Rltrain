@@ -177,7 +177,9 @@ class WheelLegEnv(DirectRLEnv):
             JumpCurriculum(t.stage, d, levels, fresh_windows=staged_flat) if self.family == "p3" else None
         )
         self.flat_jump_curricula = (
-            (self.jump_curriculum, JumpCurriculum(t.stage, d, fresh_windows=True)) if staged_flat else ()
+            (self.jump_curriculum, JumpCurriculum(t.stage, d, fresh_windows=True,
+                                                  promote_rate=t.settings.get("moving_jump_promote_rate")))
+            if staged_flat else ()
         )
         self.jump_vx_qualified = torch.ones(n, dtype=torch.bool, device=d)
         self.jump_progress_vx_scale = torch.ones(n, device=d)

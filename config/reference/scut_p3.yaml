@@ -53,6 +53,7 @@ training:
   rollout_steps: 48
   max_iterations: 20000
   save_interval: 200
+  moving_jump_promote_rate: 0.5
   episode_length_s: 20.0
   init_noise_std: 1.0
   reward_clip: 2.5
@@ -76,7 +77,7 @@ training:
     height_duration_s:
     - 2.0
     - 6.0
-    vx_range_m_s: [0.6, 2.5]
+    vx_range_m_s: [0.6, 2.0]
     wz_range_rad_s:
     - 0.0
     - 0.0

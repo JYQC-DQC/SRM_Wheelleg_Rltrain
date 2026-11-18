@@ -145,10 +145,12 @@ class JumpCurriculum:
     """Success-gated height bins and per-bin guidance annealing, guide section 6.6."""
 
     def __init__(
-        self, settings: dict, device: str, levels: tuple[float, ...] | None = None, *, fresh_windows: bool = False
+        self, settings: dict, device: str, levels: tuple[float, ...] | None = None, *,
+        fresh_windows: bool = False, promote_rate: float | None = None,
     ):
         self.settings = settings
         self.fresh_windows = fresh_windows
+        self.promote_rate = promote_rate
         if levels is None:
             levels = settings.get("height_levels_m")
         self.levels = (
@@ -191,9 +193,10 @@ class JumpCurriculum:
             if self.attempts[level] >= self.settings["curriculum_min_events"]:
                 self.latest_rate[level] = rate[level]
                 threshold = self.settings["guidance_success_threshold"]
-                passed = rate[level] > threshold if demotion else rate[level] >= threshold
+                promote = threshold if self.promote_rate is None else self.promote_rate
+                passed = rate[level] > promote if demotion else rate[level] >= promote
                 if passed:
-                    if self.anneal_start[level] < 0:
+                    if rate[level] >= threshold and self.anneal_start[level] < 0:
                         self.anneal_start[level] = iteration
                     self.maximum_level = min(level + 1, len(self.levels) - 1)
                 elif demotion and rate[level] < self.settings["curriculum_demote_rate"]:
