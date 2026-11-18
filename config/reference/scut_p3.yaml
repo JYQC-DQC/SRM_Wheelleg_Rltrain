@@ -237,8 +237,8 @@ stages:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
       tuck_end_vz_m_s: 0.25  # Descent must be confirmed AND the body must have dropped from its measured apex.
-      prepare_drop_fraction: 0.20  # Of body rise since confirmed liftoff, independent of commanded height.
-      prepare_drop_range_m: [0.005, 0.07]
+      prepare_drop_fraction: 0.30  # Of observed body rise since confirmed liftoff; no upper cap.
+      prepare_drop_min_m: 0.005
       stable_vz_m_s: 0.20
       stable_roll_pitch_rate_rad_s: 1.0
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
@@ -267,8 +267,8 @@ stages:
     - 3.0
     - 5.0
     jump_count_probabilities: [0.0, 1.0, 0.0]  # Schedule exactly one press per flat training episode.
-    height_range_m: [0.04, 0.40]
-    height_levels_m: [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40]
+    height_range_m: [0.04, 0.45]
+    height_levels_m: [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40, 0.45]
     highest_level_probability: 0.60  # Remaining samples are uniform over the unlocked lower levels.
     feasible_height_m: null
     push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
@@ -284,7 +284,7 @@ stages:
     disturbance_phase: 2
     curriculum_min_events: 500
     height_tolerance_m: 0.01
-    simulation_height_limit_m: 0.4
+    simulation_height_limit_m: 0.45
   tunnel:
     event_duration_s: 1.2
     takeoff_confirmation_s: 0.03

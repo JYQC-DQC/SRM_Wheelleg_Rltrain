@@ -301,9 +301,11 @@ class JumpEvent:
                 peak = torch.where(new_flight, z, torch.maximum(self.flight_peak_z, z))
                 self.flight_peak_z = torch.where(airborne, peak, self.flight_peak_z)
                 rise = self.flight_peak_z - self.flight_start_z
-                drop = (rise * self.clearance_training["prepare_drop_fraction"]).clamp(
-                    *self.clearance_training["prepare_drop_range_m"]
-                )
+                drop = rise * self.clearance_training["prepare_drop_fraction"]
+                if "prepare_drop_min_m" in self.clearance_training:
+                    drop = drop.clamp_min(self.clearance_training["prepare_drop_min_m"])
+                else:  # Reproduce existing snapshots with a capped drop.
+                    drop = drop.clamp(*self.clearance_training["prepare_drop_range_m"])
                 prepare &= self.flight_peak_z - z >= drop - 1e-6
             self.preparing |= prepare
             if self.air_guard is not None:

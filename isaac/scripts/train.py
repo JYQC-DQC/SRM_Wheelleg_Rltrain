@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--run-name")
     parser.add_argument("--num-envs", type=int)
     parser.add_argument("--iterations", type=int)
+    parser.add_argument("--initial-jump-level", type=int, help="One-based starting level for both fresh flat-jump curricula")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--resume", type=Path, help="Restore this task's policy, critic, optimizer and iteration")
     group.add_argument("--initialize-from", type=Path, help="Transfer actor weights to a new stage/policy")
@@ -50,6 +51,11 @@ def main() -> None:
         parser.error("--restart-air-height needs --resume and --task p1-landing")
     path = args.policy or Path(f"config/policies/{TASKS[args.task].policy}/policy_meta.yaml")
     cfg = load_training(args.task, args.robot, path)
+    if args.initial_jump_level is not None and (
+        args.resume or args.task != "p3-jump" or "moving_probability" not in cfg.stage
+        or not 1 <= args.initial_jump_level <= len(cfg.stage.get("height_levels_m", ()))
+    ):
+        parser.error("--initial-jump-level needs fresh staged flat-jump curricula and a valid level")
     if args.check_only:
         print(
             json.dumps(
@@ -94,6 +100,7 @@ def main() -> None:
         resume=str(args.resume) if args.resume else None,
         initialize_from=str(args.initialize_from) if args.initialize_from else None,
         inherit_action_std=args.inherit_action_std,
+        initial_jump_level=args.initial_jump_level,
         allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
@@ -115,6 +122,9 @@ def main() -> None:
             make_env_cfg(cfg, num_envs, args.device, allow_unvalidated_baseline=args.allow_unvalidated_baseline)
         )
         try:
+            if args.initial_jump_level is not None:
+                for curriculum in env.flat_jump_curricula:
+                    curriculum.maximum_level = args.initial_jump_level - 1
             # Never clip at the wrapper: obs_v2 contains the previous RAW action.
             wrapped = RslRlVecEnvWrapper(env, clip_actions=None)
             runner = WheelLegRunner(wrapped, runner_config(cfg), log_dir=str(output), device=args.device)

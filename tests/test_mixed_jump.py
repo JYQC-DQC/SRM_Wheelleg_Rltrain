@@ -479,7 +479,7 @@ def test_staged_flat_samples_highest_open_level_more_often_but_keeps_all_lower_l
     cfg = load_training(
         "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
     )
-    expected = [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40]
+    expected = [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40, 0.45]
     curriculum = JumpCurriculum(cfg.stage, "cpu", fresh_windows=True)
     assert curriculum.levels.tolist() == pytest.approx(expected)
     assert sorted({case.jump_height for case in evaluation_cases(cfg) if case.jump_count}) == pytest.approx(expected)
@@ -500,7 +500,7 @@ def test_staged_flat_samples_highest_open_level_more_often_but_keeps_all_lower_l
         assert frequencies[:cap].tolist() == pytest.approx([0.40 / cap] * cap, abs=0.02)
         assert not frequencies[cap + 1 :].any()
         torch.testing.assert_close(heights, curriculum.levels[bins])
-    assert heights.max().item() == pytest.approx(0.40)
+    assert heights.max().item() == pytest.approx(0.45)
 
 
 @pytest.fixture
@@ -735,13 +735,13 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
     assert refs["takeoff_velocity"].item() == event.clearance_training["takeoff_velocity_hint_m_s"]
     refs = clearance_step(event, (0.29, 0.30), vz=-0.10)
     assert refs["tuck"].item() and not refs["prepare"].item()
-    # A 45 cm rise from confirmed liftoff would request 9 cm, capped at 7 cm.
+    # A 45 cm rise requires 13.5 cm of descent, not the old 7 cm cap.
     clearance_step(event, (0.29, 0.30), z=1.00, vz=0.4)
     refs = clearance_step(event, (0.10, 0.10), z=0.96, vz=-0.4)
     assert refs["tuck"].item() and not refs["prepare"].item()  # Descent alone or swinging wheels is not enough.
-    refs = clearance_step(event, (0.29, 0.30), z=0.931, vz=-0.4)
+    refs = clearance_step(event, (0.29, 0.30), z=0.866, vz=-0.4)
     assert refs["tuck"].item() and not refs["prepare"].item()
-    refs = clearance_step(event, (0.29, 0.30), z=0.93, vz=-0.4)
+    refs = clearance_step(event, (0.29, 0.30), z=0.865, vz=-0.4)
     assert not refs["tuck"].item() and refs["prepare"].item()
     for wheel, vz in (((0.08, 0.09), -1.2), ((0.30, 0.31), 0.1)):
         refs = clearance_step(event, wheel, vz=vz)
@@ -759,7 +759,7 @@ def test_low_jump_delays_prepare_then_charges_large_retraction_once_per_excursio
     clearance_step(e, (.04,.04), z=.52)
     refs = clearance_step(e, (.03,.03), z=.519, vz=-.4)
     assert refs['tuck'].item()
-    # A 2 cm rise, below the target: only a 5 mm drop is required.
+    # A 2 cm rise, below the target, needs only a 6 mm drop.
     for length, cost in [(.30,0), (.295,0), (.293,.035), (.290,.015), (.289,.155), (.288,.005),
                          (.30,0), (.289,.15 + .011*5*1.75)]:
         refs = clearance_step(e, (.03,.03), z=.514, vz=-.4, lengths=(length,length))
