@@ -6,6 +6,21 @@ import torch
 from wheelleg.rewards import compute_rewards, jump_apex, jump_settle_response, jump_takeoff_response
 
 
+def test_runup_uses_ramped_command_and_skips_unsupported_or_post_press_samples():
+    from wheelleg.rewards import runup_tracking
+
+    cfg = dict(linear_share=0.25, underspeed_deadband_m_s=0.15, underspeed_cost=0.15)
+    cmd = torch.tensor([2., 2., 0., 2., 2., .4, 2.])
+    err = torch.tensor([-1.3, 0., 0., -1.3, -1.3, -.1, .4])
+    ordinary = torch.exp(-err.square() / .5) * .01
+    ordinary[4] = 0.  # Existing press mask already applied by env.
+    positive, negative = runup_tracking(cmd, err, torch.tensor([1,1,1,0,0,1,1]).bool(), ordinary, 1., .01, cfg)
+    torch.testing.assert_close(positive[0], .75 * ordinary[0] + .25 * torch.tensor(.35) * .01)
+    torch.testing.assert_close(negative[0], torch.tensor(-.15 * 1.15**2 * .01))
+    torch.testing.assert_close(positive[1:5], ordinary[1:5])
+    assert not negative[1:].any()
+
+
 def test_adaptive_lr_limit_applies_to_each_optimizer_step_and_scheduler_feedback():
     from wheelleg.adaptive_lr import install_adaptive_lr_limit
 

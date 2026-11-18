@@ -13,6 +13,16 @@ def lin_vel_error(s, p):
     return (0.25 * s["linear_error"]).square() * s["tracking_mask"] * s["height_gate"]
 
 
+def runup_tracking(command, error, supported_before_press, ordinary, weight, dt, cfg):
+    """Mix within the ordinary tracking budget and charge only forward underspeed, on support before the press."""
+    eligible = supported_before_press & (command > 0)
+    linear = (1 - error.abs() / command.clamp_min(1e-6)).clamp(0, 1)
+    positive = torch.lerp(ordinary, weight * dt * linear, cfg["linear_share"])
+    shortfall = (-error - cfg["underspeed_deadband_m_s"]).clamp(0, 2)
+    penalty = -cfg["underspeed_cost"] * shortfall.square() * dt
+    return torch.where(eligible, positive, ordinary), torch.where(eligible, penalty, 0.0)
+
+
 def track_ang_vel(s, p):
     return torch.exp(-s["angular_error"].square() / p["angular_sigma"]) * s["tracking_mask"] * s["height_gate"]
 

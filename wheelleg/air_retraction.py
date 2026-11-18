@@ -22,17 +22,19 @@ class AirRetractionTracker:
 
     @torch.no_grad()
     def update(self, lengths_m: torch.Tensor, eligible: torch.Tensor) -> torch.Tensor:
-        """Return new excess meters [N, 2]; pass lengths [N, 2] and current bool eligibility [N] every frame."""
+        """Once an excursion qualifies, charge its full length, then only newly reached depth."""
         continuous = (eligible & self._active)[:, None]
-        rebound = lengths_m - self._trough > self.tolerance_m
+        threshold = self.tolerance_m + torch.finfo(lengths_m.dtype).eps
+        rebound = lengths_m - self._trough > threshold
         new_peak = ~continuous | rebound | (lengths_m > self._peak)
         peak = torch.where(new_peak, lengths_m, self._peak)
         old_trough = torch.where(new_peak, lengths_m, self._trough)
         trough = torch.minimum(old_trough, lengths_m)
 
         # A fall back to an already charged trough contributes nothing.
-        previous_excess = (peak - old_trough - self.tolerance_m).clamp_min(0)
-        delta = (peak - trough - self.tolerance_m).clamp_min(0) - previous_excess
+        previous, current = peak - old_trough, peak - trough
+        # Account for float32 cancellation when e.g. 0.300 - 0.295 should equal the tolerance.
+        delta = torch.where(current > threshold, current, 0.0) - torch.where(previous > threshold, previous, 0.0)
         self._peak.copy_(peak)
         self._trough.copy_(trough)
         self._active.copy_(eligible)

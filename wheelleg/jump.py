@@ -256,16 +256,20 @@ class JumpEvent:
             if leg_length_m is None:
                 raise ValueError("air_leg_guard requires both sagittal leg lengths")
             guard = self.air_guard
-            margin = guard["margin_m"]
-            intrusion_m = (guard["sim_floor_m"] + margin - leg_length_m.amin(-1)).clamp_min(0)
+            squared = "entry_length_m" in guard
+            boundary = guard["entry_length_m"] if squared else guard["sim_floor_m"] + guard["margin_m"]
+            margin = guard["depth_scale_m"] if squared else guard["margin_m"]
+            intrusion_m = (boundary - leg_length_m.amin(-1)).clamp_min(0)
             depth = torch.where(airborne, intrusion_m / margin, 0.0)
             # Unsafe frames cannot buy progress, apex quality, or a passing height.
             score_frame = airborne & (depth == 0)
             # Remain monotone beyond the nominal stop without making a bad jump vastly worse than no jump.
-            severity = depth.clamp_max(1) + (1 - torch.exp(-(depth - 1).clamp_min(0))) / 6
+            inside = depth.clamp_max(1)
+            severity = (inside.square() if squared else inside) + (1 - torch.exp(-(depth - 1).clamp_min(0))) / 6
+            first_entry = (depth > 0) & (self.deepest_intrusion == 0)
             extra = (severity - self.deepest_intrusion).clamp_min(0)
             self.deepest_intrusion = torch.maximum(self.deepest_intrusion, severity)
-            self.air_fold_cost = guard["depth_cost"] * extra + guard["hold_cost_per_s"] * severity * dt
+            self.air_fold_cost = guard.get("entry_cost", 0.0) * first_entry + guard["depth_cost"] * extra + guard["hold_cost_per_s"] * severity * dt
         if self.clearance_training is not None:
             self.peak_wheel_clearance.copy_(
                 torch.where(airborne, torch.maximum(self.peak_wheel_clearance, clearance), self.peak_wheel_clearance)

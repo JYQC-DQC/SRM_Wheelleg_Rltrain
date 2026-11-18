@@ -546,17 +546,19 @@ def clearance_step(
 def test_air_fold_only_credits_safe_apex_and_stops_on_first_touch(clearance_jump):
     e = clearance_jump
     for _ in range(3):
-        clearance_step(e, (0.30, 0.30), lengths=(0.125, 0.20))
-    assert e.took_off.item() and e.air_fold_cost.item() > 2.5
+        clearance_step(e, (0.30, 0.30), lengths=(0.13, 0.20))
+    assert e.took_off.item() and e.air_fold_cost.item() == pytest.approx(.12 + .6 + .0025, abs=2e-6)
     assert e.scored_height.item() == 0 and e.height_progress.item() == 0
-    clearance_step(e, (0.30, 0.30), lengths=(0.125, 0.20))
-    assert e.air_fold_cost.item() == pytest.approx(0.01)
+    clearance_step(e, (0.30, 0.30), lengths=(0.14, 0.20))
+    assert e.air_fold_cost.item() == 0
+    clearance_step(e, (0.30, 0.30), lengths=(0.13, 0.20))
+    assert e.air_fold_cost.item() == pytest.approx(.0025, abs=1e-7)  # No repeat entry or depth fee.
     clearance_step(e, (0.20, 0.20), lengths=(0.15, 0.20))
-    assert e.scored_height.item() == pytest.approx(0.20) and e.air_fold_cost.item() == 0
+    assert e.scored_height.item() == pytest.approx(0.30) and e.air_fold_cost.item() == 0
     clearance_step(e, (0.00, 0.01), vz=-0.4, contact=(True, False), lengths=(0.08, 0.08))
     assert e.first_touch.item() and e.air_fold_cost.item() == 0 and e.air_retract_cost.item() == 0
     clearance_step(e, (0.32, 0.31), lengths=(0.08, 0.08))  # A bounce does not re-arm either cost.
-    assert e.air_fold_cost.item() == 0 and e.scored_height.item() == pytest.approx(0.20)
+    assert e.air_fold_cost.item() == 0 and e.scored_height.item() == pytest.approx(0.30)
 
 
 def test_stand_walk_reward_gate_ends_after_jump_settlement(clearance_jump):
