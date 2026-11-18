@@ -296,7 +296,6 @@ def make_runtime(runtime, stage, proof=None):
         wz_error_sigma=2.5,
         height_wide_weight=1.0,
         height_gate_shape=1.0,
-        lateral_velocity_scale=1.0,
     )
     e.training = SimpleNamespace(
         task=stage,

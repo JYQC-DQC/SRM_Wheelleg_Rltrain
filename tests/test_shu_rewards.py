@@ -48,7 +48,6 @@ def inputs(n, dtype=torch.float64):
         "wz_tol_knee": 1.0,
         "vx_error_sigma": 2.5,
         "wz_error_sigma": 1.0,
-        "lateral_velocity_scale": 1.5,
         "heading_kp": 2.0,
         "heading_max_wz": 0.3,
     }
@@ -204,10 +203,14 @@ def test_zero_axes_use_segment_masks_and_signed_tiny_commands():
     torch.testing.assert_close(terms["stand_still"] / _DT, torch.tensor([0.0, 0.0, -0.4, -0.4]))
     assert torch.all(terms["ang_vel_error"] == 0)
     assert terms["lin_vel_error"][1] < 0
-    assert terms["lateral_velocity"][0] < 0 and terms["lateral_velocity"][2] == 0
+    assert "lateral_velocity" not in terms
+    state["velocity_w"][:2, 1] = 1.0  # straight driving: sideways motion alone has no separate cost
+    changed = shu_reward_terms(state, torch.full((4,), DRIVE), p, _DT)
+    for name, value in terms.items():
+        torch.testing.assert_close(changed[name][:2], value[:2])
 
 
-def test_heading_wrap_clip_and_rotated_slip_with_no_yaw_bonus():
+def test_heading_wrap_clip_with_no_yaw_bonus():
     state, p = inputs(3)
     state["yaw"][:] = math.pi - 0.1
     state["heading_ref"][:] = -math.pi + 0.1
@@ -225,7 +228,6 @@ def test_heading_wrap_clip_and_rotated_slip_with_no_yaw_bonus():
         track_lin_vel=[1, 1, 0],
         track_ang_vel=[0, 0, 1],
         ang_vel_error=[0, math.expm1(-0.09), 0],
-        lateral_velocity=[0, 0, 0],
         stand_still=[0, 0, -1],
     )
 
@@ -247,7 +249,6 @@ def test_rise_forces_zero_targets_and_halves_already_clipped_penalties():
         ang_vel_error=[-1, -0.5, yaw_cost, yaw_cost / 2],
         track_lin_vel=[0] * 4,
         track_ang_vel=[0] * 4,
-        lateral_velocity=[0] * 4,
         track_height=[1, 0, 1, 0],
     )
     assert sum(terms.values())[0] < -2 * _DT  # no total clip or nonnegative clamp

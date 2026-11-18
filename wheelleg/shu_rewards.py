@@ -93,7 +93,6 @@ def shu_reward_terms(
         vx_error_sigma, wz_error_sigma: positive broad error-kernel denominators (axis units squared).
             Broad error cost is exp(-error**2/sigma)-1. Heading/zero yaw error uses
             that same wz penalty, without a yaw positive reward.
-        lateral_velocity_scale: scale in 1/(m/s) before squaring straight-line lateral slip.
         heading_kp, heading_max_wz: gain [1/s] and positive limit [rad/s]; required only
             when heading_wz_cmd is omitted, not used to re-limit an issued correction.
     """
@@ -118,8 +117,6 @@ def shu_reward_terms(
     vx_w, vy_w, vz_w = s["velocity_w"].unbind(-1)
     cy, sy = yaw.cos(), yaw.sin()
     forward = vx_w * cy + vy_w * sy
-    side_yaw = torch.where(use_heading, ref, yaw)
-    lateral = vy_w * side_yaw.cos() - vx_w * side_yaw.sin()
     # L1 depends on axes: use current yaw axes, not world XYZ or full tilted body axes.
     horizontal_l1 = forward.abs() + (vy_w * cy - vx_w * sy).abs()
     vx_error = forward - s["vx_cmd"]
@@ -163,7 +160,6 @@ def shu_reward_terms(
         "lin_vel_error": paid(torch.expm1(-vx_error.square() / p["vx_error_sigma"]), drive & vx_active),
         "track_ang_vel": paid(tracking("wz", s["wz_cmd"], wz_error), drive & wz_active),
         "ang_vel_error": paid(torch.expm1(-wz_error.square() / p["wz_error_sigma"]), drive | rise) * steady_scale,
-        "lateral_velocity": paid(-(p["lateral_velocity_scale"] * lateral).square(), drive & straight),
         "stand_still": paid(-horizontal_l1, (drive & ~vx_active) | rise) * steady_scale,
         "track_height": paid(height, drive),
         "vertical_velocity": paid(-vz_error.square(), drive | drop),

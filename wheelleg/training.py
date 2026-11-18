@@ -48,7 +48,6 @@ _SHU_REWARDS = (
     "wz_error_sigma",
     "height_wide_weight",
     "height_gate_shape",
-    "lateral_velocity_scale",
 )
 _SHU_COMMANDS = (
     "vx_range_m_s",

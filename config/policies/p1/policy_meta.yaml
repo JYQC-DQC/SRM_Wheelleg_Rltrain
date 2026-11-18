@@ -95,7 +95,6 @@ training:
     wz_tol_knee: 0.625
     vx_error_sigma: 2.5
     wz_error_sigma: 2.5
-    lateral_velocity_scale: null
     height_wide_weight: 1.0
     height_gate_shape: 2.0
   evaluation:
@@ -125,7 +124,7 @@ training:
 stages:
   flat:
     disturbance_phase: 1
-    recovery_probability: null
+    recovery_probability: 0.20  # flat only: remaining 80% ordinary ground births
     initial_fraction: 0.25
     min_segments: 512  # settled attempts at the current difficulty, independent per bucket
     error_floor: [0.10, 0.10, 0.05]  # vx (m/s), yaw (rad/s), height (m); grading, not reward dead zones
