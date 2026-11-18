@@ -391,6 +391,7 @@ def test_flat_clearance_awards_partial_undershoot_but_does_not_penalize_overshoo
     event = SimpleNamespace(
         height=target,
         scored_height=rise,
+        apex_pose_quality=torch.ones_like(rise),
         settings=stage,
         landing_pulse=torch.ones(3, dtype=torch.bool),
         invalid=torch.zeros(3, dtype=torch.bool),
@@ -424,7 +425,7 @@ def test_flat_jump_uses_separate_takeoff_and_landing_deadlines(scenario, finishe
     event.remaining.fill_(1)
     yes = torch.tensor([True])
     no = ~yes
-    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), yes)
+    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), yes, body_clearance_m=torch.tensor([0.10]))
     dt = 0.01
     for step in range(1, 1000):
         if step < 30 or scenario == "no_takeoff":
@@ -454,6 +455,8 @@ def test_flat_jump_uses_separate_takeoff_and_landing_deadlines(scenario, finishe
             yes,
             no,
             wheel_clearance=torch.full((1, 2), z - 0.30),
+            body_clearance_m=torch.tensor([z - 0.20]),
+            leg_angle_rad=torch.zeros(1, 2),
             failed=torch.tensor([scenario == "no_touch_before_episode_ends" and step == 800]),
             require_height=no,
         )
@@ -506,11 +509,19 @@ def clearance_jump():
     ).stage
     event = JumpEvent(stage, 1, "cpu")
     event.reset(torch.arange(1))
-    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), torch.tensor([0.25]))
+    event.trigger(
+        torch.tensor([5.0]),
+        torch.tensor([0.3]),
+        torch.tensor([True]),
+        torch.tensor([0.25]),
+        body_clearance_m=torch.tensor([0.10]),
+    )
     return event
 
 
-def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55, failed=False):
+def clearance_step(
+    event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55, failed=False, body=0.60, angles=(0.0, 0.0)
+):
     event.update(
         0.01,
         torch.tensor([6.0]),
@@ -521,6 +532,8 @@ def clearance_step(event, wheel, vz=0.5, contact=(False, False), stable=True, z=
         torch.tensor([True]),
         torch.tensor([False]),
         wheel_clearance=torch.tensor([wheel]),
+        body_clearance_m=torch.tensor([body]),
+        leg_angle_rad=torch.tensor([angles]),
         failed=torch.tensor([failed]),
         require_height=torch.tensor([False]),
     )
@@ -539,7 +552,7 @@ def test_stand_walk_reward_gate_ends_at_first_wheel_contact(clearance_jump):
     assert not event.pressed_before_touch.item()  # A rebound does not undo first touch.
     event.reset(torch.arange(1))
     assert not event.pressed_before_touch.item()
-    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]))
+    event.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), body_clearance_m=torch.tensor([0.10]))
     clearance_step(event, (0.0, 0.0), vz=0.0, contact=(True, True), failed=True)
     assert event.failure_pulse.item() and not event.active.item() and event.pressed_before_touch.item()
     event.reset(torch.arange(1))
@@ -644,6 +657,42 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
     assert not refs["tuck"].item() and not refs["prepare"].item()
     event.reset(torch.arange(1))
     assert not event.preparing.item()
+
+
+def test_joint_apex_cannot_be_bought_with_stationary_body_or_separate_peaks(clearance_jump):
+    e = clearance_jump
+    for _ in range(3):
+        clearance_step(e, (0.40, 0.35), body=0.10)
+    assert e.scored_height.item() == 0 and e.height_progress.item() == 0
+    clearance_step(e, (0.04, 0.05), body=0.40)
+    assert e.scored_height.item() == pytest.approx(0.04)
+    clearance_step(e, (0.30, 0.31), body=0.23, angles=(0.10, 0.95))
+    assert e.scored_height.item() == pytest.approx(0.20) and not e.target_reached.item()
+    clearance_step(e, (0.30, 0.31), body=0.29, angles=(0.0, 0.95))
+    assert e.scored_height.item() == pytest.approx(0.26)
+    assert not e.apex_pose_ok.item() and e.apex_pose_quality.item() < 0.25
+    clearance_step(e, (0.18, 0.19), body=0.32, angles=(0.0, 0.0))
+    assert not e.target_reached.item()  # Upright at a different, lower peak is not enough.
+    clearance_step(e, (0.30, 0.31), body=0.30, angles=(0.10, -0.20))
+    assert e.target_reached.item() and e.apex_pose_quality.item() == 1
+    clearance_step(e, (0.0, 0.1), body=0.29, contact=(True, False))
+    clearance_step(e, (0.40, 0.40), body=0.50)
+    assert e.peak_body_at_apex.item() == pytest.approx(0.30)
+    assert e.peak_wheel_at_apex.item() == pytest.approx(0.30)
+    assert e.height_progress.item() == 0
+    e.reset(torch.arange(1))
+    assert e.scored_height.item() == e.apex_pose_quality.item() == 0
+
+
+def test_wheel_only_snapshot_keeps_legacy_scoring(clearance_jump):
+    old = dict(clearance_jump.settings)
+    del old["body_wheel_jump"]
+    e = JumpEvent(old, 1, "cpu")
+    e.reset(torch.arange(1))
+    e.trigger(torch.tensor([5.0]), torch.tensor([0.3]), torch.tensor([True]), torch.tensor([0.25]))
+    for _ in range(3):
+        clearance_step(e, (0.30, 0.28), body=0.10, angles=(1.0, -1.0))
+    assert e.target_reached.item() and e.scored_height.item() == pytest.approx(0.28)
 
 
 def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):

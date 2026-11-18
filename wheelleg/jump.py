@@ -29,6 +29,7 @@ class JumpEvent:
         self.settings, self.device = settings, device
         self.landing_settle_timeout_s = settings.get("landing_settle_timeout_s")
         self.clearance_training = settings.get("clearance_jump")
+        self.body_wheel = settings.get("body_wheel_jump")
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.remaining = torch.zeros(count, dtype=torch.long, device=device)
         self.elapsed = torch.zeros(count, device=device)
@@ -37,6 +38,12 @@ class JumpEvent:
         self.start_z = torch.zeros_like(self.elapsed)
         self.apex_z = torch.zeros_like(self.elapsed)
         self.peak_wheel_clearance = torch.zeros_like(self.elapsed)
+        self.start_body_clearance = torch.zeros_like(self.elapsed)
+        self.peak_joint_clearance = torch.zeros_like(self.elapsed)
+        self.peak_body_at_apex = torch.zeros_like(self.elapsed)
+        self.peak_wheel_at_apex = torch.zeros_like(self.elapsed)
+        self.peak_leg_angle_rad = torch.zeros_like(self.elapsed)
+        self.apex_pose_quality = torch.zeros_like(self.elapsed)
         self.preparing = self.active.clone()
         self.height_progress = torch.zeros_like(self.elapsed)
         self.air_time = torch.zeros_like(self.elapsed)
@@ -92,6 +99,12 @@ class JumpEvent:
             self.start_z,
             self.apex_z,
             self.peak_wheel_clearance,
+            self.start_body_clearance,
+            self.peak_joint_clearance,
+            self.peak_body_at_apex,
+            self.peak_wheel_at_apex,
+            self.peak_leg_angle_rad,
+            self.apex_pose_quality,
             self.last_air_vz,
             self.first_touch_speed_pulse,
             self.height_progress,
@@ -116,6 +129,7 @@ class JumpEvent:
         target_height: torch.Tensor | None = None,
         *,
         require_trigger_time: bool = True,
+        body_clearance_m: torch.Tensor | None = None,
     ) -> None:
         start = ~self.active & (self.remaining > 0) & allowed
         if require_trigger_time:
@@ -123,6 +137,15 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.body_wheel is not None:
+            if body_clearance_m is None:
+                raise ValueError("body_wheel_jump requires chassis-bottom clearance at the press")
+            self.start_body_clearance[ids] = body_clearance_m[ids]
+            self.peak_joint_clearance[ids] = 0
+            self.peak_body_at_apex[ids] = 0
+            self.peak_wheel_at_apex[ids] = 0
+            self.peak_leg_angle_rad[ids] = 0
+            self.apex_pose_quality[ids] = 0
         self.active[ids] = True
         self.remaining[ids] -= 1
         for value in (
@@ -171,6 +194,8 @@ class JumpEvent:
         wheel_clearance: torch.Tensor | None = None,
         failed: torch.Tensor | None = None,
         require_height: torch.Tensor | None = None,
+        body_clearance_m: torch.Tensor | None = None,
+        leg_angle_rad: torch.Tensor | None = None,
     ) -> None:
         self.apex_pulse.zero_()
         self.landing_pulse.zero_()
@@ -202,6 +227,10 @@ class JumpEvent:
             self.peak_wheel_clearance.copy_(
                 torch.where(airborne, torch.maximum(self.peak_wheel_clearance, clearance), self.peak_wheel_clearance)
             )
+            if self.body_wheel is not None:
+                if wheel_clearance is None or body_clearance_m is None or leg_angle_rad is None:
+                    raise ValueError("body_wheel_jump requires wheel and chassis clearance and both leg angles")
+                self._record_joint_peak(airborne, clearance, body_clearance_m, leg_angle_rad)
             apex_sample &= no_contact & ~self.first_touch
             # Give the legs the descent to extend; wheel clearance depends on the action and can oscillate.
             self.preparing |= airborne & (vz <= -self.clearance_training["tuck_end_vz_m_s"])
@@ -217,6 +246,8 @@ class JumpEvent:
         current = (self.scored_height / goal).clamp(0, 1)
         progress_sample = self.quality_active if self.clearance_training is None else airborne & ~self.invalid
         self.height_progress.copy_(torch.where(progress_sample, (current - previous).clamp_min(0), 0.0))
+        if self.body_wheel is not None:
+            self.height_progress.mul_(self.apex_pose_quality)
         # Invalid first touchdown cannot become success by driving off the roof later.
         height_ok = jump_height_error(self.scored_height, self.height, self.settings) <= 1e-6
         if require_height is not None:
@@ -329,9 +360,40 @@ class JumpEvent:
 
     @property
     def scored_height(self) -> torch.Tensor:
+        if self.body_wheel is not None:
+            return self.peak_joint_clearance
         if self.clearance_training is not None:
             return self.peak_wheel_clearance
         return self.apex_z - self.start_z
+
+    def _record_joint_peak(self, airborne, wheels_m, body_m, leg_angle_rad):
+        cfg = self.body_wheel
+        rise = body_m - self.start_body_clearance
+        joint = torch.minimum(wheels_m, torch.minimum(body_m - cfg["body_margin_m"], rise / cfg["body_rise_fraction"]))
+        angle = leg_angle_rad.abs().amax(-1)
+        # If a peak is held, allow a better pose there, never a better pose at a lower height.
+        better = (joint > self.peak_joint_clearance) | (
+            (joint == self.peak_joint_clearance) & (angle < self.peak_leg_angle_rad)
+        )
+        record = airborne & better & (joint > 0)
+        quality = torch.exp(-((angle - cfg["leg_deadband_rad"]).clamp_min(0) / cfg["leg_pose_scale_rad"]).square())
+        for dest, value in (
+            (self.peak_joint_clearance, joint),
+            (self.peak_body_at_apex, body_m),
+            (self.peak_wheel_at_apex, wheels_m),
+            (self.peak_leg_angle_rad, angle),
+            (self.apex_pose_quality, quality),
+        ):
+            dest.copy_(torch.where(record, value, dest))
+
+    @property
+    def apex_pose_ok(self) -> torch.Tensor:
+        return (self.peak_joint_clearance > 0) & (self.peak_leg_angle_rad <= self.body_wheel["max_leg_angle_rad"])
+
+    @property
+    def target_reached(self) -> torch.Tensor:
+        height_ok = jump_height_error(self.scored_height, self.height, self.settings) <= 1e-6
+        return height_ok if self.body_wheel is None else height_ok & self.apex_pose_ok
 
     def _near_touchdown(self, vz: torch.Tensor, clearance: torch.Tensor, gravity: float) -> torch.Tensor:
         time_to_ground = (vz + torch.sqrt(vz.square() + 2 * gravity * clearance.clamp_min(0))) / gravity

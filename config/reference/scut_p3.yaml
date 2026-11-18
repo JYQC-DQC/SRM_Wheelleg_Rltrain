@@ -205,6 +205,13 @@ stages:
   jump:
     moving_probability: 0.5
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
+    body_wheel_jump:
+      body_margin_m: 0.03  # Wheel target H; chassis collision bottom must clear H + margin.
+      body_rise_fraction: 0.5  # Require genuine elevation relative to the pose at the press.
+      leg_deadband_rad: 0.26179939  # 15 degrees off gravity is free.
+      leg_pose_scale_rad: 0.52359878  # 30 degrees past the deadband gives exp(-1) quality.
+      max_leg_angle_rad: 0.78539816  # Beyond 45 degrees this peak cannot pass the curriculum.
+      settle_response_scale_s: 1.0
     clearance_jump:
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
@@ -215,9 +222,10 @@ stages:
       fast_touchdown_vz_m_s: 2.8  # Only charge unusually fast downward base speed at first contact.
       reward_overrides:
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
-        jump_air_leg_smoothness: -0.35
+        jump_air_leg_smoothness: 0.0  # Restore the pre-clearance recipe's action-acceleration weight.
         jump_landing: 2.0
         jump_takeoff_response: 0.20  # Maximum one-shot bonus; only for a full jump success.
+        jump_settle_response: 0.20  # Excludes the mandatory stable hold; only for a full success.
         jump_landing_recovery: -1.2
         jump_rebound: -0.4
         jump_fast_touchdown: -0.15  # Maximum cost per jump, not a measured impact limit.

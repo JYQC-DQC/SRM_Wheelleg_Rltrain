@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from math import isfinite
+from math import isfinite, pi
 from pathlib import Path
 from types import MappingProxyType
 
@@ -996,6 +996,19 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if bounds is not None and (len(bounds) != 2 or bounds[0] > bounds[1]):
             raise ValueError(f"commands.{key}: expected [lower, upper]")
     if TASKS[cfg.task].policy == "p3":
+        if "body_wheel_jump" in cfg.stage:
+            profile = cfg.stage["body_wheel_jump"]
+            if cfg.task != "p3-jump" or "clearance_jump" not in cfg.stage:
+                raise ValueError("body_wheel_jump requires flat clearance_jump")
+            for key in ("body_margin_m", "body_rise_fraction", "leg_pose_scale_rad", "settle_response_scale_s"):
+                v = profile[key]
+                if type(v) not in (int, float) or not isfinite(v) or v <= 0:
+                    raise ValueError(f"body_wheel_jump.{key} must be finite and positive")
+            if not 0 <= profile["leg_deadband_rad"] < profile["max_leg_angle_rad"] <= pi / 2:
+                raise ValueError("body_wheel_jump requires ordered leg angles between 0 and pi/2")
+            reward = cfg.stage["clearance_jump"]["reward_overrides"]["jump_settle_response"]
+            if type(reward) not in (int, float) or not isfinite(reward) or reward < 0:
+                raise ValueError("jump_settle_response must be finite and nonnegative")
         if "clearance_jump" in cfg.stage:
             clearance = cfg.stage["clearance_jump"]
             if cfg.task != "p3-jump" or "moving_probability" not in cfg.stage or not cfg.stage["height_is_minimum"]:

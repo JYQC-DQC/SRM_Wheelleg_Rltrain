@@ -15,7 +15,8 @@ import numpy as np
 import torch
 import yaml
 
-from wheelleg.jump import JumpEvent, TunnelTraversal, jump_height_error, landing_rates_ok, tunnel_landing
+from wheelleg.jump import JumpEvent, TunnelTraversal, landing_rates_ok, tunnel_landing
+from wheelleg.jump_geometry import box_bottom_z, cylinder_bottom_z, sagittal_leg_angle
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "sim2sim"))
@@ -133,6 +134,7 @@ class JumpSim(WheelLegSim):
         if cfg.run.get("task") != "p3-jump" or cfg.policy["policy_family"] != "p3":
             raise ValueError("Use a p3-jump checkpoint with its matching saved params/")
         self.stage = cfg.policy["stages"]["jump"]
+        self.body_wheel_jump = self.stage.get("body_wheel_jump") is not None
         self.jump = JumpEvent(self.stage, 1, "cpu")
         self.traversal = TunnelTraversal(1, "cpu")
         self.test_site = None
@@ -146,6 +148,21 @@ class JumpSim(WheelLegSim):
         names = [self.model.body(i).name for i in range(self.model.nbody)]
         self.bad_bodies = np.array([i for i, n in enumerate(names) if any(re.fullmatch(p, n) for p in patterns)])
         self.missing_contact_patterns = [p for p in patterns if not any(re.fullmatch(p, n) for n in names)]
+        if self.body_wheel_jump:
+            m = self.model
+            collidable = (m.geom_contype != 0) | (m.geom_conaffinity != 0)
+            self.jump_boxes = np.flatnonzero(collidable & (m.geom_bodyid == self.base))
+            wheel_geoms = [np.flatnonzero(collidable & (m.geom_bodyid == body)) for body in self.wheel_ids]
+            if not len(self.jump_boxes) or np.any(m.geom_type[self.jump_boxes] != mujoco.mjtGeom.mjGEOM_BOX):
+                raise ValueError("Flat jump geometry expects enabled box colliders on the chassis")
+            if any(len(geoms) != 1 for geoms in wheel_geoms):
+                raise ValueError("Flat jump geometry expects one enabled collider on each wheel")
+            self.jump_cylinders = np.concatenate(wheel_geoms)
+            if np.any(m.geom_type[self.jump_cylinders] != mujoco.mjtGeom.mjGEOM_CYLINDER):
+                raise ValueError("Flat jump geometry expects cylinder colliders on the wheels")
+            self.jump_hip_joints = np.array(
+                [[m.joint(f"{side}_{part}1_joint").id for part in ("front", "rear")] for side in ("left", "right")]
+            )
 
     def reset(self, spawn: Spawn) -> None:
         super().reset(spawn)
@@ -174,12 +191,17 @@ class JumpSim(WheelLegSim):
         self.jump.reset(self.ids)
         self.traversal.reset(self.ids)
         self.jump.remaining[:] = 1
+        geometry = {}
+        if self.body_wheel_jump:
+            body_clearance, _, _ = self._jump_geometry()
+            geometry["body_clearance_m"] = self.jump.elapsed.new_tensor([body_clearance])
         self.jump.trigger(
             self.jump.elapsed.new_tensor([self.time]),
             self.jump.elapsed.new_tensor([self.data.qpos[2]]),
             torch.tensor([True]),
             target_height=self.jump.elapsed.new_tensor([height_m]),
             require_trigger_time=False,
+            **geometry,
         )
         self.takeoff_speed_ok = True
         self.peak_rise_m = 0.0
@@ -212,6 +234,28 @@ class JumpSim(WheelLegSim):
         )
         return z - distance if distance >= 0 else 0.0
 
+    def _jump_geometry(self) -> tuple[float, np.ndarray, np.ndarray]:
+        m, d = self.model, self.data
+        # mj_step integrates qpos after updating Cartesian geometry; refresh the pose used for scoring.
+        mujoco.mj_kinematics(m, d)
+        floor_z = d.geom_xpos[self.ground, 2]
+        geom_z_axes = d.geom_xmat.reshape(-1, 3, 3)[:, 2]
+        boxes = self.jump_boxes
+        body = box_bottom_z(
+            torch.from_numpy(d.geom_xpos[boxes, 2]), torch.from_numpy(geom_z_axes[boxes] * m.geom_size[boxes])
+        ).min()
+        wheels = self.jump_cylinders
+        radii, half_heights = m.geom_size[wheels, :2].T
+        wheel_bottoms = cylinder_bottom_z(
+            torch.from_numpy(d.geom_xpos[wheels, 2]),
+            torch.from_numpy(geom_z_axes[wheels] * np.column_stack((radii, radii, half_heights))),
+        )
+        hips_w = d.xanchor[self.jump_hip_joints].mean(axis=1)
+        heading = d.xmat[self.base].reshape(3, 3)[:, 0]
+        yaw = torch.tensor(math.atan2(heading[1], heading[0]))
+        angles = sagittal_leg_angle(torch.from_numpy(d.xpos[self.wheel_ids] - hips_w), yaw)
+        return float(body) - floor_z, wheel_bottoms.numpy() - floor_z, angles.numpy()
+
     def _measure(self, command, height, peaks, saturated, inference_s, bad_action) -> dict:
         previous = self.termination_steps
         info = super()._measure(command, height, peaks, saturated, inference_s, bad_action)
@@ -237,6 +281,9 @@ class JumpSim(WheelLegSim):
             wheel_clearance=wheel_z - ground - self.cfg.shared["wheel_radius_m"],
             support_z=float(ground.mean()),
         )
+        if self.body_wheel_jump:
+            body, wheels, angles = self._jump_geometry()
+            info.update(body_clearance_m=body, wheel_clearance=wheels, leg_angle_rad=angles)
         return info
 
     def step(self, command: np.ndarray, height: float) -> dict:
@@ -300,6 +347,12 @@ class JumpSim(WheelLegSim):
             )
             valid &= self.traversal.cleared & ~self.traversal.invalid
             obstacle_hit = self.traversal.invalid
+        geometry = {}
+        if self.body_wheel_jump:
+            geometry = dict(
+                body_clearance_m=self.jump.elapsed.new_tensor([info["body_clearance_m"]]),
+                leg_angle_rad=self.jump.elapsed.new_tensor(info["leg_angle_rad"][None]),
+            )
         self.jump.update(
             1 / self.cfg.policy_hz,
             torch.tensor([self.time]),
@@ -312,6 +365,7 @@ class JumpSim(WheelLegSim):
             wheel_clearance=torch.tensor(info["wheel_clearance"][None]),
             failed=torch.tensor([jump_failed]),
             require_height=torch.tensor([False]) if "moving_probability" in self.stage else None,
+            **geometry,
         )
         if bool(self.jump.took_off[0]) and not took_off:
             self.takeoff_speed_ok = command[0] <= 0 or info["heading_vx"] >= (
@@ -321,8 +375,8 @@ class JumpSim(WheelLegSim):
         if bool(self.jump.failure_pulse[0]):
             self.jump_result = "failed: takeoff/settle deadline or physical termination"
         elif bool(self.jump.landing_pulse[0]):
-            height_ok = float(jump_height_error(self.jump.scored_height, self.jump.height, self.stage)[0]) <= 1e-6
-            self.jump_result = "success" if height_ok and self.takeoff_speed_ok else "landed: height/speed below target"
+            target_ok = bool(self.jump.target_reached[0])
+            self.jump_result = "success" if target_ok and self.takeoff_speed_ok else "landed: target not met"
             if site is not None and site["kind"] == "tunnel" and self.jump_result == "success":
                 self.jump_result = "cleared tunnel and landed beyond"
         elif bool(self.jump.active[0]):
@@ -439,7 +493,8 @@ class JumpPlayer:
             f"| wz {self.target[2]:+.2f} rad/s | body height {self.body_height_target_m * 100:.1f} cm\n"
             f"{actual}jump: {self.sim.jump_result} | "
             + (
-                f"peak wheel clearance {self.sim.jump.scored_height[0] * 100:.1f} cm | "
+                f"peak {'joint' if self.sim.body_wheel_jump else 'wheel'} clearance "
+                f"{self.sim.jump.scored_height[0] * 100:.1f} cm | "
                 if self.sim.jump.clearance_training is not None
                 else ""
             )

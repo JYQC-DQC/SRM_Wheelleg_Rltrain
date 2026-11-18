@@ -64,6 +64,7 @@ def main() -> None:
         from isaac.wheelleg_tasks.env_cfg import make_env_cfg
         from wheelleg.checkpoints import load_policy_module
         from wheelleg.evaluation import evaluation_cases, metrics
+        from wheelleg.jump_geometry import JUMP_GEOMETRY_COLUMNS
 
         settings = cfg.settings["evaluation"]
         count = settings["episodes_per_case"]
@@ -135,6 +136,8 @@ def main() -> None:
                     jump_keys = ("took_off", "takeoff_speed_ok", "cleared", "touched_down", "stable")
                     if cfg.task == "p3-jump":
                         jump_keys += ("height_ok", "overshot", "height_in_band")
+                    if raw.body_wheel_jump:
+                        jump_keys += ("apex_pose_ok",)
                     jump_flags = {key: torch.zeros_like(alive) for key in jump_keys}
                     if raw.jump is not None:
                         had_support = torch.zeros_like(alive)
@@ -175,6 +178,8 @@ def main() -> None:
                                     mask |= alive & info[f"jump_{key}"]
                                 dx = info["position"][:, :1] - start_position[:, :1]
                                 sample = torch.cat((dx, info["jump_motion"], info["jump_leg_action"]), -1)
+                                if raw.body_wheel_jump:
+                                    sample = torch.cat((sample, info["jump_geometry"]), -1)
                                 motion.append(torch.where(alive[:, None], sample, torch.nan).cpu().numpy())
                             if stairs:
                                 traversed |= alive & info["stair_traversed"]
@@ -280,6 +285,9 @@ def main() -> None:
                             else None,
                         )
                         jump_traces[case.name] = np.stack(motion)
+                        if raw.body_wheel_jump and case.jump_count:
+                            result["target_body_clearance_m"] = case.jump_height + raw.jump.body_wheel["body_margin_m"]
+                            result["target_body_rise_m"] = case.jump_height * raw.jump.body_wheel["body_rise_fraction"]
                     report.append(result)
                 if jump_traces:
                     np.savez_compressed(
@@ -304,6 +312,7 @@ def main() -> None:
                             "leg_action_second_difference_norm",
                             "wheels_in_contact",
                             *(f"raw_leg_action_{i}" for i in range(4)),
+                            *(JUMP_GEOMETRY_COLUMNS if raw.body_wheel_jump else ()),
                         ),
                         **jump_traces,
                     )

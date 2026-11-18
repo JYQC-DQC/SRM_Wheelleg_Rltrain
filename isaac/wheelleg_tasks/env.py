@@ -27,6 +27,7 @@ from wheelleg.jump import (
     landing_rates_ok,
     tunnel_landing,
 )
+from wheelleg.jump_geometry import box_bottom_z, cylinder_bottom_z, sagittal_leg_angle, usd_collision_frames
 from wheelleg.landing import FirstLanding
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.landing_rewards import LandingRewards
@@ -85,6 +86,23 @@ class WheelLegEnv(DirectRLEnv):
             )
         if len(self.joints) != 6 or len(self.springs) != 2 or len(self.wheels) != 2 or len(self.base) != 1:
             raise ValueError("USD must resolve exactly 6 active joints, 2 springs, 2 wheels and 1 base")
+        self.body_wheel_jump = t.task == "p3-jump" and t.stage.get("body_wheel_jump") is not None
+        if self.body_wheel_jump:
+            from isaacsim.core.utils.stage import get_current_stage
+
+            usd_stage = get_current_stage()
+            links = self.robot.root_physx_view.link_paths[0]
+            body = usd_stage.GetPrimAtPath(links[self.base[0]])
+            self.jump_body_boxes = torch.as_tensor(usd_collision_frames(body, "box"), device=d, dtype=torch.float32)
+            self.jump_wheel_cylinders = torch.as_tensor(
+                np.concatenate(
+                    [usd_collision_frames(usd_stage.GetPrimAtPath(links[i]), "cylinder") for i in self.wheels]
+                ),
+                device=d,
+                dtype=torch.float32,
+            )
+            self.jump_hip_pivots = torch.tensor(t.shared["hip_pivot_positions_b_m"], device=d, dtype=torch.float32)
+            self.jump_world_up = torch.tensor([0.0, 0.0, 1.0], device=d)
         self.legs, self.wheel_channels = list(t.robot.leg_indices), list(t.robot.wheel_indices)
         self.default_q = torch.tensor(t.robot.q_default_rad, device=d)
         self.action_scale = torch.tensor(t.policy.action_scales, device=d)
@@ -385,6 +403,7 @@ class WheelLegEnv(DirectRLEnv):
                 near = (self.beam_start_x - x <= self.tunnel_press_distance) & (x < self.beam_start_x)
                 physical_age = self.tunnel_episode_steps * self.step_dt
                 allowed = torch.where(obstacle, near, physical_age >= self.jump.next_trigger)
+            geometry = {"body_clearance_m": self._jump_body_clearance()} if self.body_wheel_jump else {}
             self.jump.trigger(
                 age,
                 self.robot.data.root_pos_w[:, 2],
@@ -393,6 +412,7 @@ class WheelLegEnv(DirectRLEnv):
                 if t.task == "p3-tunnel" and t.stage["height_range_m"] is None
                 else None,
                 require_trigger_time=t.task != "p3-tunnel",
+                **geometry,
             )
             started = (self.jump.active & ~was_active).nonzero().flatten()
             self.jump_vx_qualified[started] = True
@@ -604,6 +624,14 @@ class WheelLegEnv(DirectRLEnv):
             # A horizontal beam's top applies an upward normal force on the robot.
             self.obstacle_top_hit |= filtered[:, 0, 2] > threshold
 
+    def _jump_body_clearance(self) -> torch.Tensor:
+        data = self.robot.data
+        base = self.base[0]
+        up_b = quat_apply_inverse(data.body_link_quat_w[:, base], self.jump_world_up.expand(self.num_envs, -1))
+        projected = (up_b @ self.jump_body_boxes.flatten(0, 1).T).reshape(self.num_envs, -1, 4)
+        bottom = box_bottom_z(data.body_link_pos_w[:, base, 2, None] + projected[..., 3], projected[..., :3])
+        return bottom.amin(-1) - self.terrain.env_origins[:, 2]
+
     def _measure(self) -> dict:
         t = self.training
         data = self.robot.data
@@ -639,6 +667,23 @@ class WheelLegEnv(DirectRLEnv):
             self.last_ground.copy_(ground)
         base_height = data.root_pos_w[:, 2] - ground
         clearance = wheels_w[:, :, 2] - ground[:, None] - t.shared["wheel_radius_m"]
+        geometry = {}
+        if self.body_wheel_jump:
+            wheels_link_w = data.body_link_pos_w[:, self.wheels]
+            wheel_q = data.body_link_quat_w[:, self.wheels]
+            up_wheel = quat_apply_inverse(wheel_q.reshape(-1, 4), self.jump_world_up.expand(2 * self.num_envs, -1))
+            projected = (up_wheel.reshape(self.num_envs, 2, 1, 3) * self.jump_wheel_cylinders).sum(-1)
+            bottom = cylinder_bottom_z(wheels_link_w[..., 2] + projected[..., 3], projected[..., :3])
+            clearance = bottom - ground[:, None]
+            base = self.base[0]
+            base_q = data.body_link_quat_w[:, base, None].expand(-1, 2, -1).reshape(-1, 4)
+            hips_w = data.body_link_pos_w[:, base, None] + quat_apply(
+                base_q, self.jump_hip_pivots.expand(self.num_envs, -1, -1).reshape(-1, 3)
+            ).reshape(self.num_envs, 2, 3)
+            geometry = dict(
+                body_clearance_m=self._jump_body_clearance(),
+                leg_angle_rad=sagittal_leg_angle(wheels_link_w - hips_w, yaw),
+            )
         force = self.contact_peaks[:, self.contact_wheels]
         contact = force > t.shared["airborne"]["contact_force_n"]
         height_target = self.commands.height[:, 0]
@@ -723,6 +768,7 @@ class WheelLegEnv(DirectRLEnv):
             hip_velocity=data.joint_vel[:, self.joints][:, self.legs],
             action=self.raw_action,
             previous_action=self.previous_action,
+            **geometry,
         )
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -877,6 +923,7 @@ class WheelLegEnv(DirectRLEnv):
                 valid |= ~self.commands.tunnel_obstacle
             takeoff_min_fraction = t.stage.get("moving_takeoff_min_fraction")
             was_airborne = self.jump.took_off.clone() if takeoff_min_fraction is not None else None
+            geometry = {k: s[k] for k in ("body_clearance_m", "leg_angle_rad")} if self.body_wheel_jump else {}
             self.jump.update(
                 dt,
                 self.episode_length_buf * dt,
@@ -895,6 +942,7 @@ class WheelLegEnv(DirectRLEnv):
                     if t.task == "p3-tunnel"
                     else None
                 ),
+                **geometry,
             )
             if was_airborne is not None:
                 takeoff = self.jump.took_off & ~was_airborne
@@ -916,8 +964,7 @@ class WheelLegEnv(DirectRLEnv):
                     # A fall before the simulated press is a driving failure, not an attempt at a sampled height.
                     pressed = self.jump.elapsed[finished] > 0
                     finished, success = finished[pressed], success[pressed]
-                    rise = self.jump.scored_height[finished]
-                    success &= jump_height_error(rise, self.jump.height[finished], t.stage) <= 1e-6
+                    success &= self.jump.target_reached[finished]
                     success &= self.jump_vx_qualified[finished]
                 self._record_jump_curriculum(finished, success, iteration)
         if self.first_landing is not None:
@@ -1268,13 +1315,32 @@ class WheelLegEnv(DirectRLEnv):
             if t.task == "p3-jump":
                 rise = self.jump.scored_height
                 height_ok = self.jump.took_off & (jump_height_error(rise, self.jump.height, t.stage) <= 1e-6)
-                self.extras["evaluation"]["jump_success"] &= height_ok & self.jump_vx_qualified
+                self.extras["evaluation"]["jump_success"] &= self.jump.target_reached & self.jump_vx_qualified
                 overshot = jump_height_overshoot(rise, self.jump.height, t.stage) > 1e-6
                 self.extras["evaluation"].update(
                     jump_height_ok=height_ok.clone(),
                     jump_overshot=(self.jump.took_off & overshot).clone(),
                     jump_height_in_band=(self.extras["evaluation"]["jump_success"] & ~overshot).clone(),
                 )
+                if self.body_wheel_jump:
+                    event = self.jump
+                    self.extras["evaluation"].update(
+                        jump_apex_pose_ok=(event.took_off & event.apex_pose_ok).clone(),
+                        jump_geometry=torch.stack(
+                            (
+                                s["body_clearance_m"],
+                                s["leg_angle_rad"][:, 0],
+                                s["leg_angle_rad"][:, 1],
+                                event.start_body_clearance,
+                                event.peak_joint_clearance,
+                                event.peak_body_at_apex,
+                                event.peak_wheel_at_apex,
+                                event.peak_leg_angle_rad.reshape(self.num_envs, -1).abs().amax(-1),
+                                event.apex_pose_quality,
+                            ),
+                            dim=-1,
+                        ),
+                    )
             jump_refs = self.jump.references(s["velocity_w"][:, 2], s["clearance"].amin(-1), t.shared["gravity_m_s2"])
             self.extras["evaluation"].update(
                 jump_stable=self.jump.landing_pulse.clone(),
