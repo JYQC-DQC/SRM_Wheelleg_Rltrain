@@ -2,6 +2,8 @@
 
 先读 docs/CODING_GUIDE.md 与 README.md。用户最新约定优先于历史指南。
 
+新训练模式的所有约定（训练配置、课程奖惩、策略接口与交接）统一维护在 `docs/上大轮腿训练方案/`，同步更新其 README 索引；不要在 `docs/` 根目录另写一份。
+
 - 本仓库负责 PPO 训练、模型、MuJoCo sim2sim、观测合同和固件参数导出。
 - 部署、扫频、电机/气弹簧辨识及分析在 D:/Code-RM/github 的 wheelleg_RL 分支进行；这里导入结果。
 - 当前阶段是真实无云台底盘。几何、质量、零点、ID 和辨识量缺失时写 null，不照搬开源机器人。
@@ -10,3 +12,5 @@
 - 固件不在本仓库新建工程；不修改参考开源项目。
 - 验证：python -m pytest -q；python -m ruff check .；python -m ruff format --check .
 - 不编造 GPU 训练、实机测试或推理性能。
+
+- 三策略部署输入冻结为 obs v4（基础帧 26、五帧 130、Actor 30）；保留 `vy_cmd`，未经负责人明确同意不得再增加或换义通道。

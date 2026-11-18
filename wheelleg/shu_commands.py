@@ -133,20 +133,6 @@ class ShuCommands:
         """Fixed full-range free driver, plus independent route settings for route-labelled episodes."""
         return cls(settings, count, device, _fixed_mixed=True, _route_settings=route)
 
-    def mode(
-        self,
-        yaw: torch.Tensor,
-        stair: torch.Tensor,
-        recovering: torch.Tensor,
-        jump_active: torch.Tensor,
-        jump_height: torch.Tensor,
-        phase: torch.Tensor,
-    ) -> torch.Tensor:
-        """Legacy P1 mode ABI (N,7): normal, stair, reserved, recovering, three zero slots."""
-        mode = self.value.new_zeros(len(yaw), 7)
-        mode[:, 0], mode[:, 1], mode[:, 3] = 1.0, stair, recovering
-        return mode
-
     @property
     def zero_translation(self) -> torch.Tensor:
         return ~self.vx_active

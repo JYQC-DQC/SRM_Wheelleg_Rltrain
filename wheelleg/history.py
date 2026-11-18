@@ -26,7 +26,7 @@ def history_contract() -> dict:
 
 
 class HistoryBuffer:
-    """One history per env; update with the exact current Actor observation at policy rate."""
+    """One history per env; update with the 26-channel base frame, never the jump request at policy rate."""
 
     def __init__(self, num_envs: int, device: str | torch.device) -> None:
         import torch
@@ -53,5 +53,5 @@ class HistoryBuffer:
         self.fresh.zero_()
 
     def flat(self) -> torch.Tensor:
-        """View shaped (N, 175), valid until the next update; copy it when recording."""
+        """View shaped (N, 130), valid until the next update; copy it when recording."""
         return self.frames.flatten(1)

@@ -5,7 +5,7 @@ import yaml
 
 from wheelleg.config import load_policy, load_robot, missing_parameters
 from wheelleg.history import HISTORY_DIM, HISTORY_FRAMES, VELOCITY_DIM
-from wheelleg.observation import OBS_DIM, OBS_FIELDS
+from wheelleg.observation import OBS_DIM, OBS_FIELDS, POLICY_OBS_DIM
 
 
 def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool = False) -> str:
@@ -21,6 +21,9 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         f"#define WL_POLICY_DECIMATION {robot.decimation}u",
         f"#define WL_OBS_VERSION {policy.obs_version}u",
         f"#define WL_OBS_DIM {OBS_DIM}u",
+        f"#define WL_POLICY_OBS_DIM {POLICY_OBS_DIM}u",
+        f"#define WL_JUMP_REQUEST_OFFSET {OBS_DIM}u",
+        f"#define WL_ACTOR_INPUT_DIM {POLICY_OBS_DIM + VELOCITY_DIM}u",
         "// obs_history is oldest first, including the current frame last; refill on reset or policy switch.",
         f"#define WL_OBS_HISTORY_FRAMES {HISTORY_FRAMES}u",
         f"#define WL_OBS_HISTORY_DIM {HISTORY_DIM}u",

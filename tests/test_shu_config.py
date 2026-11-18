@@ -27,11 +27,11 @@ def policy(family):
 @pytest.mark.parametrize("family", ["p1", "p2", "p3"])
 @pytest.mark.parametrize(
     "key,bad",
-    [("obs_version", 2), ("obs_version", 3.0), ("hidden_dims", [256, 128, 64]), ("hidden_dims", [128.0, 64, 32])],
+    [("obs_version", 3), ("obs_version", 4.0), ("hidden_dims", [256, 128, 64]), ("hidden_dims", [128.0, 64, 32])],
 )
 def test_network_contract(tmp_path, family, key, bad):
     data = read(policy(family))
-    data.update(obs_version=3, hidden_dims=[128, 64, 32])
+    data.update(obs_version=4, hidden_dims=[128, 64, 32])
     data[key] = bad
     with pytest.raises(ValueError, match=key):
         load_policy(write(tmp_path / "p.yaml", data))
@@ -48,7 +48,7 @@ def test_shu_stage_scope(tmp_path):
     r["training"].update(shu_spawn={"min_root_height_m": None}, wheel_rim_sign=[None, None])
     robot = write(tmp_path / "robot.yaml", r)
     p = read(policy("p1"))
-    p.update(obs_version=3, hidden_dims=[128, 64, 32])
+    p.update(obs_version=4, hidden_dims=[128, 64, 32])
     p["stages"].pop("recovery", None)
     for key in ("air_rewards", "reward_parameters", "rewards", "command_curriculum"):
         p["training"].pop(key, None)

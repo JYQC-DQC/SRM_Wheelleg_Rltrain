@@ -1,6 +1,6 @@
 # Runtime-only SHU template. null means pending; explicit zero disables a reward term.
 name: p2_spin
-obs_version: 3
+obs_version: 4
 hidden_dims:
 - 128
 - 64

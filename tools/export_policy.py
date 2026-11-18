@@ -12,7 +12,7 @@ from wheelleg.actor import policy_contract
 from wheelleg.checkpoints import load_actor
 from wheelleg.config import load_policy, load_robot, missing_parameters
 from wheelleg.history import HISTORY_DIM
-from wheelleg.observation import OBS_DIM
+from wheelleg.observation import OBS_DIM, POLICY_OBS_DIM
 
 
 def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout: Path, output: Path) -> dict:
@@ -29,11 +29,11 @@ def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout
             raise ValueError("rollout must contain paired observation and obs_history arrays recorded at inference")
         obs = np.asarray(data["observation"], dtype=np.float32)
         history = np.asarray(data["obs_history"], dtype=np.float32)
-    if obs.ndim != 2 or obs.shape[1] != OBS_DIM or len(obs) < 100 or not np.isfinite(obs).all():
-        raise ValueError(f"rollout must contain at least 100 finite observations with shape (N,{OBS_DIM})")
+    if obs.ndim != 2 or obs.shape[1] != POLICY_OBS_DIM or len(obs) < 100 or not np.isfinite(obs).all():
+        raise ValueError(f"rollout must contain at least 100 finite observations with shape (N,{POLICY_OBS_DIM})")
     if history.shape != (len(obs), HISTORY_DIM) or not np.isfinite(history).all():
         raise ValueError(f"rollout obs_history must be finite with shape (N,{HISTORY_DIM})")
-    if not np.array_equal(history[:, -OBS_DIM:], obs):
+    if not np.array_equal(history[:, -OBS_DIM:], obs[:, :OBS_DIM]):
         raise ValueError("the newest frame of each rollout obs_history must equal its paired observation")
     indices = np.linspace(0, len(obs) - 1, 100, dtype=int)
     sample, sample_history = obs[indices], history[indices]
@@ -75,7 +75,7 @@ def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout
     robot_values = yaml.safe_load(robot_path.read_text(encoding="utf-8"))
     inference_contract = {
         **policy_contract(policy),
-        "inputs": {"obs": [1, OBS_DIM], "obs_history": [1, HISTORY_DIM]},
+        "inputs": {"obs": [1, POLICY_OBS_DIM], "obs_history": [1, HISTORY_DIM]},
         "outputs": {"actions": [1, len(policy.action_scales)]},
         "dtype": "float32",
     }

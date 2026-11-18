@@ -101,9 +101,6 @@ class WheelLegEnv(DirectRLEnv):
         self.air_enter = torch.zeros(n, device=d)
         self.air_exit = torch.zeros(n, device=d)
         self.air_elapsed = torch.zeros(n, device=d)
-        self.recovery_episode = self.airborne.clone()
-        self.stair_signal = torch.zeros(n, device=d)
-        self.height_boost_remaining = torch.zeros(n, device=d)
         self.obstacle_hit = self.airborne.clone()
         self.contact_peaks = torch.zeros(n, len(self.contact.body_names), device=d)
         self.commands_fixed = False
@@ -270,9 +267,11 @@ class WheelLegEnv(DirectRLEnv):
     def _prepare_stage_command(self) -> None:
         new_tick = self._stage_command_tick != self._sim_step_counter
         if self.jump is not None:
+            if new_tick:
+                self.jump.advance_command(self.step_dt)
             if new_tick and self.training_jump_button is not None:
                 self.jump.request(self.training_jump_button.step(self.episode_length_buf * self.step_dt))
-            requested = ~self.jump.active & self.jump.requested
+            requested = self.jump.requested.clone()
             if requested.any():
                 t = self.training
                 before = self._tunnel_geometry()[0] if t.task == "p3-tunnel" else None
@@ -283,7 +282,7 @@ class WheelLegEnv(DirectRLEnv):
             return
         self._stage_command_tick = self._sim_step_counter
         if self.jump is not None:
-            self.commands.step(self.step_dt, self.jump.active)
+            self.commands.step(self.step_dt, self.jump.command_m > 0)
         elif not self.commands_fixed:
             self.commands.step(self.step_dt, torch.zeros_like(self.airborne))
 
@@ -459,9 +458,6 @@ class WheelLegEnv(DirectRLEnv):
         force = self.contact_peaks[:, self.contact_wheels]
         contact = force > t.shared["airborne"]["contact_force_n"]
         height_target = self.commands.height[:, 0]
-        if self.scanner is not None:
-            height_target = height_target + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)
-            height_target = height_target.clamp(max=t.settings["commands"]["height_range_m"][1])
         linear_error = data.root_lin_vel_b[:, 0] * pitch.cos() - self.commands.value[:, 0]
         if t.task == "p3-tunnel":
             linear_error = data.root_lin_vel_w[:, 0] - self.commands.value[:, 0]
@@ -654,50 +650,20 @@ class WheelLegEnv(DirectRLEnv):
             self._prepare_stage_command()
         s = self._measure()
         t = self.training
-        if self.scanner is not None:
-            hits = self.scanner.data.ray_hits_w
-            points_b = quat_apply_inverse(
-                self.robot.data.root_quat_w[:, None].expand(-1, hits.shape[1], -1).reshape(-1, 4),
-                (hits - self.robot.data.root_pos_w[:, None]).reshape(-1, 3),
-            ).reshape(self.num_envs, -1, 3)
-            ahead = (points_b[:, :, 0] > 0) & (points_b[:, :, 0] < t.stage["stair_detection_distance_m"])
-            rise = hits[:, :, 2] - s["ground"][:, None]
-            detected = (ahead & (rise >= t.stage["stair_detection_height_m"])).any(-1)
-            if not self.cfg.evaluation:
-                detected = (
-                    detected & (torch.rand(self.num_envs, device=self.device) >= t.stage["stair_false_negative"])
-                ) | (torch.rand(self.num_envs, device=self.device) < t.stage["stair_false_positive"])
-            self.stair_signal = detected.float()
-            close = (points_b[:, :, 0] > 0) & (points_b[:, :, 0] < t.stage["step_height_trigger_distance_m"])
-            trigger = (close & (rise >= t.stage["stair_detection_height_m"])).any(-1)
-            self.height_boost_remaining = torch.where(
-                trigger, t.stage["step_height_hold_s"], (self.height_boost_remaining - self.step_dt).clamp_min(0)
-            )
         if self.shu is not None:
             self.shu.observe_commands(s["yaw"])
             s = self._measure()  # privileged next-observation errors follow the newly issued command
-        active = self.jump.active if self.jump is not None else torch.zeros_like(self.airborne)
-        jump_height = self.jump.height if self.jump is not None else torch.zeros_like(self.air_enter)
-        phase = self.jump.phase if self.jump is not None else torch.zeros_like(self.air_enter)
-        recovering = self.recovery_episode.clone()
-        mode = self.commands.mode(s["yaw"], self.stair_signal, recovering, active, jump_height, phase)
         sensor = self._sensors()
 
         def make_fields(values):
-            height = self.commands.height
-            if self.scanner is not None:
-                height = (height + t.stage["step_height_boost_m"] * (self.height_boost_remaining > 0)[:, None]).clamp(
-                    max=t.settings["commands"]["height_range_m"][1]
-                )
             return dict(
                 command=self.commands.value,
-                height=height,
+                height=self.commands.height,
                 angular_velocity=values[:, :3],
                 gravity=values[:, 3:6],
                 joint_position=values[:, 6:12],
                 joint_velocity=values[:, 12:18],
                 previous_action=self.raw_action,
-                mode=mode,
             )
 
         clean = observation_tensor(t.robot, t.policy, make_fields(sensor))
@@ -725,9 +691,11 @@ class WheelLegEnv(DirectRLEnv):
             ),
             -1,
         )
+        request = self.jump.command_m[:, None] if self.jump is not None else torch.zeros_like(self.commands.height)
         critic = torch.cat(
             (
                 clean,
+                request,
                 component("base_linear_velocity", s["velocity"]),
                 component("base_height", s["base_height"][:, None]),
                 privileged,
@@ -741,7 +709,7 @@ class WheelLegEnv(DirectRLEnv):
         self.policy_history.update(actor, self.history_tick != self._sim_step_counter)
         self.history_tick = self._sim_step_counter
         return {
-            "policy": actor,
+            "policy": torch.cat((actor, request), -1),
             "critic": critic,
             "history": self.policy_history.flat(),
             "estimator_target": s["velocity"].clone(),  # nonfinite labels are excluded by the estimator update
@@ -790,7 +758,6 @@ class WheelLegEnv(DirectRLEnv):
         root = self.robot.data.default_root_state[env_ids].clone()
         root[:, :3] += self.terrain.env_origins[env_ids]
         q, qd = self.robot.data.default_joint_pos[env_ids].clone(), self.robot.data.default_joint_vel[env_ids].clone()
-        self.recovery_episode[env_ids] = False
         self.fall_counter[env_ids] = 0
         self.policy_history.reset(env_ids)
         if self.shu is not None:
@@ -844,7 +811,6 @@ class WheelLegEnv(DirectRLEnv):
             self.torque,
             self.contact_peaks,
             self.action_ticks,
-            self.height_boost_remaining,
         ):
             value[env_ids] = 0
         self._randomize_controls(env_ids)

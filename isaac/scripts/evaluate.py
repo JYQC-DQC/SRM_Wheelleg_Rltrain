@@ -5,7 +5,7 @@ import json
 from math import isfinite
 from pathlib import Path
 
-from wheelleg.observation import OBS_DIM
+from wheelleg.observation import POLICY_OBS_DIM
 from wheelleg.tasks import TASKS
 from wheelleg.training import load_training
 
@@ -164,7 +164,7 @@ def main() -> None:
                     report.append(result)
             np.savez(
                 args.output / "rollout.npz",
-                observation=np.asarray(observations, dtype=np.float32).reshape(-1, OBS_DIM),
+                observation=np.asarray(observations, dtype=np.float32).reshape(-1, POLICY_OBS_DIM),
                 obs_history=np.asarray(histories, dtype=np.float32).reshape(-1, HISTORY_DIM),
             )
             if press is not None:

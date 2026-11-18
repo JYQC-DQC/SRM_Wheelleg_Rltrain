@@ -1,6 +1,6 @@
 # Guide v2.1: action_clip: null means NO raw clipping; other nulls are unmeasured.
 name: p1_locomotion
-obs_version: 3
+obs_version: 4
 hidden_dims: [128, 64, 32]
 activation: elu
 observation_scales:
@@ -251,19 +251,12 @@ stages:
             first_edge_x_m: null
             step_width_m: null
             step_height_range_m: null
-    stair_detection_distance_m: null
-    stair_detection_height_m: null
-    stair_false_positive: null
-    stair_false_negative: null
     progress_weight: null
     stuck_weight: null
     impact_weight: null
     stuck_window_s: null
     stuck_distance_m: null
     disturbance_phase: 2
-    step_height_boost_m: null
-    step_height_hold_s: null
-    step_height_trigger_distance_m: null
 mode_semantics:
 - normal
 - stair

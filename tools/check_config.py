@@ -3,7 +3,7 @@ from pathlib import Path
 
 from wheelleg.config import load_policy, load_robot, missing_parameters
 from wheelleg.history import ENCODER_HIDDEN_DIMS, HISTORY_DIM, VELOCITY_DIM
-from wheelleg.observation import OBS_DIM
+from wheelleg.observation import POLICY_OBS_DIM
 
 
 def main() -> None:
@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("--require-ready", action="store_true")
     args = parser.parse_args()
     robot, policy = load_robot(args.robot), load_policy(args.policy)
-    actor = (OBS_DIM + VELOCITY_DIM, *policy.hidden_dims, len(robot.joint_order))
+    actor = (POLICY_OBS_DIM + VELOCITY_DIM, *policy.hidden_dims, len(robot.joint_order))
     encoder = (HISTORY_DIM, *ENCODER_HIDDEN_DIMS, VELOCITY_DIM)
     count = sum((a + 1) * b for layers in (actor, encoder) for a, b in zip(layers[:-1], layers[1:], strict=True))
     print(f"{robot.name}: control={robot.control_hz} Hz, policy={robot.policy_hz} Hz, decimation={robot.decimation}")

@@ -13,10 +13,10 @@ def clipped_component(values: torch.Tensor, bounds: tuple[float, float], scale: 
 def observation_tensor(
     robot: RobotConfig, policy: PolicyConfig, fields: dict[str, torch.Tensor], noise: torch.Tensor | None = None
 ) -> torch.Tensor:
-    q = torch.zeros_like(fields["joint_position"])
+    q = fields["joint_position"]
     indices = list(robot.leg_indices)
     default = q.new_tensor([robot.q_default_rad[i] for i in indices])
-    q[:, indices] = fields["joint_position"][:, indices] - default
+    q = q[:, indices] - default
     values = {**fields, "joint_position": q}
     scales = dict(
         command=q.new_tensor(policy.command_scale),
@@ -26,7 +26,6 @@ def observation_tensor(
         joint_position=policy.joint_position_scale,
         joint_velocity=policy.joint_velocity_scale,
         previous_action=1.0,
-        mode=1.0,
     )
     clips = dict(robot.observation_clip)
     parts = []

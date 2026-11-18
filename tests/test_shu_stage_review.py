@@ -317,8 +317,7 @@ def test_p3_first_timed_interval_uses_action_that_saw_the_press(env_methods):
     old_cmd = env.commands.value.clone()
     env_methods.set_jump_button(env, torch.tensor([True]))
     assert torch.equal(env.commands.value, old_cmd)
-    mode = env.commands.mode(*(torch.zeros(1),) * 3, env.jump.active, env.jump.height, env.jump.phase)
-    assert mode[0, 4].item() == 1 and mode[0, 5].item() > 0 and mode[0, 6].item() == 0
+    assert env.jump.command_m.item() == pytest.approx(0.2)
     env_methods._pre_physics_step(env, torch.zeros_like(env.raw_action))
     assert env.jump.active.item() and env.jump.elapsed.item() == 0
     bind_jump_samples(env_methods, env)
@@ -348,6 +347,21 @@ def test_p3_first_wheel_touch_ends_air_guidance():
     )
     assert event.first_touch.item() and not event.landed.item()
     assert not event.flight.item()
+
+
+def test_jump_request_expires_by_command_clock_not_event_outcome(env_methods):
+    env = fake_env("p3-jump")
+    env_methods.set_jump_button(env, torch.tensor([True]), target_height_m=0.2)
+    env.jump.finish_step(env.physics_dt, torch.tensor([True]))  # adjudicator stopped early
+    assert not env.jump.active.item()
+    for step in range(82):  # 0.8 s + 0.02 s, 100 Hz
+        assert env.jump.command_m.item() == pytest.approx(0.2)
+        env._sim_step_counter += 5
+        env_methods._prepare_stage_command(env)
+        remaining = env.jump.command_remaining.clone()
+        env_methods._prepare_stage_command(env)  # rereading the same observation cannot shorten the latch
+        torch.testing.assert_close(env.jump.command_remaining, remaining)
+    assert env.jump.command_m.item() == 0
 
 
 def test_held_button_does_not_auto_retrigger_after_finish_or_reset(env_methods):

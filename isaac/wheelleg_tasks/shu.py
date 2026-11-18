@@ -150,7 +150,6 @@ class ShuP1:
         self.event.reset(ids, air, preset, env._sim_step_counter)
         self.second_action[ids] = 0
         self.prev_qd[ids] = qd[:, env.joints]
-        env.recovery_episode[ids] = preset
         self.reset_rows[ids] = True
 
     def observe_commands(self, yaw):
@@ -230,7 +229,6 @@ class ShuP1:
                 criterion if self.flat is not None else None,
             )
             c.handoff(ev.handoff, s["yaw"])
-        e.recovery_episode.copy_((ev.phase == RISE) | (ev.phase == RELEASE))
         return terminated
 
     def rewards(self, s):

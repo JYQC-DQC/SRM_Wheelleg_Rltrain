@@ -11,6 +11,7 @@ from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
 from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
+from wheelleg.observation import POLICY_OBS_DIM
 from wheelleg.shu_terrain import MIXED_PROFILES
 from wheelleg.training import TrainingConfig, mutable
 
@@ -21,8 +22,8 @@ from .terrain import MixedTerrainCfg
 @configclass
 class WheelLegEnvCfg(DirectRLEnvCfg):
     action_space = 6
-    observation_space = 35
-    state_space = 81
+    observation_space = POLICY_OBS_DIM
+    state_space = POLICY_OBS_DIM + 46
     training: TrainingConfig = None
     flat_transfer: dict | None = None
     evaluation: bool = False
@@ -154,7 +155,7 @@ def make_env_cfg(
             prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=0.0, track_air_time=True
         ),
         height_scanner=scanner,
-        state_space=158 if scanner else 81,
+        state_space=POLICY_OBS_DIM + 46 + (77 if scanner else 0),
     )
     if t.task == "p3-tunnel":
         # contact_sensor_cfg.py:63-68: one sensing body per environment, not Robot/.*.

@@ -13,7 +13,6 @@ OBSERVATION_CLIP_FIELDS = (
     "joint_position",
     "joint_velocity",
     "previous_action",
-    "mode",
     "base_linear_velocity",
     "base_height",
     "torque",
@@ -199,8 +198,8 @@ def load_policy(path: str | Path) -> PolicyConfig:
     if type(data) is not dict:
         raise ValueError(f"{path}: expected a YAML mapping")
     try:
-        if type(data["obs_version"]) is not int or data["obs_version"] != 3:
-            raise ValueError(f"{path}: SHU policies require obs_version 3")
+        if type(data["obs_version"]) is not int or data["obs_version"] != 4:
+            raise ValueError(f"{path}: SHU policies require obs_version 4")
         dims = data["hidden_dims"]
         if dims != [128, 64, 32] or any(type(width) is not int for width in dims):
             raise ValueError(f"{path}: SHU policies require hidden_dims [128, 64, 32]")

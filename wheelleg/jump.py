@@ -30,6 +30,8 @@ class JumpEvent:
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.elapsed = torch.zeros(count, device=device)
         self.height = torch.zeros_like(self.elapsed)
+        self.command_remaining = torch.zeros_like(self.elapsed)
+        self.command_m = torch.zeros_like(self.elapsed)
         self.start_z = torch.zeros_like(self.elapsed)
         self.apex_z = torch.zeros_like(self.elapsed)
         self.peak_wheel_clearance = torch.zeros_like(self.elapsed)
@@ -74,6 +76,8 @@ class JumpEvent:
             self.height,
             self.air_time,
             self.stable_time,
+            self.command_remaining,
+            self.command_m,
             self.start_z,
             self.apex_z,
             self.peak_wheel_clearance,
@@ -81,9 +85,15 @@ class JumpEvent:
             value[ids] = 0
         self.touchdown_time[ids] = -1
 
+    def advance_command(self, dt: float) -> None:
+        # Operator latch, never shortened by a simulated landing or failure. Half a tick handles float roundoff.
+        self.command_remaining.sub_(dt).clamp_min_(0)
+        self.command_remaining.masked_fill_(self.command_remaining < dt / 2, 0)
+        self.command_m.masked_fill_(self.command_remaining == 0, 0)
+
     def request(self, button_down: torch.Tensor) -> None:
         """Supply the batched button level each policy tick, including the release."""
-        self.requested |= button_down & ~self.button_down & ~self.active
+        self.requested |= button_down & ~self.button_down & (self.command_remaining == 0)
         self.button_down.copy_(button_down)
 
     def trigger(
@@ -93,7 +103,7 @@ class JumpEvent:
         *,
         before_beam: torch.Tensor | None = None,
     ) -> None:
-        start = ~self.active & self.requested
+        start = self.requested.clone()
         self.requested.zero_()
         ids = start.nonzero().flatten()
         if not len(ids):
@@ -115,6 +125,8 @@ class JumpEvent:
             self.height[ids] = uniform(self.settings["height_range_m"], (len(ids),), self.device)
         else:
             self.height[ids] = target_height[ids] if torch.is_tensor(target_height) else target_height
+        self.command_m[ids] = self.height[ids]
+        self.command_remaining[ids] = self.settings["event_duration_s"] + self.settings["landing_stable_s"]
         self.start_z[ids] = z[ids]
         self.apex_z[ids] = z[ids]
         self.peak_wheel_clearance[ids] = 0
@@ -220,10 +232,6 @@ class JumpEvent:
     @property
     def flight(self) -> torch.Tensor:
         return self.active & self.took_off & ~self.first_touch
-
-    @property
-    def phase(self) -> torch.Tensor:
-        return (self.elapsed / self.settings["event_duration_s"]).clamp(0, 1)
 
 
 def collision_bounds_w(

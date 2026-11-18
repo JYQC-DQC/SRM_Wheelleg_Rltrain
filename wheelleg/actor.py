@@ -3,7 +3,7 @@ from torch import nn
 
 from .config import PolicyConfig
 from .history import ENCODER_HIDDEN_DIMS, HISTORY_DIM, VELOCITY_DIM, history_contract
-from .observation import OBS_DIM
+from .observation import OBS_DIM, POLICY_OBS_DIM
 
 
 def _elu_mlp(input_dim: int, hidden_dims: tuple[int, ...], output_dim: int) -> nn.Sequential:
@@ -15,9 +15,13 @@ def _elu_mlp(input_dim: int, hidden_dims: tuple[int, ...], output_dim: int) -> n
     return nn.Sequential(*layers)
 
 
+def actor_input(obs: torch.Tensor, velocity: torch.Tensor) -> torch.Tensor:
+    return torch.cat((obs[..., :OBS_DIM], velocity, obs[..., OBS_DIM:]), dim=-1)
+
+
 def build_actor(policy: PolicyConfig) -> nn.Sequential:
-    """Action mean from [current obs, estimated body vx/vy/vz], before clipping."""
-    return _elu_mlp(OBS_DIM + VELOCITY_DIM, policy.hidden_dims, len(policy.action_scales))
+    """Action mean from [current obs, estimated body vx/vy/vz, jump_request_m], before clipping."""
+    return _elu_mlp(POLICY_OBS_DIM + VELOCITY_DIM, policy.hidden_dims, len(policy.action_scales))
 
 
 def build_encoder() -> nn.Sequential:
@@ -45,7 +49,7 @@ def policy_contract(policy: PolicyConfig) -> dict:
 
 
 class DeployedPolicy(nn.Module):
-    """Deterministic two-input inference: obs[...,35], obs_history[...,175] -> actions[...,6]."""
+    """Deterministic two-input inference: obs[...,27], obs_history[...,130] -> actions[...,6]."""
 
     def __init__(self, policy: PolicyConfig) -> None:
         super().__init__()
@@ -53,4 +57,4 @@ class DeployedPolicy(nn.Module):
         self.encoder = build_encoder()
 
     def forward(self, obs: torch.Tensor, obs_history: torch.Tensor) -> torch.Tensor:
-        return self.actor(torch.cat((obs, self.encoder(obs_history)), dim=-1))
+        return self.actor(actor_input(obs, self.encoder(obs_history)))

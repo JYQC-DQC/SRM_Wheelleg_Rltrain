@@ -2,7 +2,7 @@
 # Training-only press schedule is time-based for both stages; manual rollout never uses it.
 # Beam top/bottom are relative to the lane surface. Lane clear width is not beam outer width.
 name: p3_jump
-obs_version: 3
+obs_version: 4
 hidden_dims:
 - 128
 - 64

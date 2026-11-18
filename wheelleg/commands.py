@@ -107,27 +107,5 @@ class Commands:
         else:
             self.translation = slew(self.translation, self.translation_target, self.settings["linear_slew_m_s2"], dt)
 
-    def mode(
-        self,
-        yaw: torch.Tensor,
-        stair: torch.Tensor,
-        recovering: torch.Tensor,
-        jump_active: torch.Tensor,
-        jump_height: torch.Tensor,
-        phase: torch.Tensor,
-    ) -> torch.Tensor:
-        mode = self.value.new_zeros(len(yaw), 7)
-        if self.family == "p1":
-            mode[:, 0] = 1
-            mode[:, 1] = stair
-            mode[:, 3] = recovering
-        elif self.family == "p2":
-            mode[:, 1] = 1
-        else:
-            mode[:, 4] = jump_active
-            mode[:, 5] = jump_height * self.cfg.policy.height_scale * jump_active
-            mode[:, 6] = phase * jump_active
-        return mode
-
     def world_translation(self) -> torch.Tensor:
         return rotate_xy(self.translation, self.reference_yaw)

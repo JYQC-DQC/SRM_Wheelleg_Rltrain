@@ -176,7 +176,7 @@ def test_tiny_nonzero_semantics_and_brake_reverse_depend_on_previous_effective_v
     assert torch.equal(c.heading_active, ~c.zero_translation)
 
 
-def test_per_bucket_ranges_stand_height_expands_landing_gate_mixed_factory_and_mode():
+def test_per_bucket_ranges_stand_height_expands_landing_gate_mixed_factory_and_reserved_vy():
     n = 2000
     torch.manual_seed(9)
     p = settings(STAND)
@@ -198,9 +198,7 @@ def test_per_bucket_ranges_stand_height_expands_landing_gate_mixed_factory_and_m
         driver.reset(ids)
         assert driver.flat is None and (driver.fraction == 1).all()
         assert driver.height.min() < 0.17 and driver.height.max() > 0.35
-        actual = driver.mode(ids.float(), ids % 3 == 1, ids % 3 == 2, ids < 3, ids.float(), ids.float())
-        assert actual.shape == (n, 7) and (actual[:, 0] == 1).all() and actual[:, [2, 4, 5, 6]].eq(0).all()
-        assert torch.equal(actual[:, 1], ids % 3 == 1) and torch.equal(actual[:, 3], ids % 3 == 2)
+        assert not driver.value[:, 1].any()  # vy_cmd reserved
         with pytest.raises(ValueError):
             driver.transfer_metadata()
 

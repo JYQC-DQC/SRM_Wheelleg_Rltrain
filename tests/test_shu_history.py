@@ -9,13 +9,13 @@ def test_history_buffer_shift_refresh_and_partial_reset():
     history = HistoryBuffer(2, "cpu")
 
     def frames(a, b):
-        return torch.tensor([[a], [b]], dtype=torch.float32).expand(-1, 35)
+        return torch.tensor([[a], [b]], dtype=torch.float32).expand(-1, 26)
 
     def check(first, second):
         flat = history.flat()
-        assert flat.shape == (2, 175)
+        assert flat.shape == (2, 130)
         expected = torch.tensor([first, second], dtype=flat.dtype)
-        torch.testing.assert_close(flat.view(2, HISTORY_FRAMES, 35), expected[:, :, None].expand(-1, -1, 35))
+        torch.testing.assert_close(flat.view(2, HISTORY_FRAMES, 26), expected[:, :, None].expand(-1, -1, 26))
 
     history.update(frames(1, 10), new_step=False)
     check([1] * 5, [10] * 5)

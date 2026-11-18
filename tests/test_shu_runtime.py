@@ -325,14 +325,12 @@ def make_runtime(runtime, stage, proof=None):
     e.policy_history = HistoryBuffer(N, "cpu")
     for key in ("episode_length_buf", "action_ticks"):
         setattr(e, key, torch.zeros(N, dtype=torch.long))
-    for key in ("airborne", "recovery_episode", "stuck", "bad_action", "numerical_bad", "obstacle_hit"):
+    for key in ("airborne", "stuck", "bad_action", "numerical_bad", "obstacle_hit"):
         setattr(e, key, torch.zeros(N, dtype=torch.bool))
     for key in (
         "air_enter",
         "air_exit",
         "air_elapsed",
-        "height_boost_remaining",
-        "stair_signal",
         "fall_counter",
         "stuck_time",
     ):
@@ -354,7 +352,7 @@ def make_runtime(runtime, stage, proof=None):
         imu_bias=2,
         voltage_drop=1,
         delayed_sensor=18,
-        noise=35,
+        noise=26,
     ).items():
         setattr(e, key, torch.zeros(N, width))
     e.iteration_raw_action_max = torch.zeros(())
@@ -393,15 +391,16 @@ def interval(e, support):
     assert not (terminated | timeout).any()
     assert torch.isfinite(reward).all()
     obs = e._get_observations()
-    torch.testing.assert_close(obs["history"][:, :-35], old[:, 35:])
+    torch.testing.assert_close(obs["history"][:, :-26], old[:, 26:])
     check_obs(e, obs)
     return torch.stack(efforts), obs
 
 
 def check_obs(e, obs):
     assert set(obs) == {"policy", "critic", "history", "estimator_target"}
-    assert obs["history"].shape == (N, 175)
-    torch.testing.assert_close(obs["history"][:, -35:], obs["policy"])
+    assert obs["history"].shape == (N, 130)
+    torch.testing.assert_close(obs["history"][:, -26:], obs["policy"][:, :26])
+    assert not obs["policy"][:, 26:].any()
     torch.testing.assert_close(
         obs["policy"][:, :3], e.commands.value * e.raw_action.new_tensor(e.training.policy.command_scale)
     )
@@ -426,7 +425,7 @@ def test_flat_first_reset_and_landing_checkpoint_gate(runtime, tmp_path):
     flat = make_runtime(runtime, "p1-flat")
     obs = reset(flat, 32)
     check_obs(flat, obs)
-    torch.testing.assert_close(obs["history"], obs["policy"].repeat(1, 5))
+    torch.testing.assert_close(obs["history"], obs["policy"][:, :26].repeat(1, 5))
     assert not flat.shu.event.air_birth.any()
     assert flat.shu.event.preset_birth.any() and (~flat.shu.event.preset_birth).any()
     c = flat.commands.value.clone()
@@ -457,7 +456,7 @@ def test_landing_births_release_touch_and_handoff_keep_history(runtime):
     e = make_runtime(runtime, "p1-landing", flat.shu.commands.transfer_metadata())
     obs = reset(e, 17)
     check_obs(e, obs)
-    torch.testing.assert_close(obs["history"], obs["policy"].repeat(1, 5))
+    torch.testing.assert_close(obs["history"], obs["policy"][:, :26].repeat(1, 5))
     event = e.shu.event
     air, preset = event.air_birth.clone(), event.preset_birth.clone()
     ordinary = ~(air | preset)
@@ -497,8 +496,8 @@ def test_landing_births_release_touch_and_handoff_keep_history(runtime):
     ids = torch.tensor([0])
     e._reset_idx(ids)
     after = e._get_observations()
-    torch.testing.assert_close(after["history"][ids], after["policy"][ids].repeat(1, 5))
-    torch.testing.assert_close(after["history"][1:, :-35], kept[1:, :-35])
+    torch.testing.assert_close(after["history"][ids], after["policy"][ids, :26].repeat(1, 5))
+    torch.testing.assert_close(after["history"][1:, :-26], kept[1:, :-26])
     torch.testing.assert_close(report["succeeded"], air)  # cloned pre-reset disclosure
 
 

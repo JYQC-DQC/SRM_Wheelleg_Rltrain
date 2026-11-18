@@ -58,7 +58,6 @@ training:
     joint_position: [-100.0, 100.0]
     joint_velocity: [-200.0, 200.0]
     previous_action: [-100.0, 100.0]
-    mode: [-100.0, 100.0]
     base_linear_velocity: [-100.0, 100.0]
     base_height: [-10.0, 10.0]
     torque: [-100.0, 100.0]

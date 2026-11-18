@@ -48,14 +48,14 @@ class Env:
 
         self.obs = TensorDict(
             {
-                "policy": torch.randn(4, 35),
-                "history": torch.randn(4, 175),
+                "policy": torch.randn(4, 27),
+                "history": torch.randn(4, 130),
                 "estimator_target": torch.full((4, 3), 5.0),
                 "critic": torch.randn(4, 8),
             },
             batch_size=[4],
         )
-        self.obs["history"][:, -35:] = self.obs["policy"]
+        self.obs["history"][:, -26:] = self.obs["policy"][:, :26]
 
     def get_observations(self):
         return self.obs
@@ -77,7 +77,14 @@ def make_runner(policy, task):
                 "critic_hidden_dims": [8],
                 "actor_obs_normalization": False,
             },
-            "algorithm": {"class_name": "PPO", "num_mini_batches": 2, "num_learning_epochs": 2},
+            "algorithm": {
+                "class_name": "PPO",
+                "num_mini_batches": 2,
+                "num_learning_epochs": 2,
+                "schedule": "adaptive",
+                "desired_kl": 0.01,
+                "learning_rate": 1e-4,
+            },
         },
     )
     runner.logger_type = "tensorboard"
@@ -100,6 +107,19 @@ def ppo_update(runner):
     return alg.update()
 
 
+def test_ppo_adaptive_rate_limits_and_encoder_isolation():
+    alg = make_runner(load_policy(P1), "p1-flat").alg
+    for kl, expected in [(0, 1e-4), (0.005, 1e-4), (0.02, 1e-4), (0.001, 1.2e-4), (0.021, 1e-4)]:
+        alg.adapt_lr(kl)
+        assert alg.learning_rate == pytest.approx(expected)
+        assert alg.optimizer.param_groups[0]["lr"] == alg.learning_rate
+    for kl, limit in [(0.001, 1e-3), (0.03, 1e-5)]:
+        for _ in range(50):
+            alg.adapt_lr(kl)
+        assert alg.learning_rate == limit
+    assert alg.encoder_optimizer.param_groups[0]["lr"] == 1e-3
+
+
 def test_ppo_updates_and_checkpoint_resume(tmp_path, monkeypatch):
     policy = load_policy(P1)
     runner = make_runner(policy, "p1-flat")
@@ -116,14 +136,17 @@ def test_ppo_updates_and_checkpoint_resume(tmp_path, monkeypatch):
     before_actor = next(net.actor.parameters()).detach().clone()
     before_critic = next(net.critic.parameters()).detach().clone()
     ppo_step = alg.optimizer.step
+    rates = []
 
     def step():
+        rates.append(alg.optimizer.param_groups[0]["lr"])
         torch.testing.assert_close(encoder_param, before_encoder, atol=0, rtol=0)
         ppo_step()
 
     monkeypatch.setattr(alg.optimizer, "step", step)
     obs["estimator_target"][0, 0] = float("nan")
     assert np.isfinite(ppo_update(runner)["encoder_velocity_mse"])
+    assert rates[0] == pytest.approx(1.2e-4) and len(rates) == 4
     assert not torch.equal(encoder_param, before_encoder)
     assert not torch.equal(next(net.actor.parameters()), before_actor)
     assert not torch.equal(next(net.critic.parameters()), before_critic)
@@ -137,6 +160,13 @@ def test_ppo_updates_and_checkpoint_resume(tmp_path, monkeypatch):
     assert resumed.current_learning_iteration == 17
     assert resumed.alg.encoder_optimizer.state_dict()["state"]
     assert resumed.alg.optimizer.state_dict()["state"]
+    assert resumed.alg.learning_rate == alg.learning_rate
+    legacy = torch.load(path, weights_only=True)
+    legacy["optimizer_state_dict"]["param_groups"][0]["lr"] = 0.006
+    legacy_path = tmp_path / "old_lr.pt"
+    torch.save(legacy, legacy_path)
+    resumed.load(str(legacy_path))
+    assert resumed.alg.learning_rate == resumed.alg.optimizer.param_groups[0]["lr"] == 1e-3
     torch.testing.assert_close(resumed.env.restored["flat"]["fraction"], torch.ones(6))
     torch.testing.assert_close(resumed.alg.policy.act_inference(obs), net.act_inference(obs))
     landing = make_runner(policy, "p1-landing")
@@ -236,7 +266,7 @@ def test_export_with_real_shape_and_onnx_parity(tmp_path):
     (tmp_path / "params").mkdir()
     (tmp_path / "params/run.json").write_text(json.dumps({"git_commit": "test", "task": "p1-flat"}), encoding="utf-8")
     history = np.random.default_rng(5).normal(size=(121, HISTORY_DIM)).astype(np.float32)
-    obs = history[:, -35:]
+    obs = np.column_stack((history[:, -26:], np.zeros(len(history), dtype=np.float32)))
     rollout, output = tmp_path / "rollout.npz", tmp_path / "export"
     np.savez(rollout, observation=obs, obs_history=history[::-1])
     with pytest.raises(ValueError, match="newest frame"):
@@ -244,9 +274,9 @@ def test_export_with_real_shape_and_onnx_parity(tmp_path):
     np.savez(rollout, observation=obs, obs_history=history)
     manifest = export_policy(path, policy_path, robot_path, rollout, output)
     assert manifest["onnx_max_absolute_error"] < 1e-5
-    assert manifest["inference_contract"]["inputs"] == {"obs": [1, 35], "obs_history": [1, 175]}
+    assert manifest["inference_contract"]["inputs"] == {"obs": [1, 27], "obs_history": [1, 130]}
     with np.load(output / "golden.npz") as vectors:
         assert vectors["actions"].shape == (100, 6)
-        np.testing.assert_array_equal(vectors["obs_history"][:, -35:], vectors["observation"])
-    assert "kGoldenObsHistory[100][175]" in (output / "golden.h").read_text(encoding="utf-8")
-    assert "#define WL_OBS_HISTORY_DIM 175u" in (output / "gen_config.h").read_text(encoding="utf-8")
+        np.testing.assert_array_equal(vectors["obs_history"][:, -26:], vectors["observation"][:, :26])
+    assert "kGoldenObsHistory[100][130]" in (output / "golden.h").read_text(encoding="utf-8")
+    assert "#define WL_OBS_HISTORY_DIM 130u" in (output / "gen_config.h").read_text(encoding="utf-8")
