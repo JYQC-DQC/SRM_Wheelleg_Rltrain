@@ -1,6 +1,7 @@
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
+from wheelleg.adaptive_lr import install_adaptive_lr_limit
 from wheelleg.jump import FEATURES as JUMP_FEATURES
 from wheelleg.jump import TUNNEL_FEATURES
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
@@ -56,6 +57,13 @@ class WheelLegRunner(OnPolicyRunner):
         return contract
 
     def _construct_algorithm(self, obs):
+        algorithm = self._make_wheelleg_algorithm(obs)
+        update = self.env.unwrapped.training.stage.get("body_wheel_jump", {}).get("ppo_update")
+        if update is not None:
+            install_adaptive_lr_limit(algorithm, update["max_learning_rate"], update["max_growth_factor"])
+        return algorithm
+
+    def _make_wheelleg_algorithm(self, obs):
         if self.policy_cfg["class_name"] != "HistoryActorCritic":
             return super()._construct_algorithm(obs)
         # Upstream resolves class names with eval() inside rsl_rl; build the history classes here instead.
@@ -72,6 +80,9 @@ class WheelLegRunner(OnPolicyRunner):
         super().log(locs, width, pad)
         env = self.env.unwrapped
         iteration = locs["it"]
+        if env.training.stage.get("body_wheel_jump", {}).get("ppo_update") is not None:
+            self.writer.add_scalar("Loss/max_minibatch_learning_rate", self.alg.iteration_peak_lr, iteration)
+            self.alg.iteration_peak_lr = 0.0
         self.writer.add_scalar("Safety/raw_action_abs_max", env.iteration_raw_action_max.item(), iteration)
         self.writer.add_scalar("Safety/numerical_terminations", env.iteration_numerical_terminations.item(), iteration)
         # 指令范围课程进度（0-1）；不写出来就看不出课程是否卡住。

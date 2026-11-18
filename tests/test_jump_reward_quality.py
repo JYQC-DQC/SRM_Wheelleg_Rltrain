@@ -6,6 +6,24 @@ import torch
 from wheelleg.rewards import compute_rewards, jump_apex, jump_settle_response, jump_takeoff_response
 
 
+def test_adaptive_lr_limit_applies_to_each_optimizer_step_and_scheduler_feedback():
+    from wheelleg.adaptive_lr import install_adaptive_lr_limit
+
+    param = torch.nn.Parameter(torch.ones(1))
+    alg = SimpleNamespace(learning_rate=1e-4, optimizer=torch.optim.Adam([param], lr=1e-4))
+    install_adaptive_lr_limit(alg, 1e-3, 1.2)
+    for _ in range(30):
+        previous = alg.learning_rate
+        alg.learning_rate *= 1.5  # Proposal from rsl_rl when observed KL is small.
+        alg.optimizer.param_groups[0]["lr"] = alg.learning_rate
+        alg.optimizer.step()
+        assert alg.optimizer.param_groups[0]["lr"] == alg.learning_rate == min(previous * 1.2, 1e-3)
+    assert alg.iteration_peak_lr == 1e-3
+    alg.learning_rate /= 1.5
+    alg.optimizer.step()
+    assert alg.optimizer.param_groups[0]["lr"] == 1e-3 / 1.5
+
+
 def test_apex_combines_smooth_height_score_with_physical_cap_and_pose():
     event = SimpleNamespace(
         settings=dict(height_tolerance_m=0.01, height_is_minimum=True, apex_sigma=0.0025),

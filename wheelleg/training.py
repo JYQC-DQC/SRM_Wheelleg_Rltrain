@@ -1172,6 +1172,14 @@ def runner_config(cfg: TrainingConfig) -> dict:
         },
         "algorithm": {"class_name": "PPO", **mutable(cfg.settings["ppo"])},
     }
+    update = cfg.stage.get("body_wheel_jump", {}).get("ppo_update")
+    if update is not None:
+        ppo = config["algorithm"]
+        if ppo["schedule"] != "adaptive" or not ppo["learning_rate"] <= update["max_learning_rate"] <= 1e-2:
+            raise ValueError("adaptive ceiling must be between the initial rate and the upstream maximum")
+        if not 1 < update["max_growth_factor"] <= 1.5:
+            raise ValueError("max_growth_factor must be in (1, 1.5]")
+        ppo.update(entropy_coef=update["entropy_coef"], num_learning_epochs=update["num_learning_epochs"])
     if cfg.policy.history_frames:
         estimator = cfg.settings["history_estimator"]
         config["policy"].update(
