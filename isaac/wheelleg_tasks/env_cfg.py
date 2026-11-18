@@ -12,11 +12,11 @@ from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
 from wheelleg.observation import POLICY_OBS_DIM
-from wheelleg.shu_terrain import MIXED_PROFILES
+from wheelleg.shu_terrain import MIXED_COLUMN_PROFILES, MIXED_PROFILES, stair_lip_dimensions
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
-from .terrain import MixedTerrainCfg
+from .terrain import MixedTerrainCfg, MixedTerrainGenerator
 
 
 @configclass
@@ -109,21 +109,24 @@ def make_env_cfg(
     scanner = None
     if t.task == "p1-stairs":
         s = t.stage["terrain"]
+        lip = stair_lip_dimensions(s)
         terrain.terrain_type = "generator"
         terrain.terrain_generator = TerrainGeneratorCfg(
+            class_type=MixedTerrainGenerator,
             seed=t.settings["seed"],
             size=tuple(s["tile_size_m"]),
+            border_width=s["border_width_m"],
             num_rows=s["rows"],
-            num_cols=len(MIXED_PROFILES),
-            # One fixed column per profile; actual episode proportions come from the runtime.
+            num_cols=len(MIXED_COLUMN_PROFILES),
             curriculum=True,
             sub_terrains={
-                name: MixedTerrainCfg(
+                (name if col < len(MIXED_PROFILES) else f"{name}_lip"): MixedTerrainCfg(
                     proportion=1.0,
                     profile=name,
                     parameters={**mutable(s["profiles"][name]["geometry"]), "seed": t.settings["seed"]},
+                    stair_lip=None if col < len(MIXED_PROFILES) else lip,
                 )
-                for name in MIXED_PROFILES
+                for col, name in enumerate(MIXED_COLUMN_PROFILES)
             },
         )
         scanner = RayCasterCfg(

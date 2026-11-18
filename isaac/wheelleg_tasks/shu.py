@@ -7,6 +7,7 @@ from wheelleg.shu_commands import ShuCommands
 from wheelleg.shu_curriculum import AirHeightCurriculum, FlatCommandCurriculum
 from wheelleg.shu_landing import ShuLanding
 from wheelleg.shu_logging import ShuLandingLog
+from wheelleg.shu_map import ShuFreeMap
 from wheelleg.shu_rewards import DRIVE, RELEASE, RISE, shu_reward_terms
 from wheelleg.shu_spawn import AIR as AIR_BIRTH
 from wheelleg.shu_spawn import (
@@ -34,6 +35,7 @@ class ShuP1:
         self.stage = t.task
         cp = t.settings["commands"]
         self.flat = self.drop = self.spawn_cfg = None
+        self.free_map = None
         self.proof = proof
         self.log = ShuLandingLog()
         if t.task == "p1-flat":
@@ -45,7 +47,9 @@ class ShuP1:
             self.commands = ShuCommands(cp, n, dev, landing_metadata=proof)
             self.drop = AirHeightCurriculum(t.stage["height_edges_m"], dev)
         else:
-            self.commands = ShuCommands.for_mixed(cp, n, dev, route=t.stage["terrain"]["route"])
+            terrain = t.stage["terrain"]
+            self.commands = ShuCommands.for_mixed(cp, n, dev, route=terrain["route"])
+            self.free_map = ShuFreeMap(env.cfg.terrain.terrain_generator, terrain.get("free_map") or {}, dev)
         if t.task != "p1-stairs":
             self.spawn_cfg = SpawnConfig(
                 **dict(t.shared["shu_spawn"]),
@@ -160,6 +164,9 @@ class ShuP1:
         age = (tick - ev.born) // e.training.robot.decimation
         args = (yaw, phase == DRIVE, recovering, ev.air_birth, age)
         route = None if e.mixed_curriculum is None else e.mixed_curriculum.route_open
+        fixed_ids = slice(None)
+        if self.free_map is not None:
+            c.free_limits = self.free_map.limits_at(e.robot.data.root_pos_w)
         if tick != self.last_command_tick:
             c.prepare(*args, route_open=route)
             self.last_command_tick = tick
@@ -168,20 +175,24 @@ class ShuP1:
             if not len(ids):
                 return
             c.prepare_reset_rows(ids, *args, route_open=route)
+            if self.free_map is not None:
+                fixed_ids = ids
         self.reset_rows.zero_()
         if e.commands_fixed and e.fixed_command is not None:
             target, height = e.fixed_command
-            raw = torch.as_tensor(target, device=e.device).expand_as(c.value)
-            cap = ev.air_birth & (age < 300)
-            c.value.copy_(raw)
-            c.value[:, 0] = torch.where(cap, raw[:, 0].clamp(-2.5, 2.5), raw[:, 0])
-            c.value[:, 2] = torch.where(cap, raw[:, 2].clamp(-torch.pi / 2, torch.pi / 2), raw[:, 2])
-            c.value.masked_fill_(recovering[:, None], 0)
-            c.height.fill_(height)
-            c.height_rate.zero_()
-            c.vx_active.copy_(c.value[:, 0] != 0)
-            c.wz_active.copy_(c.value[:, 2] != 0)
-            c.heading_active.zero_()
+            raw = torch.as_tensor(target, device=e.device, dtype=c.value.dtype)
+            cap = ev.air_birth[fixed_ids] & (age[fixed_ids] < 300)
+            cmd = raw.expand(len(cap), 3).clone()
+            cmd[:, 0] = torch.where(cap, raw[0].clamp(-2.5, 2.5), raw[0])
+            cmd[:, 2] = torch.where(cap, raw[2].clamp(-torch.pi / 2, torch.pi / 2), raw[2])
+            cmd.masked_fill_(recovering[fixed_ids, None], 0)
+            c.clamp_free_motion(cmd, fixed_ids)
+            c.value[fixed_ids] = cmd
+            c.height[fixed_ids] = height
+            c.height_rate[fixed_ids] = 0
+            c.vx_active[fixed_ids] = cmd[:, 0] != 0
+            c.wz_active[fixed_ids] = cmd[:, 2] != 0
+            c.heading_active[fixed_ids] = False
 
     def sample(self, tick):
         e, ev = self.env, self.event

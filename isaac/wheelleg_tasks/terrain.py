@@ -2,7 +2,7 @@ from dataclasses import MISSING
 
 import numpy as np
 import trimesh
-from isaaclab.terrains import SubTerrainBaseCfg
+from isaaclab.terrains import SubTerrainBaseCfg, TerrainGenerator
 from isaaclab.utils import configclass
 
 from wheelleg.shu_terrain import MIXED_PROFILES
@@ -18,6 +18,27 @@ def _slope_mesh(difficulty: float, size, angle_range) -> list:
     for i in range(4):
         faces.extend(((2 * i, 2 * i + 2, 2 * i + 1), (2 * i + 1, 2 * i + 2, 2 * i + 3)))
     return [trimesh.Trimesh(vertices=vertices, faces=np.array(faces), process=False)]
+
+
+def _closed_stair_mesh(edges, tops, bottom, width) -> trimesh.Trimesh:
+    # Triangulate the XZ section in strips. Split the taller strip at each
+    # shared edge so the extrusion caps have no T-junctions or internal faces.
+    vertices = {}
+    faces = []
+    for i, (left, right, top) in enumerate(zip(edges[:-1], edges[1:], tops, strict=True)):
+        outline = [(left, bottom), (right, bottom)]
+        if i + 1 < len(tops) and tops[i + 1] < top:
+            outline.append((right, tops[i + 1]))
+        outline.extend(((right, top), (left, top)))
+        if i > 0 and tops[i - 1] < top:
+            outline.append((left, tops[i - 1]))
+        center = vertices.setdefault(((left + right) / 2, (bottom + top) / 2), len(vertices))
+        ring = [vertices.setdefault(point, len(vertices)) for point in outline]
+        faces.extend((center, a, b) for a, b in zip(ring, ring[1:] + ring[:1], strict=True))
+    mesh = trimesh.creation.extrude_triangulation(np.array(list(vertices)), np.array(faces), height=width)
+    # Extrusion coordinates (x, z, depth) -> terrain (x, width - depth, z).
+    mesh.apply_transform(np.array(((1, 0, 0, 0), (0, 0, -1, width), (0, 1, 0, 0), (0, 0, 0, 1))))
+    return mesh
 
 
 def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
@@ -43,9 +64,30 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         if not 0 <= spawn_x < start or not 0 < start <= edges[-2] < sx or width <= 0:
             raise ValueError(f"{kind}: need a clear approach, ordered risers and an exit within the tile")
         height = p["step_height_range_m"][0] + difficulty * np.ptp(p["step_height_range_m"])
-        levels = [height * (count - i if down else i) for i in range(count + 1)]
-        for left, right, z in zip(edges[:-1], edges[1:], levels, strict=True):
-            box(left, right, 0, sy, z)
+        if cfg.stair_lip is None:
+            levels = [height * (count - i if down else i) for i in range(count + 1)]
+            for left, right, z in zip(edges[:-1], edges[1:], levels, strict=True):
+                box(left, right, 0, sy, z)
+        else:
+            lip_height, lip_width = cfg.stair_lip
+            if not lip_height < height:
+                raise ValueError(f"{kind}: terrain.stair_lip.height_m must be less than the outer riser height")
+            levels = [(height - lip_height) * (count - i if down else i) for i in range(count + 1)]
+            section_x, section_z = [0], []
+            for i, (left, right, z) in enumerate(zip(edges[:-1], edges[1:], levels, strict=True)):
+                has_lip = i < count if down else i > 0
+                if has_lip:
+                    lip_edge = right - lip_width if down else left + lip_width
+                    if not left < lip_edge < right or (down and i == 0 and spawn_x >= lip_edge):
+                        raise ValueError(f"{kind}: terrain.stair_lip.width_m must fit the high tread and clear spawn")
+                    section_x.append(lip_edge)
+                    # The outside riser is height H, not H + lip_height.
+                    crown = (levels[i + 1] if down else levels[i - 1]) + height
+                    section_z.extend((z, crown) if down else (crown, z))
+                else:
+                    section_z.append(z)
+                section_x.append(right)
+            meshes.append(_closed_stair_mesh(section_x, section_z, -ground, sy))
         spawn_z = levels[0]
     elif kind == "slope":
         meshes = _slope_mesh(difficulty, cfg.size, p["slope_angle_range_rad"])
@@ -88,8 +130,30 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     return meshes, np.array((spawn_x, sy / 2, spawn_z))
 
 
+class MixedTerrainGenerator(TerrainGenerator):
+    def _generate_curriculum_terrains(self):
+        # Isaac Lab 2.3.2 samples once per (column, row). Reuse that draw for
+        # the paired lip column so only its geometry, not its difficulty, changes.
+        lower, upper = self.cfg.difficulty_range
+        difficulties = {}
+        for col, cfg in enumerate(self.cfg.sub_terrains.values()):
+            for row in range(self.cfg.num_rows):
+                key = (cfg.profile, row)
+                if key not in difficulties:
+                    fraction = (row + self.np_rng.uniform()) / self.cfg.num_rows
+                    if cfg.profile == "slope" or cfg.profile.endswith(("_up", "_down")):
+                        if row == self.cfg.num_rows - 1:
+                            fraction = 1.0
+                        elif row == 0:
+                            fraction = 0.0
+                    difficulties[key] = lower + (upper - lower) * fraction
+                mesh, origin = self._get_terrain_mesh(difficulties[key], cfg)
+                self._add_sub_terrain(mesh, origin, row, col, cfg)
+
+
 @configclass
 class MixedTerrainCfg(SubTerrainBaseCfg):
     function = mixed_terrain
     profile: str = MISSING
     parameters: dict = MISSING
+    stair_lip: tuple[float, float] | None = None

@@ -519,6 +519,9 @@ class WheelLegEnv(DirectRLEnv):
             timeout = self._sim_step_counter - self.shu.event.born >= round(
                 t.settings["episode_length_s"] / self.physics_dt
             )
+            if self.mixed_curriculum is not None:
+                outside = self.shu.free_map.outside(self.robot.data.root_pos_w)
+                timeout |= outside & ~self.mixed_curriculum.traverse
             terminated = self.shu.update(s, timeout)
             self.numerical_bad |= self.shu.event.numerical_failure
             self.iteration_numerical_terminations += self.numerical_bad.sum()
@@ -804,13 +807,11 @@ class WheelLegEnv(DirectRLEnv):
         self.initial_position[env_ids] = root[:, :3]
         self.previous_position[env_ids] = root[:, :3]
         self.stuck_start[env_ids] = root[:, :3]
-        if self.commands_fixed:
+        # Mixed P1 must issue fixed commands from the realized post-reset pose in observe_commands.
+        if self.commands_fixed and self.mixed_curriculum is None:
             if self.jump is None:
-                fixed_ids = env_ids
-                if self.mixed_curriculum is not None:
-                    fixed_ids = env_ids[~self.mixed_curriculum.traverse[env_ids]]
-                self.commands.value[fixed_ids] = self.fixed_command[0]
-                self.commands.height[fixed_ids] = self.fixed_command[1]
+                self.commands.value[env_ids] = self.fixed_command[0]
+                self.commands.height[env_ids] = self.fixed_command[1]
             else:
                 self.commands.target[env_ids] = self.fixed_command[0]
                 self.commands.remaining[env_ids] = torch.inf

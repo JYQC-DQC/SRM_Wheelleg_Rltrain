@@ -136,8 +136,9 @@ stages:
     air_reset_probability: 0.0
     recovery_probability: 0.0
     terrain:
-      tile_size_m: null
-      rows: null
+      tile_size_m: [12.0, 12.0]  # continuous atlas; larger than the SCUT 9 m training tile
+      border_width_m: 5.0
+      rows: 10
       route:
         vx_range_m_s: null  # Positive forward-speed range for traverse only.
         heading_kp: null
@@ -145,14 +146,20 @@ stages:
         corridor_width_m: null  # Full route width, centered on the tile.
         clearance_m: null  # Vehicle envelope/safety margin to corridor, obstacle and tile edges.
       # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
-      groups: {rough: null, grid: null, slope: null, stairs: null}
+      groups: {rough: 0.05, grid: 0.10, slope: 0.10, stairs: 0.45}
+      locked_stair_weights: {single: 0.30, double: 0.70}
+      stair_lip: {height_m: 0.05, width_m: null}  # depth along travel: not dimensioned in the supplied section
+      free_map:
+        edge_margin_m: 0.5
+        command_limits:
+          slope: {vx_abs_max_m_s: null, wz_abs_max_rad_s: null}
       stair_weights:
-        single_up: null
-        double_up: null
-        triple_up: null
-        single_down: null
-        double_down: null
-        triple_down: null
+        single_up: 0.20
+        double_up: 0.60
+        triple_up: 0.20
+        single_down: 0.20
+        double_down: 0.60
+        triple_down: 0.20
       # Zero-based row, finalized route-attempt window, and required pass fraction per prerequisite.
       gates:
         single_up: {row: null, window: null, success_fraction: null}
@@ -166,7 +173,7 @@ stages:
           geometry: {spawn_x_m: null, ground_thickness_m: null}
         rough:
           row_range: null
-          command_mode: null
+          command_mode: free
           geometry:
             spawn_x_m: null
             ground_thickness_m: null
@@ -175,7 +182,7 @@ stages:
             rough_amplitude_range_m: null
         grid:
           row_range: null
-          command_mode: null
+          command_mode: free
           geometry:
             spawn_x_m: null
             ground_thickness_m: null
@@ -186,9 +193,9 @@ stages:
             grid_width_m: null
             grid_height_range_m: null
         slope:
-          row_range: null
-          command_mode: null
-          geometry: {spawn_x_m: null, ground_thickness_m: null, slope_angle_range_rad: null}
+          row_range: [0, 9]
+          command_mode: free
+          geometry: {spawn_x_m: null, ground_thickness_m: null, slope_angle_range_rad: [0.0, 0.4363323129985824]}
         single_up:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -197,8 +204,8 @@ stages:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: null
-            step_height_range_m: null
+            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
         double_up:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -207,8 +214,8 @@ stages:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: null
-            step_height_range_m: null
+            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
         single_down:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -217,8 +224,8 @@ stages:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: null
-            step_height_range_m: null
+            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
         double_down:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -227,8 +234,8 @@ stages:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: null
-            step_height_range_m: null
+            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
         triple_up:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -237,8 +244,8 @@ stages:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: null
-            step_height_range_m: null
+            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
         triple_down:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -247,8 +254,8 @@ stages:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: null
-            step_height_range_m: null
+            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
     progress_weight: null
     stuck_weight: null
     impact_weight: null

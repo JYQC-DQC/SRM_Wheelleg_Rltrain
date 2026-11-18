@@ -127,6 +127,7 @@ class ShuCommands:
         self._magnitude_sum = torch.zeros_like(self.value)
         self._previous = torch.zeros_like(self.value)
         self._rates = self.value.new_tensor([p["linear_slew_m_s2"], 0.0, p["angular_slew_rad_s2"]]) * _DT
+        self.free_limits = None  # (N, 2) absolute vx/wz caps looked up at the current world position
 
     @classmethod
     def for_mixed(cls, settings: dict, count: int, device: str, *, route: dict | None = None) -> "ShuCommands":
@@ -230,6 +231,12 @@ class ShuCommands:
         self.height[ids] = self.height_target[ids]
         self.height_rate[ids] = self.reference_yaw[ids] = 0
 
+    def clamp_free_motion(self, command: torch.Tensor, ids=slice(None)) -> None:
+        if self.free_limits is not None:
+            vx, wz = torch.where(self.route[ids, None], torch.inf, self.free_limits[ids]).unbind(-1)
+            command[:, 0].clamp_(-vx, vx)
+            command[:, 2].clamp_(-wz, wz)
+
     def _issue(self, ids: torch.Tensor, yaw: torch.Tensor, latch: torch.Tensor) -> None:
         # yaw/latch here are local to ids. A subset reissue at handoff consumes NO extra slew step.
         k = self.kind[ids]
@@ -251,6 +258,7 @@ class ShuCommands:
         air = self._air_limit[ids]
         cmd[:, 0] = torch.where(air, cmd[:, 0].clamp(-2.5, 2.5), cmd[:, 0])
         cmd[:, 2] = torch.where(air, cmd[:, 2].clamp(-pi / 2, pi / 2), cmd[:, 2])
+        self.clamp_free_motion(cmd, ids)
         self.value[ids] = torch.where(rise[:, None], 0.0, cmd)
         if self._route_settings is not None:
             route = self.route[ids]

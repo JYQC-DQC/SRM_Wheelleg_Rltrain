@@ -4,7 +4,13 @@ import pytest
 import torch
 
 from wheelleg.jump import JumpEvent, collision_bounds_w, tunnel_geometry
-from wheelleg.shu_terrain import MIXED_PROFILES, MixedTerrainRuntime, route_active, route_progress_and_stuck
+from wheelleg.shu_terrain import (
+    MIXED_COLUMN_PROFILES,
+    MIXED_PROFILES,
+    MixedTerrainRuntime,
+    route_active,
+    route_progress_and_stuck,
+)
 
 
 def mixed_settings():
@@ -17,6 +23,8 @@ def mixed_settings():
         tile_size_m=(8.0, 8.0),
         gates=gates,
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
+        locked_stair_weights=dict(single=0.3, double=0.7),
+        stair_lip=dict(height_m=0.05, width_m=0.1),
         stair_weights=dict.fromkeys(MIXED_PROFILES[4:], 1.0),
         profiles={
             name: dict(
@@ -35,7 +43,7 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     count = 2000
     cfg = mixed_settings()
     mix = MixedTerrainRuntime(cfg, count, "cpu")
-    columns = torch.arange(len(MIXED_PROFILES))
+    columns = torch.arange(len(MIXED_COLUMN_PROFILES))
     origins = torch.zeros(3, len(columns), 3)
     origins[..., 0] = torch.arange(3).unsqueeze(-1) * 8
     origins[..., 1] = columns * 8
@@ -48,7 +56,7 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     ids = torch.arange(count)
     no = torch.zeros(count, dtype=torch.bool)
     mix.reset(terrain, ids, no, no, evaluation=False)
-    assert (terrain.terrain_types < 8).all()
+    assert not any(MIXED_COLUMN_PROFILES[c].startswith("triple") for c in terrain.terrain_types.unique().tolist())
     assert (terrain.terrain_types == 0).float().mean().item() == pytest.approx(0.30, abs=0.04)
     before = mix.weights.clone()
     # Two successes on single-up. Double-up has one wrong row and one terminal failure.
