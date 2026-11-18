@@ -362,7 +362,7 @@ class JumpSim(WheelLegSim):
             torch.tensor([stable]),
             valid,
             obstacle_hit,
-            wheel_clearance=torch.tensor(info["wheel_clearance"][None]),
+            wheel_clearance=self.jump.elapsed.new_tensor(info["wheel_clearance"][None]),
             failed=torch.tensor([jump_failed]),
             require_height=torch.tensor([False]) if "moving_probability" in self.stage else None,
             **geometry,
