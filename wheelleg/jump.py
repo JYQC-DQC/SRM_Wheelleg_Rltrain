@@ -105,7 +105,7 @@ class JumpEvent:
         self.failure_paid = self.active.clone()
         self.quality_paid = self.active.clone()
 
-    def reset(self, ids: torch.Tensor) -> None:
+    def reset(self, ids: torch.Tensor, *, enabled: torch.Tensor | None = None) -> None:
         if self.tuck_share is not None:
             self.support_length[ids] = 0
             self.previous_tuck[ids] = 0
@@ -167,6 +167,8 @@ class JumpEvent:
         self.remaining[ids] = torch.multinomial(
             self.elapsed.new_tensor(self.settings["jump_count_probabilities"]), len(ids), replacement=True
         )
+        if enabled is not None:
+            self.remaining[ids] *= enabled
         self.next_trigger[ids] = uniform(self.settings["first_trigger_range_s"], (len(ids),), self.device)
 
     def trigger(

@@ -189,7 +189,7 @@ def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
     policy = ROOT / "config/reference/scut_p3.yaml"
     flat = load_training("p3-jump", robot, policy)
     torch.manual_seed(2)
-    commands = Commands(flat, 64, "cpu")
+    commands = Commands(flat, 64, "cpu", evaluation=True)
     commands.reset(torch.arange(64))
     target = commands.target.clone()
     assert (target[:, 0] == 0).any() and (target[:, 0] >= 0.6).any()
@@ -211,6 +211,35 @@ def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
     assert all(case.jump_count == 1 and case.command[0] > 0 for case in cases)
     assert {case.press_distance_m for case in cases} == {0.9, 1.3}
     assert all(case.jump_height == pytest.approx(0.145) for case in cases)
+
+
+def test_flat_mix_stops_once_and_excludes_ground_episodes_from_jump_events():
+    cfg = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    )
+    torch.manual_seed(14)
+    ids = torch.arange(4096)
+    commands = Commands(cfg, len(ids), "cpu")
+    commands.reset(ids)
+    groups = commands.flat_group.clone()
+    torch.testing.assert_close(groups.bincount(minlength=4) / len(ids), torch.tensor([.2, .25, .25, .3]),
+                               atol=.025, rtol=0)
+    stopping = commands.remaining.isfinite()
+    assert stopping.any() and (groups[stopping] == 0).all()
+    assert not commands.target[groups == 2].any()
+    initial = commands.target.clone()
+    commands.step(6., torch.zeros_like(stopping))
+    assert not commands.target[stopping].any()
+    torch.testing.assert_close(commands.target[~stopping], initial[~stopping])
+    torch.testing.assert_close(commands.flat_group, groups)
+
+    jump = JumpEvent(cfg.stage, len(ids), "cpu")
+    jump.reset(ids, enabled=groups >= 2)
+    jump.trigger(torch.full_like(jump.elapsed, 6.), jump.elapsed, torch.ones_like(jump.active),
+                 body_clearance_m=jump.elapsed)
+    assert torch.equal(jump.active, groups >= 2)
+    jump.fail_pending(torch.ones_like(jump.active))
+    assert not jump.failure_pulse[groups < 2].any()
 
 
 @pytest.mark.parametrize("first_contact_valid", [False, True])

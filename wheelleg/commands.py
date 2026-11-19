@@ -6,13 +6,15 @@ from .tasks import TASKS
 from .tensor_ops import rotate_xy, slew
 from .training import TrainingConfig
 
+FLAT_EPISODE_GROUPS = ("stationary", "straight", "stationary_jump", "moving_jump")
+
 
 def uniform(bounds: tuple[float, float], shape: tuple[int, ...], device: str) -> torch.Tensor:
     return bounds[0] + torch.rand(shape, device=device) * (bounds[1] - bounds[0])
 
 
 class Commands:
-    def __init__(self, cfg: TrainingConfig, count: int, device: str):
+    def __init__(self, cfg: TrainingConfig, count: int, device: str, *, evaluation: bool = False):
         self.cfg, self.device = cfg, device
         self.family = TASKS[cfg.task].policy
         self.settings = cfg.settings["commands"]
@@ -33,6 +35,10 @@ class Commands:
         self.free_started = torch.zeros(count, dtype=torch.bool, device=device)
         self.course = None  # Assigned by the stairs environment before the first reset.
         self.tunnel_obstacle = None
+        self.flat_episode_mix = cfg.stage.get("flat_episode_mix") if cfg.task == "p3-jump" and not evaluation else None
+        if self.flat_episode_mix is not None:
+            self.flat_group = torch.zeros(count, dtype=torch.long, device=device)
+            self.flat_group_weights = self.value.new_tensor(self.flat_episode_mix["fractions"])
         self.basic_jump_gate = dict(attempts=0, successes=0, last_rate=0.0, passed=False)
         if cfg.task == "p3-tunnel":
             fraction = cfg.stage["tunnel"].get("obstacle_fraction", 1.0)
@@ -62,7 +68,10 @@ class Commands:
         self.remaining[ids] = 0
         self.height_remaining[ids] = 0
         self.translation[ids] = 0
-        self._resample(ids)
+        if self.flat_episode_mix is None:
+            self._resample(ids)
+        else:
+            self._sample_flat_episode(ids)
         self._resample_height(ids)
         self.height[ids] = self.target_height[ids]
         self.height_rate[ids] = 0
@@ -211,6 +220,24 @@ class Commands:
         self.target_height[ids, 0] = uniform(self.settings["height_range_m"], (len(ids),), self.device)
         self.height_remaining[ids] = uniform(self.settings["height_duration_s"], (len(ids),), self.device)
 
+    def _sample_flat_episode(self, ids: torch.Tensor) -> None:
+        mix = self.flat_episode_mix
+        n = len(ids)
+        if not n:
+            return
+        shape = (n,)
+        group = torch.multinomial(self.flat_group_weights, n, replacement=True)
+        self.flat_group[ids] = group
+        stopping = (group == 0) & (torch.rand(n, device=self.device) < mix["stop_trial_probability"])
+        bounds = mix["ground_vx_range_m_s"]
+        ground_speed = uniform(bounds, shape, self.device)
+        ground_speed = torch.where(
+            torch.rand(n, device=self.device) < mix["ground_top_speed_probability"], bounds[1], ground_speed
+        )
+        jump_speed = uniform(self.settings["vx_range_m_s"], shape, self.device)
+        self.target[ids, 0] = torch.where(group == 3, jump_speed, torch.where((group == 1) | stopping, ground_speed, 0))
+        self.remaining[ids] = torch.where(stopping, uniform(mix["stop_after_s"], shape, self.device), torch.inf)
+
     def step(self, dt: float, frozen: torch.Tensor) -> None:
         if self.cfg.task == "p1-stairs":
             entered = self.course.free_commands & (self.course.surface_time > 0)
@@ -218,7 +245,13 @@ class Commands:
             self.free_started |= entered
         self.remaining -= dt
         self.height_remaining -= dt
-        self._resample(((self.remaining <= 0) & ~frozen).nonzero().flatten())
+        expired = (self.remaining <= 0) & ~frozen
+        if self.flat_episode_mix is None:
+            self._resample(expired.nonzero().flatten())
+        else:
+            # A stop trial becomes a zero command once. Its episode group never changes in flight or on timeout.
+            self.target[:, 0].masked_fill_(expired, 0)
+            self.remaining.masked_fill_(expired, torch.inf)
         self._resample_height(((self.height_remaining <= 0) & ~frozen).nonzero().flatten())
         self.value = torch.where(frozen[:, None], self.value, slew(self.value, self.target, self.rates, dt))
         previous = self.height

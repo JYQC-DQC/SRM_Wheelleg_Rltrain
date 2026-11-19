@@ -16,7 +16,7 @@ from isaaclab.sensors import ContactSensor, RayCaster
 from isaaclab.utils.buffers import DelayBuffer
 from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inverse, quat_from_euler_xyz, wrap_to_pi
 
-from wheelleg.commands import Commands, uniform
+from wheelleg.commands import FLAT_EPISODE_GROUPS, Commands, uniform
 from wheelleg.curriculum import AirHeightCurriculum, CommandCurriculum, JumpCurriculum
 from wheelleg.history import HistoryBuffer
 from wheelleg.jump import (
@@ -143,7 +143,7 @@ class WheelLegEnv(DirectRLEnv):
         self.spawn_checked = False
         self.spawn_check_mask = torch.ones(n, dtype=torch.bool, device=d)
         self.action_ticks = torch.zeros(n, dtype=torch.long, device=d)
-        self.commands = Commands(t, n, d)
+        self.commands = Commands(t, n, d, evaluation=cfg.evaluation)
         if t.task == "p3-tunnel" and cfg.evaluation:
             self.commands.tunnel_obstacle.fill_(True)
         self.stair_course = StairCourse(n, t.stage, d) if t.task == "p1-stairs" else None
@@ -1142,6 +1142,8 @@ class WheelLegEnv(DirectRLEnv):
                         terms[name] *= stand_walk_allowed
                 if "runup_tracking" in t.stage and "track_lin_vel" in terms:
                     before_press = stand_walk_allowed & (self.jump.elapsed == 0) & ~self.jump.active
+                    if self.commands.flat_episode_mix is not None:
+                        before_press &= self.commands.flat_group >= 2
                     supported = s["wheel_contact"].any(-1)
                     runup = t.stage["runup_tracking"]
                     if "squared_error_cost" in runup:
@@ -1719,6 +1721,13 @@ class WheelLegEnv(DirectRLEnv):
                 iteration,
             )
         if self.reward_sums:
+            if self.commands.flat_episode_mix is not None:
+                lengths = self.episode_length_buf[env_ids]
+                groups = self.commands.flat_group[env_ids]
+                for group, name in enumerate(FLAT_EPISODE_GROUPS):
+                    member = (groups == group) & (lengths > 0)
+                    curriculum_log[f"FlatMix/episodes_{name}"] = member.sum().float()
+                    curriculum_log[f"FlatMix/steps_{name}"] = (lengths * member).sum().float()
             self.extras["log"] = curriculum_log | {
                 f"Episode_Reward/{k}": v[env_ids].mean() / self.max_episode_length_s
                 for k, v in self.reward_sums.items()
@@ -1973,7 +1982,8 @@ class WheelLegEnv(DirectRLEnv):
         if self.landing_reward is not None:
             self.landing_reward.reset(env_ids, air, self._sim_step_counter)
         if self.jump is not None:
-            self.jump.reset(env_ids)
+            enabled = self.commands.flat_group[env_ids] >= 2 if self.commands.flat_episode_mix is not None else None
+            self.jump.reset(env_ids, enabled=enabled)
         if t.task == "p3-tunnel":
             self._reset_tunnel(env_ids)
             p = t.stage["tunnel"]

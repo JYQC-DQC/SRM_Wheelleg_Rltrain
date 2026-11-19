@@ -996,6 +996,26 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if bounds is not None and (len(bounds) != 2 or bounds[0] > bounds[1]):
             raise ValueError(f"commands.{key}: expected [lower, upper]")
     if TASKS[cfg.task].policy == "p3":
+        if "flat_episode_mix" in cfg.stage:
+            if cfg.task != "p3-jump" or "moving_probability" not in cfg.stage:
+                raise ValueError("flat_episode_mix requires staged p3-jump")
+            mix = cfg.stage["flat_episode_mix"]
+            fractions = mix["fractions"]
+            if (
+                len(fractions) != 4
+                or any(not isfinite(x) or x <= 0 for x in fractions)
+                or abs(sum(fractions) - 1) > 1e-6
+            ):
+                raise ValueError("flat_episode_mix.fractions must contain four positive values summing to one")
+            for key in ("ground_vx_range_m_s", "stop_after_s"):
+                lo, hi = mix[key]
+                if not (isfinite(lo) and isfinite(hi) and 0 < lo <= hi):
+                    raise ValueError(f"flat_episode_mix.{key} must be an ordered positive range")
+            if mix["stop_after_s"][1] >= cfg.settings["episode_length_s"]:
+                raise ValueError("flat_episode_mix.stop_after_s must fit within the episode")
+            for key in ("ground_top_speed_probability", "stop_trial_probability"):
+                if not 0 <= mix[key] <= 1:
+                    raise ValueError(f"flat_episode_mix.{key} must be in [0, 1]")
         if "body_wheel_jump" in cfg.stage:
             profile = cfg.stage["body_wheel_jump"]
             if "apex_band_m" in profile and not 0 < profile["apex_band_m"] <= cfg.stage["height_tolerance_m"]:

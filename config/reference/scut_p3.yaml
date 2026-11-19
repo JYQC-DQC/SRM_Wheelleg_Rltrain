@@ -205,6 +205,12 @@ mode_semantics:
 stages:
   jump:
     moving_probability: 0.5
+    flat_episode_mix:
+      fractions: [0.20, 0.25, 0.25, 0.30]  # Stationary, straight, stationary jump, moving jump.
+      ground_vx_range_m_s: [0.2, 2.0]
+      ground_top_speed_probability: 0.25
+      stop_trial_probability: 0.5
+      stop_after_s: [3.0, 5.0]
     runup_tracking:
       squared_error_cost: 2.0  # Per second per squared m/s; replaces both ordinary forward terms on support before press.
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
