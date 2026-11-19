@@ -17,7 +17,7 @@ from isaaclab.utils.buffers import DelayBuffer
 from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, quat_apply_inverse, quat_from_euler_xyz, wrap_to_pi
 
 from wheelleg.commands import FLAT_EPISODE_GROUPS, Commands, uniform
-from wheelleg.curriculum import AirHeightCurriculum, CommandCurriculum, JumpCurriculum
+from wheelleg.curriculum import AirHeightCurriculum, CommandCurriculum, GroundPromotionGate, JumpCurriculum
 from wheelleg.history import HistoryBuffer
 from wheelleg.jump import (
     JumpEvent,
@@ -166,6 +166,12 @@ class WheelLegEnv(DirectRLEnv):
         )
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         self.jump_tracking = t.stage.get("clearance_jump", {}).get("motion_tracking")
+        self.promotion_checks = t.stage.get("promotion_checks") if t.task == "p3-jump" else None
+        self.ground_promotion = (
+            GroundPromotionGate(self.promotion_checks, n, self.step_dt, d)
+            if self.promotion_checks is not None and not cfg.evaluation
+            else None
+        )
         if self.jump is not None and self.jump.clearance_training is not None:
             self.reward_weights.update(self.jump.clearance_training["reward_overrides"])
         levels = (
@@ -995,7 +1001,15 @@ class WheelLegEnv(DirectRLEnv):
                     finished, success = finished[pressed], success[pressed]
                     success &= self.jump.target_reached[finished]
                     success &= self.jump_vx_qualified[finished]
+                    if self.promotion_checks is not None:
+                        success &= self._jump_direction_ok()[finished]
                 self._record_jump_curriculum(finished, success, iteration)
+        if self.ground_promotion is not None:
+            heading = wrap_to_pi(s["yaw"] - self.commands.reference_yaw)
+            self.ground_promotion.step(
+                self.robot.data.root_pos_w[:, :2], s["velocity_w"][:, :2], s["travel_velocity"][:, 0],
+                heading, s["angular_velocity"][:, 2], terminated | timeout,
+            )
         if self.first_landing is not None:
             self.first_landing.update(
                 self._sim_step_counter,
@@ -1390,6 +1404,8 @@ class WheelLegEnv(DirectRLEnv):
                 rise = self.jump.scored_height
                 height_ok = self.jump.took_off & (jump_height_error(rise, self.jump.height, t.stage) <= 1e-6)
                 self.extras["evaluation"]["jump_success"] &= self.jump.target_reached & self.jump_vx_qualified
+                if self.promotion_checks is not None:
+                    self.extras["evaluation"]["jump_success"] &= self._jump_direction_ok()
                 overshot = jump_height_overshoot(rise, self.jump.height, t.stage) > 1e-6
                 self.extras["evaluation"].update(
                     jump_height_ok=height_ok.clone(),
@@ -1660,6 +1676,13 @@ class WheelLegEnv(DirectRLEnv):
     def _reset_idx(self, env_ids: torch.Tensor) -> None:
         t = self.training
         curriculum_log = {}
+        if self.ground_promotion is not None:
+            gate = self.ground_promotion
+            gate.record(env_ids)
+            curriculum_log["JumpGate/stationary_pass_rate"] = gate.latest_rate[0].clone()
+            curriculum_log["JumpGate/straight_pass_rate"] = gate.latest_rate[1].clone()
+            curriculum_log["JumpGate/consecutive_passes"] = float(gate.streak)
+            curriculum_log["JumpGate/ready"] = float(gate.ready)
         if self.command_curriculum is not None and not self.cfg.evaluation:
             ran = self.command_sample_count[env_ids] > 0
             completed = env_ids[ran]
@@ -1847,6 +1870,11 @@ class WheelLegEnv(DirectRLEnv):
             iteration = self.training_iteration_offset + self.common_step_counter / t.settings["rollout_steps"]
             self.commands.set_tunnel_mix(env_ids, iteration)
         self.commands.reset(env_ids)
+        if self.ground_promotion is not None:
+            self.ground_promotion.reset(
+                env_ids, self.commands.flat_group[env_ids], self.commands.target[env_ids, 0],
+                self.commands.flat_episode_mix["ground_vx_range_m_s"][1],
+            )
         n = len(env_ids)
         self.spawn_check_mask[env_ids] = True
         root = self.robot.data.default_root_state[env_ids].clone()
@@ -2048,13 +2076,23 @@ class WheelLegEnv(DirectRLEnv):
             env_ids
         ]
 
+    def _jump_direction_ok(self) -> torch.Tensor:
+        cfg = self.promotion_checks
+        return (self.commands.target[:, 0] <= 0) | (
+            (self.takeoff_yaw_error <= cfg["jump_max_takeoff_wz_rad_s"])
+            & (self.touch_heading_error <= cfg["jump_max_touch_heading_rad"])
+        )
+
     def _record_jump_curriculum(self, ids: torch.Tensor, success: torch.Tensor, iteration: float) -> None:
         bins = self.jump_bins[ids]
         if self.flat_jump_curricula:
             moving = self.commands.target[ids, 0] > 0
             for cohort, curriculum in enumerate(self.flat_jump_curricula):
                 selected = moving == bool(cohort)
-                curriculum.record(bins[selected], success[selected], iteration)
+                curriculum.record(
+                    bins[selected], success[selected], iteration,
+                    promotion_allowed=self.ground_promotion is None or self.ground_promotion.ready,
+                )
         else:
             self.jump_curriculum.record(bins, success, iteration)
 

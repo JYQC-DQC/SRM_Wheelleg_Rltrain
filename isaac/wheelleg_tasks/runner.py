@@ -190,6 +190,8 @@ class WheelLegRunner(OnPolicyRunner):
             extra["basic_jump_gate"] = env.commands.basic_jump_gate
         if env.flat_jump_curricula:
             extra["moving_jump_curriculum"] = env.flat_jump_curricula[1].state_dict()
+        if env.ground_promotion is not None:
+            extra["ground_promotion"] = env.ground_promotion.state_dict()
         if env.air_height_curriculum is not None:
             extra["air_height_curriculum"] = env.air_height_curriculum.state_dict()
         if env.stair_course is not None:
@@ -242,6 +244,8 @@ class WheelLegRunner(OnPolicyRunner):
             env.commands.basic_jump_gate = infos["basic_jump_gate"]
         if env.flat_jump_curricula:
             env.flat_jump_curricula[1].load_state_dict(infos["moving_jump_curriculum"])
+        if env.ground_promotion is not None and "ground_promotion" in infos:
+            env.ground_promotion.load_state_dict(infos["ground_promotion"])
         if env.air_height_curriculum is not None and "air_height_curriculum" in infos:
             if not env.air_height_curriculum.load_state_dict(infos["air_height_curriculum"]):
                 # Saved gate counts belong to an older band definition (or counted every height).

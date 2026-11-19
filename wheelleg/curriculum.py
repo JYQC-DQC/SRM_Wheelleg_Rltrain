@@ -1,6 +1,104 @@
 import torch
 
 
+class GroundPromotionGate:
+    """Fixed-command ground checks with separate stationary and straight pass criteria."""
+
+    def __init__(self, settings: dict, count: int, dt: float, device: str):
+        self.settings = settings
+        self.dt = dt
+        self.start = round(settings["warmup_s"] / dt)
+        self.end = self.start + round(settings["window_s"] / dt)
+        self.tail_start = self.end - round(settings["stationary_tail_s"] / dt)
+        self.kind = torch.full((count,), -1, dtype=torch.long, device=device)
+        self.age = torch.zeros_like(self.kind)
+        self.complete = torch.zeros(count, dtype=torch.bool, device=device)
+        self.failed = torch.zeros_like(self.complete)
+        self.anchor = torch.zeros(count, 2, device=device)
+        self.max_drift = torch.zeros(count, device=device)
+        self.max_heading = torch.zeros_like(self.max_drift)
+        self.tail_speed = torch.zeros_like(self.max_drift)
+        self.forward_speed = torch.zeros_like(self.max_drift)
+        self.yaw_rate = torch.zeros_like(self.max_drift)
+        self.attempts = torch.zeros(2, device=device)
+        self.successes = torch.zeros_like(self.attempts)
+        self.latest_rate = torch.zeros_like(self.attempts)
+        self.streak = 0
+
+    @property
+    def ready(self) -> bool:
+        return self.streak >= self.settings["consecutive_windows"]
+
+    def reset(self, ids: torch.Tensor, groups: torch.Tensor, vx: torch.Tensor, straight_speed: float) -> None:
+        self.kind[ids] = torch.where(
+            (groups == 0) & (vx == 0), 0, torch.where((groups == 1) & (vx == straight_speed), 1, -1)
+        )
+        for value in (
+            self.age,
+            self.complete,
+            self.failed,
+            self.anchor,
+            self.max_drift,
+            self.max_heading,
+            self.tail_speed,
+            self.forward_speed,
+            self.yaw_rate,
+        ):
+            value[ids] = 0
+
+    def step(
+        self,
+        xy: torch.Tensor,
+        velocity: torch.Tensor,
+        forward: torch.Tensor,
+        heading: torch.Tensor,
+        yaw_rate: torch.Tensor,
+        ended: torch.Tensor,
+    ) -> None:
+        self.age += (self.kind >= 0) & (self.age < self.end)
+        start = self.age == self.start
+        self.anchor.copy_(torch.where(start[:, None], xy, self.anchor))
+        sample = (self.kind >= 0) & (self.age > self.start) & (self.age <= self.end)
+        # Completed checks can remain in their training episodes. Sample the final tick only once.
+        sample &= ~self.complete
+        self.max_drift.copy_(torch.maximum(self.max_drift, torch.where(sample, (xy - self.anchor).norm(dim=-1), 0)))
+        self.max_heading.copy_(torch.maximum(self.max_heading, torch.where(sample, heading.abs(), 0)))
+        self.tail_speed += torch.where(sample & (self.age > self.tail_start), velocity.norm(dim=-1), 0)
+        self.forward_speed += torch.where(sample, forward, 0)
+        self.yaw_rate += torch.where(sample, yaw_rate.abs(), 0)
+        self.complete |= sample & (self.age == self.end)
+        self.failed |= ended & ((self.age < self.end) | sample)
+
+    def record(self, ids: torch.Tensor) -> None:
+        kind = self.kind[ids]
+        eligible = kind >= 0
+        cfg = self.settings
+        stationary = (self.max_drift[ids] <= cfg["stationary_max_drift_m"]) & (
+            self.tail_speed[ids] / (self.end - self.tail_start) <= cfg["stationary_max_tail_speed_m_s"]
+        )
+        straight = (
+            (self.max_heading[ids] <= cfg["straight_max_heading_rad"])
+            & (self.forward_speed[ids] / (self.end - self.start) >= cfg["straight_min_vx_m_s"])
+            & (self.yaw_rate[ids] / (self.end - self.start) <= cfg["straight_max_mean_wz_rad_s"])
+        )
+        passed = torch.where(kind == 0, stationary, straight) & self.complete[ids] & ~self.failed[ids]
+        self.attempts.scatter_add_(0, kind[eligible], torch.ones_like(kind[eligible], dtype=self.attempts.dtype))
+        self.successes.scatter_add_(0, kind[eligible], passed[eligible].float())
+        if bool((self.attempts >= cfg["min_episodes_per_group"]).all()):
+            self.latest_rate.copy_(self.successes / self.attempts)
+            self.streak = self.streak + 1 if bool((self.latest_rate >= cfg["ground_pass_rate"]).all()) else 0
+            self.attempts.zero_()
+            self.successes.zero_()
+
+    def state_dict(self) -> dict:
+        return {key: getattr(self, key) for key in ("attempts", "successes", "latest_rate", "streak")}
+
+    def load_state_dict(self, state: dict) -> None:
+        for key in ("attempts", "successes", "latest_rate"):
+            getattr(self, key).copy_(state[key])
+        self.streak = state["streak"]
+
+
 class CommandCurriculum:
     """Non-overlapping completed-episode windows; at most one promotion per window.
 
@@ -177,7 +275,9 @@ class JumpCurriculum:
             bins = torch.where(highest, self.maximum_level, lower)
         return bins, self.levels[bins]
 
-    def record(self, bins: torch.Tensor, successful: torch.Tensor, iteration: float) -> None:
+    def record(
+        self, bins: torch.Tensor, successful: torch.Tensor, iteration: float, *, promotion_allowed: bool = True
+    ) -> None:
         if not bins.numel():
             return
         demotion = "curriculum_demote_rate" in self.settings
@@ -198,7 +298,8 @@ class JumpCurriculum:
                 if passed:
                     if rate[level] >= threshold and self.anneal_start[level] < 0:
                         self.anneal_start[level] = iteration
-                    self.maximum_level = min(level + 1, len(self.levels) - 1)
+                    if promotion_allowed:
+                        self.maximum_level = min(level + 1, len(self.levels) - 1)
                 elif demotion and rate[level] < self.settings["curriculum_demote_rate"]:
                     self.maximum_level = max(level - 1, 0)
                 # Count the whole finishing batch once; neither failures nor successes carry into the next window.

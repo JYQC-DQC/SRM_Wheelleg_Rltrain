@@ -211,6 +211,20 @@ stages:
       ground_top_speed_probability: 0.25
       stop_trial_probability: 0.5
       stop_after_s: [3.0, 5.0]
+    promotion_checks:
+      warmup_s: 2.0
+      window_s: 5.0
+      stationary_tail_s: 2.0
+      min_episodes_per_group: 100
+      ground_pass_rate: 0.90
+      consecutive_windows: 2
+      stationary_max_drift_m: 0.10
+      stationary_max_tail_speed_m_s: 0.03
+      straight_min_vx_m_s: 1.8
+      straight_max_heading_rad: 0.1396263402  # 8 degrees.
+      straight_max_mean_wz_rad_s: 0.15
+      jump_max_takeoff_wz_rad_s: 0.5
+      jump_max_touch_heading_rad: 0.2617993878  # 15 degrees.
     runup_tracking:
       squared_error_cost: 2.0  # Per second per squared m/s; replaces both ordinary forward terms on support before press.
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.

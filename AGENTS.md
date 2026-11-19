@@ -10,3 +10,4 @@
 - 固件不在本仓库新建工程；不修改参考开源项目。
 - 验证：python -m pytest -q；python -m ruff check .；python -m ruff format --check .
 - 不编造 GPU 训练、实机测试或推理性能。
+- Git 提交信息使用 `<type>: <说明>`，例如 `feat: 增加跳跃课程验收`、`fix: 修复回放崩溃`、`docs: 更新训练文档`。

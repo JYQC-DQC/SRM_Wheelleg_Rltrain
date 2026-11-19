@@ -9,7 +9,7 @@ import torch
 import yaml
 
 from wheelleg.commands import Commands
-from wheelleg.curriculum import JumpCurriculum
+from wheelleg.curriculum import GroundPromotionGate, JumpCurriculum
 from wheelleg.jump import JumpEvent, tunnel_landing
 from wheelleg.training import load_training
 
@@ -240,6 +240,48 @@ def test_flat_mix_stops_once_and_excludes_ground_episodes_from_jump_events():
     assert torch.equal(jump.active, groups >= 2)
     jump.fail_pending(torch.ones_like(jump.active))
     assert not jump.failure_pulse[groups < 2].any()
+
+
+def test_ground_windows_block_promotion_and_check_peak_drift():
+    cfg = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    ).stage
+    settings = dict(cfg["promotion_checks"], min_episodes_per_group=1, stationary_tail_s=1.0)
+    gate = GroundPromotionGate(settings, 2, 1.0, "cpu")
+    ids = torch.arange(2)
+    zero = torch.zeros(2)
+    forward = torch.tensor([0.0, 2.0])
+    positions = torch.zeros(2, 2)
+    velocity = torch.stack((forward, zero), dim=-1)
+    ended = torch.zeros(2, dtype=torch.bool)
+
+    def window(*, drift=False, early_end=False):
+        gate.reset(ids, ids, forward, 2.0)
+        for tick in range(7):
+            positions[0, 0] = 0.15 if drift and tick == 3 else 0.0
+            ended[0] = early_end and tick == 0
+            gate.step(positions, velocity, forward, zero, zero, ended)
+        gate.record(ids)
+
+    window()
+    assert not gate.ready
+    window()
+    assert gate.ready
+    window(drift=True)
+    assert not gate.ready
+    assert gate.latest_rate.tolist() == [0.0, 1.0]
+    window(early_end=True)
+    assert not gate.ready and gate.latest_rate.tolist() == [0.0, 1.0]
+
+    levels = JumpCurriculum(cfg, "cpu", fresh_windows=True)
+    bins = torch.zeros(500, dtype=torch.long)
+    success = torch.ones(500, dtype=torch.bool)
+    levels.record(bins, success, 5, promotion_allowed=gate.ready)
+    assert levels.maximum_level == 0 and levels.latest_rate[0] == 1
+    window()
+    window()
+    levels.record(bins, success, 10, promotion_allowed=gate.ready)
+    assert levels.maximum_level == 1
 
 
 @pytest.mark.parametrize("first_contact_valid", [False, True])

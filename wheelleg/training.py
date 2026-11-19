@@ -1016,6 +1016,28 @@ def _validate_training(cfg: TrainingConfig) -> None:
             for key in ("ground_top_speed_probability", "stop_trial_probability"):
                 if not 0 <= mix[key] <= 1:
                     raise ValueError(f"flat_episode_mix.{key} must be in [0, 1]")
+        if "promotion_checks" in cfg.stage:
+            if (
+                "flat_episode_mix" not in cfg.stage
+                or "motion_tracking" not in cfg.stage.get("clearance_jump", {})
+                or "moving_takeoff_min_fraction" not in cfg.stage
+            ):
+                raise ValueError("promotion_checks requires flat episode groups and jump motion tracking")
+            checks = cfg.stage["promotion_checks"]
+            for key in ("min_episodes_per_group", "consecutive_windows"):
+                if type(checks[key]) is not int or checks[key] <= 0:
+                    raise ValueError(f"promotion_checks.{key} must be a positive integer")
+            for key in (
+                "warmup_s", "window_s", "stationary_tail_s", "stationary_max_drift_m", "stationary_max_tail_speed_m_s",
+                "straight_min_vx_m_s", "straight_max_heading_rad", "straight_max_mean_wz_rad_s",
+                "jump_max_takeoff_wz_rad_s", "jump_max_touch_heading_rad",
+            ):
+                if not isfinite(checks[key]) or checks[key] <= 0:
+                    raise ValueError(f"promotion_checks.{key} must be finite and positive")
+            if not 0 < checks["ground_pass_rate"] <= 1 or checks["stationary_tail_s"] > checks["window_s"]:
+                raise ValueError("promotion_checks requires a valid pass rate and tail duration")
+            if checks["warmup_s"] + checks["window_s"] >= cfg.settings["episode_length_s"]:
+                raise ValueError("promotion_checks sampling window must fit within the episode")
         if "body_wheel_jump" in cfg.stage:
             profile = cfg.stage["body_wheel_jump"]
             if "apex_band_m" in profile and not 0 < profile["apex_band_m"] <= cfg.stage["height_tolerance_m"]:
