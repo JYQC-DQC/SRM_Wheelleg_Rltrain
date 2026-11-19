@@ -166,6 +166,7 @@ class JumpSim(WheelLegSim):
 
     def reset(self, spawn: Spawn) -> None:
         super().reset(spawn)
+        self.runup_yaw = spawn.yaw_rad
         self.jump.reset(self.ids)
         self.traversal.reset(self.ids)
         self.jump.remaining.zero_()  # An event starts only on a manual press.
@@ -376,7 +377,11 @@ class JumpSim(WheelLegSim):
             **geometry,
         )
         if bool(self.jump.took_off[0]) and not took_off:
-            self.takeoff_speed_ok = command[0] <= 0 or info["heading_vx"] >= (
+            vx = info["heading_vx"]
+            deadzone = self.cfg.training["reward_parameters"]["stand_deadzone"]
+            if "motion_tracking" in (self.jump.clearance_training or {}) and abs(command[2]) < deadzone:
+                vx = self.data.qvel[0] * math.cos(self.runup_yaw) + self.data.qvel[1] * math.sin(self.runup_yaw)
+            self.takeoff_speed_ok = command[0] <= 0 or vx >= (
                 self.stage.get("moving_takeoff_min_fraction", 0.0) * command[0]
             )
         self.peak_rise_m = float(self.jump.apex_z[0] - self.jump.start_z[0])

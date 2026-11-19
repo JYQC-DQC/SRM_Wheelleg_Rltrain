@@ -37,6 +37,12 @@ def track_ang_vel(s, p):
     return torch.exp(-s["angular_error"].square() / p["angular_sigma"]) * s["tracking_mask"] * s["height_gate"]
 
 
+def jump_motion_tracking(error_sq, sigma, stage_scale, cost_per_s, progress, bonus, dt):
+    """Zero cost at the command. Positive credit spends a bounded physical milestone budget."""
+    quality = sigma / (sigma + error_sq)
+    return (quality - 1) * cost_per_s * stage_scale * dt, quality * progress * bonus
+
+
 def ang_vel_error(s, p):
     return (0.5 * s["angular_error"]).square() * s["tracking_mask"] * s["height_gate"]
 
@@ -278,6 +284,10 @@ def jump_prepare(s, p):
     return torch.exp(-4 * shortfall) * s["jump_ref"]["prepare"] * s["jump_pose_scale"]
 
 
+def jump_tuck_progress(s, p):
+    return s["jump"].tuck_gain
+
+
 def jump_air_leg_smoothness(s, p):
     change = s["leg_action_second_difference"].square()
     return (1 - (1 + change).reciprocal()).mean(-1) * s["jump_ref"]["flight"]
@@ -371,6 +381,7 @@ TERMS = {
         jump_takeoff,
         jump_push_symmetry,
         jump_tuck,
+        jump_tuck_progress,
         jump_prepare,
         jump_air_leg_smoothness,
         jump_landing_recovery,
@@ -388,6 +399,9 @@ EVENT_TERMS = frozenset(
         "termination",
         "jump_apex",
         "jump_height_progress",  # Increment of normalized apex, not a rate per second.
+        "jump_tuck_progress",
+        "jump_linear_progress_bonus",
+        "jump_yaw_progress_bonus",
         "jump_air_fold",
         "jump_prepare_retraction",
         "jump_takeoff_response",

@@ -209,6 +209,7 @@ stages:
       squared_error_cost: 2.0  # Per second per squared m/s; replaces both ordinary forward terms on support before press.
     height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
     body_wheel_jump:
+      tuck_bilateral_share: 0.8  # Blend simultaneous weakest-leg and mean progress from last support.
       ppo_update:
         max_learning_rate: 0.001
         max_growth_factor: 1.2
@@ -234,6 +235,12 @@ stages:
         retract_base_threshold_m: 0.01
         retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
     clearance_jump:
+      motion_tracking:
+        linear_cost_per_s: 0.45
+        yaw_cost_per_s: 0.8
+        flight_scale: 0.5
+        linear_progress_bonus: 0.15
+        yaw_progress_bonus: 0.20
       takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
       tuck_end_vz_m_s: 0.25  # Descent must be confirmed AND the body must have dropped from its measured apex.
@@ -244,6 +251,8 @@ stages:
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
       fast_touchdown_vz_m_s: 2.8  # Only charge unusually fast downward base speed at first contact.
       reward_overrides:
+        jump_tuck: 0.0
+        jump_tuck_progress: 0.5  # Maximum per attempt, independent of flight duration.
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
         jump_air_leg_smoothness: 0.0  # Restore the pre-clearance recipe's action-acceleration weight.
         jump_landing: 1.75

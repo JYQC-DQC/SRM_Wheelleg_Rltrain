@@ -33,7 +33,7 @@ from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
 from wheelleg.landing_rewards import LandingRewards
 from wheelleg.observation import OBS_DIM
 from wheelleg.randomization import disturbance_progress, perturb_sensors
-from wheelleg.rewards import EVENT_TERMS, compute_rewards, runup_tracking, runup_velocity_terms
+from wheelleg.rewards import EVENT_TERMS, compute_rewards, jump_motion_tracking, runup_tracking, runup_velocity_terms
 from wheelleg.safety import airborne_enabled, nonfinite_pose, numerical_failure
 from wheelleg.stairs import StairCourse, advance_height_assist, scan_course
 from wheelleg.tasks import TASKS
@@ -165,6 +165,7 @@ class WheelLegEnv(DirectRLEnv):
             else None
         )
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
+        self.jump_tracking = t.stage.get("clearance_jump", {}).get("motion_tracking")
         if self.jump is not None and self.jump.clearance_training is not None:
             self.reward_weights.update(self.jump.clearance_training["reward_overrides"])
         levels = (
@@ -182,6 +183,9 @@ class WheelLegEnv(DirectRLEnv):
             if staged_flat else ()
         )
         self.jump_vx_qualified = torch.ones(n, dtype=torch.bool, device=d)
+        if self.jump_tracking is not None:
+            self.takeoff_yaw_error = torch.zeros(n, device=d)
+            self.touch_heading_error = torch.zeros(n, device=d)
         self.jump_progress_vx_scale = torch.ones(n, device=d)
         self.jump_bins = torch.zeros(n, dtype=torch.long, device=d)
         self.command_error_sum = torch.zeros(n, 3, device=d)  # |vx 误差| m/s, |wz 误差| rad/s, |高度误差| m
@@ -720,7 +724,12 @@ class WheelLegEnv(DirectRLEnv):
         # World velocity in the yaw-only heading frame. The body-frame vx * cos(pitch) used before (SCUT V14) leaks
         # vertical velocity into forward speed whenever the body pitches, which bobbing in phase with pitch exploits.
         heading_velocity = rotate_xy(data.root_lin_vel_w[:, :2], -yaw)
-        linear_error = heading_velocity[:, 0] - tracked[:, 0]
+        travel_velocity = heading_velocity
+        if self.jump_tracking is not None:
+            # A straight jump cannot redefine forward by spinning the chassis after spawn.
+            reference = torch.where(tracked[:, 2] == 0, self.commands.reference_yaw, yaw)
+            travel_velocity = rotate_xy(data.root_lin_vel_w[:, :2], -reference)
+        linear_error = travel_velocity[:, 0] - tracked[:, 0]
         angular_error = data.root_ang_vel_b[:, 2] - tracked[:, 2]
         if t.task == "p3-tunnel":
             # The corridor has a fixed world heading; rotating must not rotate the velocity objective.
@@ -738,6 +747,7 @@ class WheelLegEnv(DirectRLEnv):
             velocity=data.root_lin_vel_b,
             velocity_w=data.root_lin_vel_w,
             heading_velocity=heading_velocity,
+            travel_velocity=travel_velocity,
             height_target_rate=height_rate,
             angular_velocity=data.root_ang_vel_b,
             gravity=data.projected_gravity_b,
@@ -927,6 +937,8 @@ class WheelLegEnv(DirectRLEnv):
                 valid |= ~self.commands.tunnel_obstacle
             takeoff_min_fraction = t.stage.get("moving_takeoff_min_fraction")
             was_airborne = self.jump.took_off.clone() if takeoff_min_fraction is not None else None
+            if self.jump_tracking is not None:
+                already_touched = self.jump.first_touch.clone()
             geometry = {k: s[k] for k in ("body_clearance_m", "leg_angle_rad")} if self.body_wheel_jump else {}
             if self.jump.air_guard is not None:
                 geometry["leg_length_m"] = s["leg_length"]
@@ -961,6 +973,12 @@ class WheelLegEnv(DirectRLEnv):
                 speed_fraction = (actual_vx / full_credit_vx).clamp(0, 1)
                 progress_scale = torch.where(target_vx > 0, speed_fraction.square(), 1.0)
                 self.jump_progress_vx_scale = torch.where(takeoff, progress_scale, self.jump_progress_vx_scale)
+                if self.jump_tracking is not None:
+                    self.takeoff_yaw_error = torch.where(takeoff, s["angular_error"].abs(), self.takeoff_yaw_error)
+                    heading_error = wrap_to_pi(s["yaw"] - self.commands.reference_yaw).abs()
+                    self.touch_heading_error = torch.where(
+                        self.jump.first_touch & ~already_touched, heading_error, self.touch_heading_error
+                    )
             self.jump.fail_pending(terminated | timeout | obstacle_hit)
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
             # Success and failure are true episode terminals. Only an ordinary
@@ -1128,15 +1146,39 @@ class WheelLegEnv(DirectRLEnv):
                     runup = t.stage["runup_tracking"]
                     if "squared_error_cost" in runup:
                         moving = self.commands.target[:, 0] > 0
-                        terms["track_lin_vel"], terms["lin_vel_error"], terms["jump_runup_vx_error"] = runup_velocity_terms(
-                            moving & supported & before_press, s["heading_velocity"][:, 0], self.commands.value[:, 0],
+                        positive, error, cost = runup_velocity_terms(
+                            moving & supported & before_press, s["travel_velocity"][:, 0], self.commands.value[:, 0],
                             terms["track_lin_vel"], terms["lin_vel_error"], self.step_dt, runup["squared_error_cost"],
                         )
+                        terms["track_lin_vel"], terms["lin_vel_error"] = positive, error
+                        terms["jump_runup_vx_error"] = cost
                     else:  # Reproduce saved runs using the previous asymmetric reward.
                         terms["track_lin_vel"], terms["jump_runup_underspeed"] = runup_tracking(
                             s["tracked_command"][:, 0], s["linear_error"], before_press & supported,
                             terms["track_lin_vel"], weights["track_lin_vel"], self.step_dt, runup,
                         )
+            if self.jump_tracking is not None:
+                cfg = self.jump_tracking
+                pressed = self.jump.suppress_stand_walk
+                scale = torch.where(s["jump_ref"]["flight"], cfg["flight_scale"], 1.0)
+                launch = self.jump.takeoff_pulse & self.jump_vx_qualified & ~self.jump.invalid
+                settled = self.jump.landing_pulse & self.jump.target_reached & self.jump_vx_qualified
+                gain = 0.25 * launch + 0.5 * self.jump.height_progress * self.jump_progress_vx_scale + 0.25 * settled
+                parameters = t.settings["reward_parameters"]
+                linear_cost, terms["jump_linear_progress_bonus"] = jump_motion_tracking(
+                    s["linear_error"].square() + s["travel_velocity"][:, 1].square(),
+                    parameters["linear_sigma"], scale, cfg["linear_cost_per_s"],
+                    gain, cfg["linear_progress_bonus"], self.step_dt,
+                )
+                yaw_cost, terms["jump_yaw_progress_bonus"] = jump_motion_tracking(
+                    s["angular_error"].square(), parameters["angular_sigma"], scale, cfg["yaw_cost_per_s"],
+                    gain, cfg["yaw_progress_bonus"], self.step_dt,
+                )
+                # Reuse the existing error channels. Never pay or charge twice for the same tracking error.
+                terms["lin_vel_error"] = torch.where(
+                    pressed, torch.minimum(terms["lin_vel_error"], linear_cost), terms["lin_vel_error"]
+                )
+                terms["ang_vel_error"] = torch.minimum(terms["ang_vel_error"], yaw_cost)
             if "jump_apex" in terms:
                 terms["jump_apex"] *= self.jump_vx_qualified
             if "jump_height_progress" in terms:
@@ -1652,6 +1694,13 @@ class WheelLegEnv(DirectRLEnv):
         self.command_abs_sum[env_ids] = 0
         self.command_sample_count[env_ids] = 0
         if self.jump is not None and not self.cfg.evaluation:
+            if self.jump_tracking is not None:
+                launches = env_ids[self.jump.took_off[env_ids]]
+                touches = env_ids[self.jump.first_touch[env_ids]]
+                if len(launches):
+                    curriculum_log["Jump/takeoff_abs_wz_error_rad_s"] = self.takeoff_yaw_error[launches].mean()
+                if len(touches):
+                    curriculum_log["Jump/touch_abs_heading_error_rad"] = self.touch_heading_error[touches].mean()
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
             if mixed and t.stage["tunnel"].get("mix_require_basic_success", False):
                 basic = env_ids[~self.commands.tunnel_obstacle[env_ids] & (self.tunnel_episode_steps[env_ids] > 0)]
@@ -1939,6 +1988,8 @@ class WheelLegEnv(DirectRLEnv):
             ]
             root[~self.commands.tunnel_obstacle[env_ids], 7:13] = 0
         self.robot.write_root_pose_to_sim(root[:, :7], env_ids)
+        if self.jump_tracking is not None:
+            self.commands.reference_yaw[env_ids] = euler_xyz_from_quat(root[:, 3:7])[2]
         self.robot.write_root_velocity_to_sim(root[:, 7:], env_ids)
         self.robot.write_joint_state_to_sim(q, qd, env_ids=env_ids)
         self.previous_hip_velocity[env_ids] = qd[:, self.joints][:, self.legs]

@@ -58,6 +58,12 @@ class JumpEvent:
             self.flight_peak_z = torch.zeros_like(self.elapsed)
         self.height_progress = torch.zeros_like(self.elapsed)
         self.air_guard = (self.body_wheel or {}).get("air_leg_guard")
+        self.tuck_share = (self.body_wheel or {}).get("tuck_bilateral_share")
+        if self.tuck_share is not None:
+            self.support_length = self.elapsed.new_zeros((count, 2))
+            self.previous_tuck = torch.zeros_like(self.support_length)
+            self.best_tuck = torch.zeros_like(self.elapsed)
+            self.tuck_gain = torch.zeros_like(self.elapsed)
         if self.air_guard is not None:
             self.retraction = AirRetractionTracker(count, self.air_guard["retract_tolerance_m"], device,
                                                   base_threshold_m=self.air_guard.get("retract_base_threshold_m"))
@@ -82,6 +88,7 @@ class JumpEvent:
         self.landing_paid = self.active.clone()
         self.invalid = self.active.clone()
         self.apex_pulse = self.active.clone()
+        self.takeoff_pulse = self.active.clone()
         self.landing_pulse = self.active.clone()
         self.touchdown_pulse = self.active.clone()
         self.finished = self.active.clone()
@@ -99,6 +106,11 @@ class JumpEvent:
         self.quality_paid = self.active.clone()
 
     def reset(self, ids: torch.Tensor) -> None:
+        if self.tuck_share is not None:
+            self.support_length[ids] = 0
+            self.previous_tuck[ids] = 0
+            self.best_tuck[ids] = 0
+            self.tuck_gain[ids] = 0
         if self.air_guard is not None:
             self.deepest_intrusion[ids] = 0
             self.air_fold_cost[ids] = 0
@@ -115,6 +127,7 @@ class JumpEvent:
             self.landing_paid,
             self.invalid,
             self.apex_pulse,
+            self.takeoff_pulse,
             self.landing_pulse,
             self.touchdown_pulse,
             self.finished,
@@ -172,6 +185,10 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.tuck_share is not None:
+            self.previous_tuck[ids] = 0
+            self.best_tuck[ids] = 0
+            self.tuck_gain[ids] = 0
         if self.air_guard is not None:
             self.deepest_intrusion[ids] = 0
             self.retraction.reset(ids)
@@ -262,6 +279,7 @@ class JumpEvent:
             self.takeoff_latency_s.copy_(torch.where(confirmed & ~self.took_off, self.elapsed, self.takeoff_latency_s))
         new_flight = confirmed & ~self.took_off
         self.took_off |= confirmed
+        self.takeoff_pulse.copy_(new_flight)
         flight = self.active & self.took_off & ~self.landed
         self.air_time += dt * flight * no_contact
         apex_sample = candidate | flight
@@ -308,6 +326,25 @@ class JumpEvent:
                     drop = drop.clamp(*self.clearance_training["prepare_drop_range_m"])
                 prepare &= self.flight_peak_z - z >= drop - 1e-6
             self.preparing |= prepare
+            if self.tuck_share is not None:
+                low, high = self.settings["tuck_leg_length_m"], self.settings["push_leg_length_m"]
+                lengths = leg_length_m.clamp(low, high)
+                # Carry the last support sample through liftoff confirmation. No baseline for an airborne reset.
+                support = ~no_contact & ~flight
+                self.support_length = torch.where(support[:, None], lengths, self.support_length)
+                self.support_length = torch.where((~self.active & no_contact)[:, None], 0.0, self.support_length)
+                progress = (self.support_length - lengths).clamp_min(0) / (high - low)
+                eligible = airborne & ~self.preparing & (self.deepest_intrusion == 0)
+                eligible &= ~self.invalid & ~obstacle_contact
+                if failed is not None:
+                    eligible &= ~failed
+                # A one-sample spike, or alternating left/right spikes, cannot bank a bilateral best.
+                progress = torch.where(eligible[:, None], progress, 0.0)
+                sustained = torch.minimum(progress, self.previous_tuck)
+                self.previous_tuck = progress
+                quality = torch.lerp(sustained.mean(-1), sustained.amin(-1), self.tuck_share)
+                self.tuck_gain = torch.where(eligible, (quality - self.best_tuck).clamp_min(0), 0.0)
+                self.best_tuck += self.tuck_gain
             if self.air_guard is not None:
                 retract = self.retraction.update(leg_length_m, airborne & self.preparing)
                 if self.retract_multipliers is not None:

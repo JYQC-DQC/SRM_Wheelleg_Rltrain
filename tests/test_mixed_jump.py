@@ -842,6 +842,59 @@ def test_flat_tuck_and_air_smoothness_are_bounded(clearance_jump):
     assert smooth[3] == 0
 
 
+def test_tuck_scores_only_new_simultaneous_safe_retraction(clearance_jump):
+    e = clearance_jump
+    clearance_step(e, (0, 0), contact=(True, True), lengths=(0.32, 0.28))
+    for step in range(4):
+        clearance_step(e, (0.10, 0.10), lengths=(0.17, 0.28))
+        assert 0.5 * e.tuck_gain.item() == pytest.approx(0.05 if step == 3 else 0)
+    for lengths in [(0.28, 0.17), (0.28, 0.28), (0.17, 0.28)]:
+        clearance_step(e, (0.10, 0.10), lengths=lengths)
+        assert e.tuck_gain.item() == 0
+    clearance_step(e, (0.10, 0.10), lengths=(0.17, 0.17))
+    assert e.tuck_gain.item() == 0
+    clearance_step(e, (0.10, 0.10), lengths=(0.17, 0.17))
+    assert 0.5 * e.tuck_gain.item() == pytest.approx(0.45)
+    clearance_step(e, (0.10, 0.10), lengths=(0.17, 0.17))
+    assert e.tuck_gain.item() == 0
+    assert 0.5 * e.best_tuck.item() == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("stop", ["unsafe", "prepare", "touch", "failure"])
+def test_tuck_ends_without_credit_for_preloaded_or_late_fold(clearance_jump, stop):
+    e = clearance_jump
+    clearance_step(e, (0, 0), contact=(True, False), lengths=(0.25, 0.25))
+    for _ in range(3):
+        clearance_step(e, (0.10, 0.10), lengths=(0.25, 0.25))
+    assert e.tuck_gain.item() == e.best_tuck.item() == 0
+    clearance_step(e, (0.12, 0.12), lengths=(0.22, 0.22))
+    assert e.tuck_gain.item() == 0
+    clearance_step(e, (0.12, 0.12), lengths=(0.22, 0.22))
+    assert 0.5 * e.tuck_gain.item() == pytest.approx(0.5 * 3 / 11)
+    clearance_step(
+        e, (0.10, 0.10), lengths=(0.13 if stop == "unsafe" else 0.17, 0.17),
+        contact=(stop == "touch", False), vz=-1.0 if stop == "prepare" else 0.0,
+        z=0.50, failed=stop == "failure",
+    )
+    assert e.tuck_gain.item() == 0
+    clearance_step(e, (0.10, 0.10), lengths=(0.17, 0.17))
+    assert e.tuck_gain.item() == 0
+    e.reset(torch.arange(1))
+    assert e.best_tuck.item() == e.tuck_gain.item() == 0
+
+
+def test_motion_tracking_cannot_earn_by_waiting():
+    from wheelleg.rewards import jump_motion_tracking
+
+    error_sq = torch.tensor([0.0, 0.25, 1.0])
+    cost, bonus = jump_motion_tracking(error_sq, 0.25, 1.0, 0.8, 0.0, 0.2, 0.01)
+    torch.testing.assert_close(bonus, torch.zeros_like(cost))
+    assert 0 == cost[0] > cost[1] > cost[2] > -0.008
+    air, gain = jump_motion_tracking(error_sq, 0.25, 0.5, 0.8, 1.0, 0.2, 0.01)
+    torch.testing.assert_close(air, cost / 2)
+    torch.testing.assert_close(gain, torch.tensor([0.2, 0.1, 0.04]))
+
+
 @pytest.mark.parametrize("after_wheel_touch", [False, True])
 def test_flat_body_contact_aborts_attempt_even_if_support_recovers(clearance_jump, after_wheel_touch):
     event = clearance_jump

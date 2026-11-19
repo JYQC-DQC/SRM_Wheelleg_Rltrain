@@ -1009,10 +1009,30 @@ def _validate_training(cfg: TrainingConfig) -> None:
             if not 0 <= profile["leg_deadband_rad"] < profile["max_leg_angle_rad"] <= pi / 2:
                 raise ValueError("body_wheel_jump requires ordered leg angles between 0 and pi/2")
             reward = cfg.stage["clearance_jump"]["reward_overrides"]["jump_settle_response"]
+            if "tuck_bilateral_share" in profile:
+                guard = profile.get("air_leg_guard", {})
+                overrides = cfg.stage["clearance_jump"]["reward_overrides"]
+                if not 0 < profile["tuck_bilateral_share"] < 1 or not (
+                    0 < guard.get("entry_length_m", 0) < cfg.stage["tuck_leg_length_m"]
+                ):
+                    raise ValueError("tuck progress requires a bilateral share in (0, 1) and a safe tuck target")
+                if overrides.get("jump_tuck") != 0 or not 0 < overrides["jump_tuck_progress"] <= 0.5:
+                    raise ValueError("tuck progress replaces jump_tuck and has a maximum per-attempt budget of 0.5")
             if type(reward) not in (int, float) or not isfinite(reward) or reward < 0:
                 raise ValueError("jump_settle_response must be finite and nonnegative")
         if "clearance_jump" in cfg.stage:
             clearance = cfg.stage["clearance_jump"]
+            if "motion_tracking" in clearance:
+                motion = clearance["motion_tracking"]
+                if "moving_takeoff_min_fraction" not in cfg.stage or "apex_band_m" not in cfg.stage.get(
+                    "body_wheel_jump", {}
+                ):
+                    raise ValueError("motion_tracking requires takeoff speed qualification and apex-band settlement")
+                for key in ("linear_cost_per_s", "yaw_cost_per_s", "linear_progress_bonus", "yaw_progress_bonus"):
+                    if not isfinite(motion[key]) or motion[key] <= 0:
+                        raise ValueError(f"motion_tracking.{key} must be finite and positive")
+                if not 0 < motion["flight_scale"] <= 1:
+                    raise ValueError("motion_tracking.flight_scale must be in (0, 1]")
             if cfg.task != "p3-jump" or "moving_probability" not in cfg.stage or not cfg.stage["height_is_minimum"]:
                 raise ValueError("clearance_jump requires staged flat jumping with a minimum-height target")
             if not 0 < cfg.stage["tuck_leg_length_m"] < cfg.stage["push_leg_length_m"]:
