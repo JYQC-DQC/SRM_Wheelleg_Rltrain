@@ -148,11 +148,11 @@ stages:
       # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
       groups: {rough: 0.05, grid: 0.10, slope: 0.10, stairs: 0.45}
       locked_stair_weights: {single: 0.30, double: 0.70}
-      stair_lip: {height_m: 0.05, width_m: null}  # depth along travel: not dimensioned in the supplied section
+      stair_lip: {height_m: 0.05, width_m: 0.15}  # approximate depth along travel
       free_map:
         edge_margin_m: 0.5
         command_limits:
-          slope: {vx_abs_max_m_s: null, wz_abs_max_rad_s: null}
+          slope: {vx_abs_max_m_s: 2.0, wz_abs_max_rad_s: 3.141592653589793}
       stair_weights:
         single_up: 0.20
         double_up: 0.60
@@ -205,7 +205,7 @@ stages:
             ground_thickness_m: null
             first_edge_x_m: null
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
+            step_height_range_m: [0.10, 0.23]
         double_up:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -215,7 +215,7 @@ stages:
             ground_thickness_m: null
             first_edge_x_m: null
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
+            step_height_range_m: [0.10, 0.23]
         single_down:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -225,7 +225,7 @@ stages:
             ground_thickness_m: null
             first_edge_x_m: null
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
+            step_height_range_m: [0.10, 0.23]
         double_down:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -235,7 +235,7 @@ stages:
             ground_thickness_m: null
             first_edge_x_m: null
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
+            step_height_range_m: [0.10, 0.23]
         triple_up:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -245,7 +245,7 @@ stages:
             ground_thickness_m: null
             first_edge_x_m: null
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
+            step_height_range_m: [0.10, 0.23]
         triple_down:
           row_range: null  # Inclusive; set both ends to the same approved row to start there.
           command_mode: traverse
@@ -255,7 +255,7 @@ stages:
             ground_thickness_m: null
             first_edge_x_m: null
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [null, 0.20]  # introductory height awaits confirmation
+            step_height_range_m: [0.10, 0.23]
     progress_weight: null
     stuck_weight: null
     impact_weight: null

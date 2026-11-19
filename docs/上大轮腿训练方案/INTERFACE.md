@@ -18,3 +18,15 @@ P1/P2/P3 同形同义，各有独立权重。控制/物理 500 Hz，策略 100 H
 - **训练裁判不进网络**：起跳、首触、起身、落稳、失败及课程用仿真接触/运动学判断，不读 Actor 输出作为事件标签。射线保留给地形测量和 critic，不给 Actor 台阶位，也不替主控抬高站高指令。训练指令调度仍可按已定出生/恢复流程限令、交回驾驶；实车要复现同样的指令行为，需要对应的主控调度，网络不提供“已接稳”判定。
 - **动作与校准**：四腿位置残差、两轮速度目标；物理观测先限幅再缩放。`action_clip: null` 不取消执行端目标限幅。方向、零点、默认角及 IMU 安装等仍须校准。`tools.gen_c_config --interface-only` 不能用于实车放行；实测日志需逐拍对齐两路输入与六路输出。
 - **迁移边界**：v3 的 35/175 检查点、ONNX、golden 向量及固件头不兼容，不应补零硬接。按 v4 重新训练、导出；v4 内仍按既定顺序跨阶段迁移。
+
+## 跳跃 Actor 三方核对（2026-11-19）
+
+| 本地版本 | 可执行模型或训练配置 | 起跳意图如何到达控制器 |
+|---|---|---|
+| 华南虎 26 国赛车 | 7 月 29 日轻量 flat 配置为单帧 35 → 128 → 64 → 32 → 6。7 月 30 日轻量 rough_rotation_stair 的 ONNX 同形。7 月 19 日 rough_dash 发布图为单帧 35 → 256 → 128 → 64 → 6。 | 七个模式槽为 normal、stair、slope、recover、jump、height_target、state_time。轻量 flat 和该 rough_dash 的冻结配置均关闭 jump_takeoff 状态机与 permission。公开目录和作者说明把 rough_dash 归为飞坡/落地，本次未找到可单独核实的主动跳专用权重。 |
+| 复旦非腿熊 Jump | 部署示例 Jump、Stable、Upstairs、Spin 的 ONNX 同形。历史 125 → 128 → 64 → 3，当前 25 加估速 3 → 128 → 64 → 32 → 6。Jump 当前帧包含角速度、重力投影、前速/转速/站高指令、四腿角、六路速度和上一动作。 | 固件在准备状态检查左侧 TOF，启用时须有效且距离小于 0.9 m，离线有旁路。触发后选 Jump 480 ms，执行期给锁存前速减 0.1 m/s、零偏航、0.10 m 站高。计时相位属于主控。 |
+| 上大 P3 v4 | 外部 obs 27、history 130。历史 5×26 → 128 → 64 → 3。当前基础 26、估速 3、目标跳高 1 → 128 → 64 → 32 → 6。 | 操作手上升沿锁存正值 `jump_request_m`，无请求为零。P3 能在同一网络内等待、助跑和起跳。接触、腾空和越梁结果归环境判分。 |
+
+复旦与上大的六路动作交错排列，四腿位置残差与两轮速度目标；华南虎所核模型按前四腿、后两轮拆分。复旦 Jump 的第三个指令是站高，固件示例中的 0.10 m 是执行期站高设定值。上大的目标跳高另占一维，保留 `vy_cmd` 使基础帧比复旦多一维。
+
+依据：[华南虎发布说明](../../../wheeled-legged_RL/pretrained/26_infantry/readme.md)、[轻量 flat 冻结环境](../../../wheeled-legged_RL/pretrained/26_infantry/flat_and_rotation/2026-07-29_23-20-03/params/env.yaml)、[复旦 Jump 训练](../../../fudan_rl_wheel_leg/jump/wheel_legged_gym/envs/base/legged_robot.py)、[复旦部署示例图](../../../XYEGA_RM2026_WheelLeg_Infatry_RLdeploy/pseudocode/example/onnx/jump/jump_pos0.2_0.4_p6.0_d0.5_0.2.onnx)、[底盘切换与组帧](../../../XYEGA_RM2026_WheelLeg_Infatry_RLdeploy/source_code/User/Application/chassis/chassis.cpp)、[上大推理图](../../wheelleg/actor.py)。
