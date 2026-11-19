@@ -211,6 +211,23 @@ stages:
       ground_top_speed_probability: 0.25
       stop_trial_probability: 0.5
       stop_after_s: [3.0, 5.0]
+      ground_reward_overrides:
+        lin_vel_error: -8.0
+        track_height_wide: 0.5
+        pitch_penalty: -3.0
+        vertical_velocity: -4.0
+        angular_xy: -0.2
+        stand_still: -2.0
+        leg_joint_vel: -0.005
+        leg_joint_acc: -0.000002
+        action_smoothness_leg: -0.05
+        action_smoothness_wheel: -0.01
+      ground_reward_parameters:
+        height_wide_sigma: 0.025
+        height_gate_full_error_m: 0.05
+        height_gate_zero_error_m: 0.10
+      heading_cost_per_s: 0.4
+      heading_scale_rad: 0.2617993878  # Half the bounded cost at 15 degrees.
     promotion_checks:
       warmup_s: 2.0
       window_s: 5.0
@@ -274,7 +291,7 @@ stages:
         jump_tuck: 0.0
         jump_tuck_progress: 0.5  # Maximum per attempt, independent of flight duration.
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
-        jump_air_leg_smoothness: 0.0  # Restore the pre-clearance recipe's action-acceleration weight.
+        jump_air_leg_smoothness: -0.08  # Bounded per-second cost during confirmed flight.
         jump_landing: 1.75
         jump_takeoff_response: 0.20  # Maximum one-shot bonus; only for a full jump success.
         jump_settle_response: 0.35  # Clean landing only, independent of height; about +0.25 at 0.8 s.

@@ -166,6 +166,10 @@ class WheelLegEnv(DirectRLEnv):
         )
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         self.jump_tracking = t.stage.get("clearance_jump", {}).get("motion_tracking")
+        self.flat_ground_rewards = None
+        if self.commands.flat_episode_mix is not None and "ground_reward_overrides" in self.commands.flat_episode_mix:
+            mix = self.commands.flat_episode_mix
+            self.flat_ground_rewards = dict(t.settings["reward_parameters"]) | mix["ground_reward_parameters"]
         self.promotion_checks = t.stage.get("promotion_checks") if t.task == "p3-jump" else None
         self.ground_promotion = (
             GroundPromotionGate(self.promotion_checks, n, self.step_dt, d)
@@ -1202,6 +1206,28 @@ class WheelLegEnv(DirectRLEnv):
             if self.jump.air_guard is not None:
                 terms["jump_air_fold"] = -self.jump.air_fold_cost
                 terms["jump_prepare_retraction"] = -self.jump.air_retract_cost
+            if self.flat_ground_rewards is not None:
+                mix = self.commands.flat_episode_mix
+                p = self.flat_ground_rewards
+                ground = self.commands.flat_group < 2
+                overrides = compute_rewards(
+                    s, p, mix["ground_reward_overrides"], self.step_dt, t.settings["reward_clip"]
+                )
+                for name, value in overrides.items():
+                    terms[name] = torch.where(ground, value, terms.get(name, 0.0))
+                band = p["height_gate_zero_error_m"] - p["height_gate_full_error_m"]
+                gate = ((p["height_gate_zero_error_m"] - s["height_error"].abs()) / band).clamp(0, 1)
+                # A low stance reduces tracking bonuses, while tracking errors remain chargeable.
+                for name in ("track_lin_vel", "track_ang_vel"):
+                    if name in terms:
+                        terms[name] = torch.where(ground, terms[name] * gate, terms[name])
+                straight = (self.commands.value[:, 0] > p["stand_deadzone"]) & (s["tracked_command"][:, 1] == 0)
+                runup = (self.jump.elapsed == 0) & ~self.jump.active
+                heading_sq = wrap_to_pi(s["yaw"] - self.commands.reference_yaw).square()
+                heading_cost = heading_sq / (heading_sq + mix["heading_scale_rad"] ** 2)
+                terms["flat_heading_error"] = torch.where(
+                    straight & (ground | runup), -mix["heading_cost_per_s"] * self.step_dt * heading_cost, 0.0
+                )
         if self.stair_course is not None:
             motion_terms = compute_rewards(
                 s,

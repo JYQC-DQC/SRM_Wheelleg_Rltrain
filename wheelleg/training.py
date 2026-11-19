@@ -1016,6 +1016,20 @@ def _validate_training(cfg: TrainingConfig) -> None:
             for key in ("ground_top_speed_probability", "stop_trial_probability"):
                 if not 0 <= mix[key] <= 1:
                     raise ValueError(f"flat_episode_mix.{key} must be in [0, 1]")
+            if "ground_reward_overrides" in mix:
+                from .rewards import EVENT_TERMS, TERMS
+
+                if "motion_tracking" not in cfg.stage.get("clearance_jump", {}):
+                    raise ValueError("flat ground rewards require motion tracking in the initial heading frame")
+                for name, weight in mix["ground_reward_overrides"].items():
+                    if name not in TERMS or name in EVENT_TERMS or not isfinite(weight) or weight == 0:
+                        raise ValueError(f"flat ground reward {name}: expected a finite, nonzero continuous weight")
+                p = mix["ground_reward_parameters"]
+                if not 0 <= p["height_gate_full_error_m"] < p["height_gate_zero_error_m"]:
+                    raise ValueError("flat ground height gate requires ordered error thresholds")
+                for value in (p["height_wide_sigma"], mix["heading_scale_rad"], mix["heading_cost_per_s"]):
+                    if not isfinite(value) or value <= 0:
+                        raise ValueError("flat ground reward scales must be finite and positive")
         if "promotion_checks" in cfg.stage:
             if (
                 "flat_episode_mix" not in cfg.stage
