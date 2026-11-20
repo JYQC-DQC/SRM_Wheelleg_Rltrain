@@ -782,9 +782,9 @@ stages:
 mode_semantics:
 - normal
 - stair
-- zero
+- slope
 - recover
-- zero
-- zero
-- zero
+- jump
+- height_target
+- state_time
 guide_version: '2.2'

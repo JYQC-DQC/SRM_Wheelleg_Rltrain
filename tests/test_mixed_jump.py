@@ -182,9 +182,10 @@ def test_no_takeoff_cannot_receive_landing_success():
     assert not jump.landing_paid.item()
 
 
-def test_flat_jump_mode_preserves_ground_input_across_jump_event():
+@pytest.mark.parametrize("task", ["p3-jump", "p3-tunnel"])
+def test_jump_mode_is_exclusive_and_has_same_semantics_across_tasks(task):
     cfg = load_training(
-        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+        task, ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
     )
     commands = Commands(cfg, 1, "cpu")
     zero = torch.zeros(1)
@@ -192,10 +193,37 @@ def test_flat_jump_mode_preserves_ground_input_across_jump_event():
     phase = torch.tensor([0.25])
     for active in (zero, torch.ones(1), zero):
         mode = commands.mode(zero, zero, zero, active, height, phase)
-        torch.testing.assert_close(mode[0, :4], torch.tensor([1.0, 0, 0, 0]))
+        torch.testing.assert_close(mode[:, 0], 1 - active)
+        assert not mode[:, 1:4].any()
         torch.testing.assert_close(mode[:, 4], active)
-        torch.testing.assert_close(mode[:, 5], height * cfg.policy.height_scale * active)
+        torch.testing.assert_close(mode[:, 5], height * 5 * active)
         torch.testing.assert_close(mode[:, 6], phase * active)
+
+
+@pytest.mark.parametrize("task,policy", [("p1-flat", "scut_p1.yaml"), ("p2-spin", "scut_p2.yaml")])
+def test_ground_mode_slots_are_state_flags_without_navigation_payload(task, policy):
+    cfg = load_training(task, ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference" / policy)
+    commands = Commands(cfg, 3, "cpu")
+    yaw = torch.tensor([0.0, 1.0, -1.0])
+    stair = torch.tensor([0.0, 1.0, 1.0])
+    recover = torch.tensor([0.0, 0.0, 1.0])
+    zero = torch.zeros(3)
+    mode = commands.mode(yaw, stair, recover, zero, zero, zero)
+    expected = torch.zeros(3, 7)
+    if task == "p1-flat":
+        expected[0, 0] = expected[1, 1] = expected[2, 3] = 1
+    else:
+        expected[:, 0] = 1
+    torch.testing.assert_close(mode, expected)
+
+
+def test_mode_contract_names_are_identical_in_all_policy_templates():
+    from wheelleg.observation import MODE_FIELDS
+
+    for family in ("p1", "p2", "p3"):
+        paths = (ROOT / f"config/reference/scut_{family}.yaml", ROOT / f"config/policies/{family}/policy_meta.yaml")
+        for path in paths:
+            assert tuple(yaml.safe_load(path.read_text(encoding="utf-8"))["mode_semantics"]) == MODE_FIELDS
 
 
 def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
@@ -238,21 +266,23 @@ def test_flat_mix_stops_once_and_excludes_ground_episodes_from_jump_events():
     commands = Commands(cfg, len(ids), "cpu")
     commands.reset(ids)
     groups = commands.flat_group.clone()
-    torch.testing.assert_close(groups.bincount(minlength=4) / len(ids), torch.tensor([.2, .25, .25, .3]),
-                               atol=.025, rtol=0)
+    torch.testing.assert_close(
+        groups.bincount(minlength=4) / len(ids), torch.tensor([0.2, 0.25, 0.25, 0.3]), atol=0.025, rtol=0
+    )
     stopping = commands.remaining.isfinite()
     assert stopping.any() and (groups[stopping] == 0).all()
     assert not commands.target[groups == 2].any()
     initial = commands.target.clone()
-    commands.step(6., torch.zeros_like(stopping))
+    commands.step(6.0, torch.zeros_like(stopping))
     assert not commands.target[stopping].any()
     torch.testing.assert_close(commands.target[~stopping], initial[~stopping])
     torch.testing.assert_close(commands.flat_group, groups)
 
     jump = JumpEvent(cfg.stage, len(ids), "cpu")
     jump.reset(ids, enabled=groups >= 2)
-    jump.trigger(torch.full_like(jump.elapsed, 6.), jump.elapsed, torch.ones_like(jump.active),
-                 body_clearance_m=jump.elapsed)
+    jump.trigger(
+        torch.full_like(jump.elapsed, 6.0), jump.elapsed, torch.ones_like(jump.active), body_clearance_m=jump.elapsed
+    )
     assert torch.equal(jump.active, groups >= 2)
     jump.fail_pending(torch.ones_like(jump.active))
     assert not jump.failure_pulse[groups < 2].any()
@@ -608,7 +638,15 @@ def clearance_jump():
 
 
 def clearance_step(
-    event, wheel, vz=0.5, contact=(False, False), stable=True, z=0.55, failed=False, body=0.60, angles=(0.0, 0.0),
+    event,
+    wheel,
+    vz=0.5,
+    contact=(False, False),
+    stable=True,
+    z=0.55,
+    failed=False,
+    body=0.60,
+    angles=(0.0, 0.0),
     lengths=(0.25, 0.25),
 ):
     event.update(
@@ -662,12 +700,12 @@ def test_air_fold_only_credits_safe_apex_and_stops_on_first_touch(clearance_jump
     e = clearance_jump
     for _ in range(3):
         clearance_step(e, (0.30, 0.30), lengths=(0.13, 0.20))
-    assert e.took_off.item() and e.air_fold_cost.item() == pytest.approx(.12 + .6 + .0025, abs=2e-6)
+    assert e.took_off.item() and e.air_fold_cost.item() == pytest.approx(0.12 + 0.6 + 0.0025, abs=2e-6)
     assert e.scored_height.item() == 0 and e.height_progress.item() == 0
     clearance_step(e, (0.30, 0.30), lengths=(0.14, 0.20))
     assert e.air_fold_cost.item() == 0
     clearance_step(e, (0.30, 0.30), lengths=(0.13, 0.20))
-    assert e.air_fold_cost.item() == pytest.approx(.0025, abs=1e-7)  # No repeat entry or depth fee.
+    assert e.air_fold_cost.item() == pytest.approx(0.0025, abs=1e-7)  # No repeat entry or depth fee.
     clearance_step(e, (0.20, 0.20), lengths=(0.15, 0.20))
     assert e.scored_height.item() == pytest.approx(0.30) and e.air_fold_cost.item() == 0
     clearance_step(e, (0.00, 0.01), vz=-0.4, contact=(True, False), lengths=(0.08, 0.08))
@@ -870,17 +908,25 @@ def test_flat_tuck_and_prepare_do_not_reactivate_when_legs_move(clearance_jump):
 def test_low_jump_delays_prepare_then_charges_large_retraction_once_per_excursion(clearance_jump):
     e = clearance_jump
     for _ in range(3):
-        clearance_step(e, (0.03, 0.03), z=.50)
-    clearance_step(e, (.04,.04), z=.52)
-    refs = clearance_step(e, (.03,.03), z=.519, vz=-.4)
-    assert refs['tuck'].item()
+        clearance_step(e, (0.03, 0.03), z=0.50)
+    clearance_step(e, (0.04, 0.04), z=0.52)
+    refs = clearance_step(e, (0.03, 0.03), z=0.519, vz=-0.4)
+    assert refs["tuck"].item()
     # A 2 cm rise, below the target, needs only a 6 mm drop.
-    for length, cost in [(.30,0), (.295,0), (.293,.035), (.290,.015), (.289,.155), (.288,.005),
-                         (.30,0), (.289,.15 + .011*5*1.75)]:
-        refs = clearance_step(e, (.03,.03), z=.514, vz=-.4, lengths=(length,length))
-        assert refs['prepare'].item()
+    for length, cost in [
+        (0.30, 0),
+        (0.295, 0),
+        (0.293, 0.035),
+        (0.290, 0.015),
+        (0.289, 0.155),
+        (0.288, 0.005),
+        (0.30, 0),
+        (0.289, 0.15 + 0.011 * 5 * 1.75),
+    ]:
+        refs = clearance_step(e, (0.03, 0.03), z=0.514, vz=-0.4, lengths=(length, length))
+        assert refs["prepare"].item()
         assert e.air_retract_cost.item() == pytest.approx(cost, abs=1e-6)
-    clearance_step(e, (0., .01), contact=(True,False), lengths=(.22,.22))
+    clearance_step(e, (0.0, 0.01), contact=(True, False), lengths=(0.22, 0.22))
     assert e.air_retract_cost.item() == 0
 
 
@@ -987,9 +1033,13 @@ def test_tuck_ends_without_credit_for_preloaded_or_late_fold(clearance_jump, sto
     clearance_step(e, (0.12, 0.12), lengths=(0.22, 0.22))
     assert 0.5 * e.tuck_gain.item() == pytest.approx(0.5 * 3 / 11)
     clearance_step(
-        e, (0.10, 0.10), lengths=(0.13 if stop == "unsafe" else 0.17, 0.17),
-        contact=(stop == "touch", False), vz=-1.0 if stop == "prepare" else 0.0,
-        z=0.50, failed=stop == "failure",
+        e,
+        (0.10, 0.10),
+        lengths=(0.13 if stop == "unsafe" else 0.17, 0.17),
+        contact=(stop == "touch", False),
+        vz=-1.0 if stop == "prepare" else 0.0,
+        z=0.50,
+        failed=stop == "failure",
     )
     assert e.tuck_gain.item() == 0
     clearance_step(e, (0.10, 0.10), lengths=(0.17, 0.17))

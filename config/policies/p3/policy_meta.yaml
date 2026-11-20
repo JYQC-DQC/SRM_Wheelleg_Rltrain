@@ -182,13 +182,13 @@ training:
     probability: 0.0
     states_npz: null
 mode_semantics:
-- tunnel_heading_error_sin_else_zero
-- tunnel_heading_error_cos_else_zero
-- tunnel_obstacle_group_else_zero
-- tunnel_lateral_offset_half_width_else_zero
-- jump_active
-- target_height_scaled
-- phase
+- normal
+- stair
+- slope
+- recover
+- jump
+- height_target
+- state_time
 stages:
   jump:
     event_duration_s: 1.2

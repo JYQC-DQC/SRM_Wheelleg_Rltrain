@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from wheelleg.config import load_policy, load_robot, missing_parameters
-from wheelleg.observation import OBS_DIM, OBS_FIELDS
+from wheelleg.observation import MODE_CONTRACT_REVISION, MODE_FIELDS, MODE_HEIGHT_SCALE, OBS_DIM, OBS_FIELDS
 
 
 def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool = False) -> str:
@@ -20,6 +20,8 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         f"#define WL_POLICY_DECIMATION {robot.decimation}u",
         f"#define WL_OBS_VERSION {policy.obs_version}u",
         f"#define WL_OBS_DIM {OBS_DIM}u",
+        f"#define WL_MODE_CONTRACT_REVISION {MODE_CONTRACT_REVISION}u",
+        f"#define WL_MODE_HEIGHT_SCALE {MODE_HEIGHT_SCALE!r}f",
         # 0 frames: single obs[35] input. Otherwise ONNX also takes obs_history[frames*35], oldest frame first.
         f"#define WL_HISTORY_FRAMES {policy.history_frames}u",
         "#define WL_ACTION_DIM 6u",
@@ -27,6 +29,8 @@ def generate_header(robot_path: Path, policy_path: Path, *, interface_only: bool
         f"#define WL_WHEEL_REDUCTION_RATIO {float(robot.wheel_reduction_ratio)!r}f",
     ]
     offset = 0
+    for index, name in enumerate(MODE_FIELDS):
+        lines.append(f"#define WL_MODE_{name.upper()}_INDEX {index}u")
     lines.append("// Raw physical limits: clip, scale, then replace non-finite values with zero.")
     for name, (lo, hi) in robot.observation_clip:
         lines.append(f"#define WL_OBS_CLIP_{name.upper()}_MIN {float(lo)!r}f")

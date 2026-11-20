@@ -183,6 +183,7 @@ class TerrainSim(WheelLegSim):
             self.effective_height = self.boost_target if self.boost_remaining > 0 else height
         obs = super().observation(command, self.effective_height)
         obs[self.stair_index] = float(self.signal_remaining > 0)
+        obs[self.stair_index - 1] = float(self.signal_remaining <= 0)
         return obs
 
     def _measure(self, command, height, peaks, saturated, inference_s, bad_action) -> dict:

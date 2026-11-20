@@ -10,4 +10,5 @@
 - 固件不在本仓库新建工程；不修改参考开源项目。
 - 验证：python -m pytest -q；python -m ruff check .；python -m ruff format --check .
 - 不编造 GPU 训练、实机测试或推理性能。
+- mode 固定为 [normal, stair, slope, recover, jump, height_target, state_time]；前五维互斥。目标跳高乘 5，事件进度为触发后时间/事件持续时间，后两维非跳跃时为 0。详见 docs/INTERFACE.md。未经用户再次明确授权，严禁更改维数、顺序、含义、缩放、阶段量定义或复用槽位；所有策略、训练、回放、导出与部署必须一致。
 - Git 提交信息使用 `<type>: <说明>`，例如 `feat: 增加跳跃课程验收`、`fix: 修复回放崩溃`、`docs: 更新训练文档`。

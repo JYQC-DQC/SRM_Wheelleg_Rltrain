@@ -5,6 +5,7 @@ from wheelleg.adaptive_lr import install_adaptive_lr_limit
 from wheelleg.jump import FEATURES as JUMP_FEATURES
 from wheelleg.jump import TUNNEL_FEATURES
 from wheelleg.landing_rewards import FEATURES as LANDING_FEATURES
+from wheelleg.observation import MODE_CONTRACT_REVISION
 from wheelleg.stairs import FEATURES as STAIR_FEATURES
 from wheelleg.stairs import SPEED_FEATURES
 from wheelleg.training import mutable
@@ -17,6 +18,7 @@ class WheelLegRunner(OnPolicyRunner):
         cfg = self.env.unwrapped.training
         contract = {
             "revision": 1,
+            "mode_contract_revision": MODE_CONTRACT_REVISION,
             "clip": mutable(cfg.shared["observation_clip"]),
             "critic_torque_scale": cfg.shared["critic_torque_scale"],
         }

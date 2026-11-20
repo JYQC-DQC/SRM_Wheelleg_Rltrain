@@ -2,6 +2,10 @@ import numpy as np
 
 from .config import PolicyConfig, RobotConfig
 
+MODE_CONTRACT_REVISION = 1
+MODE_FIELDS = ("normal", "stair", "slope", "recover", "jump", "height_target", "state_time")
+MODE_HEIGHT_SCALE = 5.0
+
 # 唯一布局定义；生成的 C 偏移从这里读取。角速度/重力在机体系，命令 vx 为机体前向。
 OBS_FIELDS = (
     ("command", 3),

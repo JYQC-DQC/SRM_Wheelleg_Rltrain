@@ -1592,10 +1592,6 @@ class WheelLegEnv(DirectRLEnv):
         if t.task == "p1-recovery":
             recovering &= self.episode_length_buf * self.step_dt < t.stage["rise_duration_s"]
         mode = self.commands.mode(s["yaw"], self.stair_signal, recovering, active, jump_height, phase)
-        if t.task == "p3-tunnel":
-            mode[:, 3] = (self.robot.data.root_pos_w[:, 1] - self.terrain.env_origins[:, 1]) / (
-                t.stage["tunnel"]["lane_width_m"] / 2
-            )
         sensor = self._sensors()
 
         def make_fields(values):

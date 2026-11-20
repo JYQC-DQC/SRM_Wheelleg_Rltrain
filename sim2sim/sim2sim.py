@@ -315,8 +315,7 @@ class WheelLegSim:
 
     def observation_mode(self) -> np.ndarray:
         mode = np.zeros(7)
-        if self.cfg.policy["policy_family"] == "p1":
-            mode[0] = 1.0
+        mode[0] = 1.0
         return mode
 
     def _targets(self, action: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

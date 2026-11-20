@@ -248,11 +248,11 @@ stages:
     reference_yaw_rad: 0.0
     disturbance_phase: 1
 mode_semantics:
-- zero
-- spin
-- translation_speed_m_s
-- sin_heading_reference
-- cos_heading_reference
-- sin_reference_relative_body
-- cos_reference_relative_body
+- normal
+- stair
+- slope
+- recover
+- jump
+- height_target
+- state_time
 guide_version: '2.2'

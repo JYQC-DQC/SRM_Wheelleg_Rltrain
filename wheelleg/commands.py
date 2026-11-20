@@ -2,6 +2,7 @@ import math
 
 import torch
 
+from .observation import MODE_HEIGHT_SCALE
 from .tasks import TASKS
 from .tensor_ops import rotate_xy, slew
 from .training import TrainingConfig
@@ -271,28 +272,15 @@ class Commands:
         phase: torch.Tensor,
     ) -> torch.Tensor:
         mode = self.value.new_zeros(len(yaw), 7)
-        if self.family == "p1":
-            mode[:, 0] = 1
-            mode[:, 1] = stair
-            mode[:, 3] = recovering
-        elif self.family == "p2":
-            mode[:, 1] = 1
-            mode[:, 2] = torch.linalg.vector_norm(self.translation, dim=-1)
-            heading = torch.atan2(self.translation[:, 1], self.translation[:, 0])
-            mode[:, 3], mode[:, 4] = heading.sin(), heading.cos()
-            relative = self.reference_yaw - yaw
-            mode[:, 5], mode[:, 6] = relative.sin(), relative.cos()
-        else:
-            if self.cfg.task == "p3-jump":
-                # Preserve the P1 ground input throughout the jump event.
-                mode[:, 0] = 1
-            if self.cfg.task == "p3-tunnel":
-                mode[:, 0] = (-yaw).sin()
-                mode[:, 1] = (-yaw).cos()
-                mode[:, 2] = self.tunnel_obstacle
+        # Priority: jump, recover, stair, normal. Slope has no detector here yet.
+        if self.family == "p3":
             mode[:, 4] = jump_active
-            mode[:, 5] = jump_height * self.cfg.policy.height_scale * jump_active
+            mode[:, 5] = jump_height * MODE_HEIGHT_SCALE * jump_active
             mode[:, 6] = phase * jump_active
+        elif self.family == "p1":
+            mode[:, 3] = recovering.bool()
+            mode[:, 1] = stair.bool() & ~recovering.bool()
+        mode[:, 0] = ~mode[:, 1:5].bool().any(dim=-1)
         return mode
 
     def world_translation(self) -> torch.Tensor:

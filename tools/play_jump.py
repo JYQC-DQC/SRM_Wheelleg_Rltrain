@@ -17,6 +17,7 @@ import yaml
 
 from wheelleg.jump import JumpEvent, TunnelTraversal, landing_rates_ok, tunnel_landing
 from wheelleg.jump_geometry import box_bottom_z, cylinder_bottom_z, sagittal_leg_angle
+from wheelleg.observation import MODE_HEIGHT_SCALE
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "sim2sim"))
@@ -178,11 +179,11 @@ class JumpSim(WheelLegSim):
     def observation_mode(self) -> np.ndarray:
         # Match Commands.mode for p3-jump, including on obstacle test sites.
         mode = np.zeros(7)
-        mode[0] = 1.0
         active = bool(self.jump.active[0])
+        mode[0] = float(not active)
         mode[4:] = [
             float(active),
-            float(self.jump.height[0]) * self.cfg.scales["height"] * active,
+            float(self.jump.height[0]) * MODE_HEIGHT_SCALE * active,
             float(self.jump.phase[0]) * active,
         ]
         return mode
