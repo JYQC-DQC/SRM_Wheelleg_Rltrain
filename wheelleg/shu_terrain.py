@@ -1,16 +1,18 @@
-"""P1 mixed-terrain sampling and same-direction triple-step prerequisites."""
+"""P1 mixed-terrain sampling and per-environment stair-row progression."""
 
 from math import isclose, isfinite
 
 import torch
 
+from .stair_rows import StairRowCurriculum
+
 FLAT_PROPORTION = 0.30
 BASE_PROFILES = ("flat", "rough", "grid", "slope", "single_up", "double_up", "single_down", "double_down")
-PREREQUISITES = {
+STAIR_FAMILIES = {
     "triple_up": ("single_up", "double_up"),
     "triple_down": ("single_down", "double_down"),
 }
-MIXED_PROFILES = BASE_PROFILES + tuple(PREREQUISITES)
+MIXED_PROFILES = BASE_PROFILES + tuple(STAIR_FAMILIES)
 STAIR_PROFILES = MIXED_PROFILES[4:]
 MIXED_COLUMN_PROFILES = MIXED_PROFILES + STAIR_PROFILES
 
@@ -42,77 +44,6 @@ def stair_lip_dimensions(settings: dict) -> tuple[float, float]:
     return height, width
 
 
-class MixedTerrainCurriculum:
-    """Immutable direction unlocks from finalized outcomes at each prerequisite's configured row."""
-
-    def __init__(self, gates: dict):
-        self.gates = gates
-        self.unlocked = dict.fromkeys(PREREQUISITES, False)
-        self.passed = {profile: False for pair in PREREQUISITES.values() for profile in pair}
-        self.counts = dict.fromkeys(self.passed, (0, 0))
-        for profile in self.passed:
-            gate = gates[profile]
-            if type(gate["row"]) is not int or gate["row"] < 0:
-                raise ValueError(f"{profile}: required zero-based difficulty row is not set")
-            if type(gate["window"]) is not int or gate["window"] <= 0:
-                raise ValueError(f"{profile}: positive attempt window is required")
-            fraction = gate["success_fraction"]
-            if fraction is None or not 0 < fraction <= 1:
-                raise ValueError(f"{profile}: success_fraction must be in (0, 1]")
-
-    def record(self, profile: str, row: torch.Tensor, success: torch.Tensor) -> None:
-        """Record one batch of finalized attempts for a single profile; other rows don't count."""
-        if profile not in self.passed or self.passed[profile]:
-            return
-        gate = self.gates[profile]
-        results = success[row == gate["row"]]
-        if not results.numel():
-            return
-        attempts, successes = self.counts[profile]
-        attempts += results.numel()
-        successes += int(results.sum())
-        if attempts < gate["window"]:
-            self.counts[profile] = (attempts, successes)
-            return
-        self.counts[profile] = (0, 0)
-        self.passed[profile] = successes / attempts >= gate["success_fraction"]
-        for triple, pair in PREREQUISITES.items():
-            self.unlocked[triple] = all(self.passed[name] for name in pair)
-
-    def proportions(self, groups: dict, stair_weights: dict, locked_stair_weights: dict) -> dict[str, float]:
-        """Split each direction's fixed stair quota using its own unlock state."""
-        if (
-            set(groups) != {"rough", "grid", "slope", "stairs"}
-            or any(v is None or not isfinite(v) or v <= 0 for v in groups.values())
-            or not isclose(sum(groups.values()), 1 - FLAT_PROPORTION)
-        ):
-            raise ValueError("rough/grid/slope/stairs need explicit positive fractions summing to 0.70")
-        result = {name: groups[name] for name in ("rough", "grid", "slope")}
-        result["flat"] = FLAT_PROPORTION
-        if (
-            locked_stair_weights is None
-            or set(locked_stair_weights) != {"single", "double"}
-            or any(v is None or not isfinite(v) or v <= 0 for v in locked_stair_weights.values())
-        ):
-            raise ValueError("terrain.locked_stair_weights needs positive single and double weights")
-        # Preserve both directions' quotas: unlocking ascent must not reduce descent sampling.
-        stair_names = tuple(name for pair in PREREQUISITES.values() for name in pair)
-        for name in (*stair_names, *(key for key, enabled in self.unlocked.items() if enabled)):
-            value = stair_weights[name]
-            if value is None or not isfinite(value) or value <= 0:
-                raise ValueError(f"{name}: an explicit positive stair weight is required")
-        base_total = sum(stair_weights[name] for name in stair_names)
-        for triple, pair in PREREQUISITES.items():
-            share = groups["stairs"] * sum(stair_weights[name] for name in pair) / base_total
-            if self.unlocked[triple]:
-                weights = {name: stair_weights[name] for name in (*pair, triple)}
-            else:
-                weights = {name: locked_stair_weights[name.split("_")[0]] for name in pair}
-            denominator = sum(weights.values())
-            result.update({name: share * weight / denominator for name, weight in weights.items()})
-        return {name: result.get(name, 0.0) for name in MIXED_PROFILES}
-
-
 def route_active(traverse: torch.Tensor, forward_command: torch.Tensor) -> torch.Tensor:
     """World-route progress/stuck cannot apply to free driving, standstill or turn-in-place."""
     return traverse & (forward_command > 0)
@@ -140,11 +71,11 @@ def route_progress_and_stuck(
     return progress, start, torch.where(ready, 0.0, elapsed), stuck
 
 
-class MixedTerrainRuntime(MixedTerrainCurriculum):
+class MixedTerrainRuntime:
     """Assign physical tile columns while recording curriculum by logical profile."""
 
     def __init__(self, settings: dict, count: int, device: str):
-        super().__init__(settings["gates"])
+        self.stair_rows = StairRowCurriculum(count, settings["rows"], settings["tile_size_m"][0], device)
         self.settings = settings
         profiles = settings["profiles"]
         columns = mixed_columns(settings)
@@ -159,10 +90,8 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
             (self.rows[:, 0] >= 0) & (self.rows[:, 0] <= self.rows[:, 1]) & (self.rows[:, 1] < settings["rows"])
         ).all():
             raise ValueError("Mixed terrain row_range must be ordered and within the generated rows")
-        for name, gate in self.gates.items():
-            low, high = profiles[name]["row_range"]
-            if not low <= gate["row"] <= high or profiles[name]["command_mode"] != "traverse":
-                raise ValueError(f"{name}: gate must be reachable by a sampled traverse episode")
+        if any(tuple(profiles[name]["row_range"]) != (0, settings["rows"] - 1) for name in STAIR_PROFILES):
+            raise ValueError("stair profiles must cover all curriculum rows")
         modes = [profiles[name]["command_mode"] for name in MIXED_PROFILES]
         if any(mode not in ("free", "traverse") for mode in modes) or modes[0] != "free":
             raise ValueError("Mixed terrain command_mode must be free or traverse, with flat always free")
@@ -230,33 +159,34 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         self.reached_center = torch.zeros_like(self.traverse)
         self.reverse_descent = torch.zeros_like(self.traverse)
         self.reward_active = torch.zeros_like(self.traverse)
-        self.draw_weights = torch.empty((3, len(MIXED_PROFILES)), device=device)
-        self._update_weights()
+        self.draw_weights = torch.stack([self._distribution(opened, device) for opened in (False, True)])
 
-    def _update_weights(self) -> None:
-        weights = self.proportions(
-            self.settings["groups"], self.settings["stair_weights"], self.settings.get("locked_stair_weights")
-        )
-        # Joint draw: pure terrain / full pyramid / reverse half pyramid, then logical profile.
-        pure = {n: w * (1 - self.pyramid_share) if n in STAIR_PROFILES else w for n, w in weights.items()}
-        full, half = dict.fromkeys(weights, 0.0), dict.fromkeys(weights, 0.0)
-        stair_mass = self.settings["groups"]["stairs"]
-        for triple, pair in PREREQUISITES.items():
-            if all(self.unlocked.values()):
-                levels = {n: weights[n] for n in (*pair, triple)}
-            else:
-                levels = {n: self.settings["locked_stair_weights"][n.split("_")[0]] for n in pair}
-            total = sum(levels.values())
-            for name, w in levels.items():
-                mass = stair_mass * w / total
-                full[name] = mass * (self.pyramid_share - self.reverse_share) / 2
+    def _distribution(self, opened, device):
+        groups = self.settings["groups"]
+        if (
+            set(groups) != {"rough", "grid", "slope", "stairs"}
+            or not isclose(sum(groups.values()), 0.70)
+            or any(not isfinite(v) or v <= 0 for v in groups.values())
+        ):
+            raise ValueError("non-flat groups must have positive shares totalling 0.70")
+        draw = torch.zeros(3, len(MIXED_PROFILES), device=device)
+        draw[0, :4] = draw.new_tensor([FLAT_PROPORTION, groups["rough"], groups["grid"], groups["slope"]])
+        for triple, pair in STAIR_FAMILIES.items():
+            names = (*pair, triple) if opened else pair
+            values = [
+                self.settings["stair_weights"][n] if opened else self.settings["locked_stair_weights"][n.split("_")[0]]
+                for n in names
+            ]
+            if any(v is None or not isfinite(v) or v <= 0 for v in values):
+                raise ValueError("stair weights must be positive and finite")
+            for name, w in zip(names, values, strict=True):
+                col = MIXED_PROFILES.index(name)
+                mass = groups["stairs"] * w / sum(values)
+                draw[0, col] = mass * (1 - self.pyramid_share) / 2
+                draw[1, col] = mass * (self.pyramid_share - self.reverse_share) / 2
                 if name.endswith("_down"):
-                    half[name] = mass * self.reverse_share
-        self.draw_weights.copy_(self.draw_weights.new_tensor([list(row.values()) for row in (pure, full, half)]))
-
-    @property
-    def weights(self) -> torch.Tensor:
-        return self.draw_weights.sum(0)
+                    draw[2, col] = mass * self.reverse_share
+        return draw.flatten()
 
     @property
     def route_open(self) -> torch.Tensor:
@@ -291,30 +221,41 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
             self.reached_center |= supported & pyramid & ((x - cx).abs() <= hx) & (y.abs() <= hy)
 
     def reset(
-        self, terrain, ids: torch.Tensor, completed: torch.Tensor, terminated: torch.Tensor, *, evaluation: bool
+        self,
+        terrain,
+        ids: torch.Tensor,
+        completed: torch.Tensor,
+        terminated: torch.Tensor,
+        *,
+        evaluation: bool,
+        final_xy=None,
+        tracking_fraction=None,
     ) -> None:
-        if not evaluation:
-            finished = ids[completed[ids] & self.assigned[ids]]
-            cols = self.column_profiles[terrain.terrain_types[finished]]
-            rows = terrain.terrain_levels[finished]
-            success = self.crossed[finished] & ~terminated[finished]
-            before = tuple(self.unlocked.values())
-            for name in self.gates:
-                match = (cols == MIXED_PROFILES.index(name)) & (
-                    terrain.terrain_types[finished] < len(MIXED_COLUMN_PROFILES)
-                )
-                self.record(name, rows[match], success[match])
-            if tuple(self.unlocked.values()) != before:
-                self._update_weights()
         if not ids.numel():
             return
-        draw = torch.multinomial(self.draw_weights.flatten(), len(ids), replacement=True)
+        if not evaluation:
+            done = ids[completed[ids] & self.assigned[ids] & self.traverse[ids]]
+            if done.numel():
+                if final_xy is None or tracking_fraction is None:
+                    raise ValueError("settling stairs requires final world XY and full-episode tracking score")
+                displacement = (final_xy[done] - terrain.env_origins[done, :2]).norm(dim=-1)
+                self.stair_rows.update(
+                    done,
+                    displacement,
+                    tracking_fraction[done],
+                    self.reverse_descent[done] & self.reached_center[done] & ~terminated[done],
+                )
+        opened = self.stair_rows.top_cleared[ids].long()
+        if evaluation:
+            opened = torch.ones_like(opened)
+        draw = torch.multinomial(self.draw_weights[opened], 1).squeeze(-1)
         mode, profiles = draw // len(MIXED_PROFILES), draw % len(MIXED_PROFILES)
         lo, hi = self.rows[profiles].unbind(-1)
         if evaluation:
             rows = hi
         else:
-            rows = lo + (torch.rand(len(ids), device=ids.device) * (hi - lo + 1)).long()
+            free_row = lo + (torch.rand(len(ids), device=ids.device) * (hi - lo + 1)).long()
+            rows = torch.where(profiles >= 4, self.stair_rows.levels[ids], free_row)
         is_stair = profiles >= len(MIXED_PROFILES) - len(STAIR_PROFILES)
         with_lip = is_stair & (torch.rand(len(ids), device=ids.device) < 0.5)
         cols = profiles + with_lip * len(STAIR_PROFILES)
@@ -328,11 +269,14 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         self.crossed[ids] = self.reached_center[ids] = self.reward_active[ids] = False
 
     def state_dict(self) -> dict:
-        return dict(passed=self.passed.copy(), counts=self.counts.copy())
+        return {"stair_rows": self.stair_rows.state_dict()}
 
     def load_state_dict(self, state: dict) -> None:
-        self.passed.update(state["passed"])
-        self.counts.update(state["counts"])
-        for triple, pair in PREREQUISITES.items():
-            self.unlocked[triple] = all(self.passed[name] for name in pair)
-        self._update_weights()
+        if "stair_rows" not in state:
+            raise ValueError(
+                "old mixed-terrain checkpoint lacks per-environment stair rows; use weight-only initialization"
+            )
+        self.stair_rows.load_state_dict(state["stair_rows"])
+        # The simulator may already have reset to a fresh tile before the runner loads.
+        # Do not grade that unrelated initial episode against the restored difficulty.
+        self.assigned.zero_()

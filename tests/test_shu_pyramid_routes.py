@@ -57,15 +57,10 @@ def test_route_shares_are_of_all_stairs_not_just_inverted_towers(pyramid_share):
         double = torch.tensor([name.startswith("double") for name, _, _ in columns])[t.terrain_types]
         assert double[mode].float().mean().item() == pytest.approx(0.7, abs=0.05)
 
-    mix.unlocked["triple_up"] = True
-    mix._update_weights()
-    mix.reset(t, ids, no, no, evaluation=True)
+    mix.stair_rows.top_cleared[ids[n // 2 :]] = True
+    mix.reset(t, ids, no, no, evaluation=False)
     triple = mix.column_profiles[t.terrain_types] >= MIXED_PROFILES.index("triple_up")
-    pyramid = torch.tensor([p for _, _, p in columns])[t.terrain_types]
-    assert not (pyramid & triple).any()
-    mix.unlocked["triple_down"] = True
-    mix._update_weights()
-    mix.reset(t, ids, no, no, evaluation=True)
+    assert not triple[: n // 2].any() and triple[n // 2 :].any()
     assert set(t.terrain_types[mix.reverse_descent].tolist()) == {
         i for i, (name, _, p) in enumerate(columns) if p and name.endswith("_down")
     }
@@ -140,8 +135,10 @@ def test_half_route_stops_only_on_central_low_deck_never_counts_full_or_prerequi
     assert mix.route_open.tolist() == [False, True] and not mix.crossed.any()
     mix.step(t, center, end, speed, no, wheels)
     assert mix.crossed.tolist() == [False, True] and not mix.route_open.any()
-    mix.reset(t, ids[:1], ~no, no, evaluation=False)
+    mix.stair_rows.levels[:] = 0
+    mix.assigned[:] = True
+    mix.reset(t, ids[:1], ~no, no, evaluation=False, final_xy=center[:, :2], tracking_fraction=torch.zeros(2))
     assert mix.reached_center.tolist() == [False, True] and mix.crossed.tolist() == [False, True]
-    mix.reset(t, ids[1:], ~no, no, evaluation=False)
+    mix.reset(t, ids[1:], ~no, no, evaluation=False, final_xy=end[:, :2], tracking_fraction=torch.zeros(2))
     assert not mix.reached_center.any() and not mix.crossed.any()
-    assert not any(mix.passed.values()) and set(mix.counts.values()) == {(0, 0)}
+    assert mix.stair_rows.levels.tolist() == [1, 1]

@@ -37,6 +37,7 @@ def stairs_runtime(runtime, *, up=(0.26, 0.32), down=(0.19, 0.29)):
     pyramid_column = columns.index(("double_down", False, True))
     e.terrain.terrain_types = torch.where(traverse, pyramid_column, 0)
     e.mixed_curriculum = NS(traverse=traverse, reverse_descent=reverse, route_open=traverse, reset=Mock())
+    e.stair_tracking_sum = torch.zeros(e.num_envs)
     e.reset_terminated = torch.zeros_like(traverse)
     e.reset_time_outs = torch.zeros_like(traverse)
     e.shu = runtime[1](e, None)

@@ -111,10 +111,9 @@ def settings():
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
         locked_stair_weights=dict(single=0.3, double=0.7),
         stair_weights={name: 0.6 if name.startswith("double") else 0.2 for name in STAIR_PROFILES},
-        gates={name: dict(row=1, window=2, success_fraction=1.0) for name in STAIR_PROFILES[:4]},
         profiles={
             name: dict(
-                row_range=[1, 2] if name in STAIR_PROFILES else [0, 2],
+                row_range=[0, 2],
                 command_mode="traverse" if name in STAIR_PROFILES else "free",
                 exit_distance_m=3.0,
                 geometry=dict(spawn_x_m=1.0, first_edge_x_m=2.0, step_width_m=0.30),
@@ -124,7 +123,7 @@ def settings():
     )
 
 
-def test_reset_samples_variants_and_counts_both_in_the_same_gate():
+def test_lip_coin_is_independent_of_curriculum_and_eval_does_not_advance_rows():
     torch.manual_seed(5)
     count = 12000
     mix = MixedTerrainRuntime(settings(), count, "cpu")
@@ -154,27 +153,12 @@ def test_reset_samples_variants_and_counts_both_in_the_same_gate():
 
     mix.reset(terrain, ids, no, no, evaluation=False)
     check_draws(range(4, 8))
-    assert (terrain.terrain_levels[mix.traverse] >= 1).all()
-    torch.testing.assert_close(mix.weights[4:], torch.tensor([0.06, 0.14, 0.06, 0.14, 0.0, 0.0]))
-
-    # One sharp and one lip success at the required row for each ascent prerequisite.
-    terrain.terrain_types[:4] = torch.tensor([4, 10, 5, 11])
-    terrain.terrain_levels[:4] = 1
-    terrain.env_origins[:4] = terrain.terrain_origins[1, terrain.terrain_types[:4]]
-    mix.traverse[:4] = True
-    mix.step(terrain, terrain.env_origins, terrain.env_origins + torch.tensor([3.1, 0, 0]), torch.ones(count), no)
-    assert mix.crossed[:4].all()
-    mix.reset(terrain, ids[:4], ~no, no, evaluation=False)
-    assert mix.unlocked == {"triple_up": True, "triple_down": False}
-    torch.testing.assert_close(mix.weights[:4], torch.tensor([0.30, 0.10, 0.10, 0.10]))
-    torch.testing.assert_close(mix.weights[4:], torch.tensor([0.04, 0.12, 0.06, 0.14, 0.04, 0.0]))
-
-    restored = MixedTerrainRuntime(settings(), count, "cpu")
-    restored.load_state_dict(mix.state_dict())
-    torch.testing.assert_close(restored.weights, mix.weights)
-    mix = restored
-    mix.reset(terrain, ids, no, no, evaluation=True)
-    check_draws(range(4, 9))
+    torch.testing.assert_close(terrain.terrain_levels[mix.traverse], mix.stair_rows.levels[mix.traverse])
+    before = mix.stair_rows.levels.clone()
+    mix.reset(terrain, ids, ~no, no, evaluation=True)
+    check_draws(range(4, 10))
+    torch.testing.assert_close(mix.stair_rows.levels, before)
+    assert not mix.stair_rows.top_cleared.any()
     assert (terrain.terrain_levels == 2).all()
 
 

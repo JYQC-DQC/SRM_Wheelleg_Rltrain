@@ -118,6 +118,7 @@ class WheelLegEnv(DirectRLEnv):
         self._stage_command_tick = -1
         self._jump_sample_tick = -1
         self.jump_blocked = self.obstacle_hit.clone()
+        self.stair_tracking_sum = torch.zeros(n, device=d) if self.mixed_curriculum is not None else None
         self.training_iteration_offset = 0
         r = t.shared["randomization"]
         obs_history = (
@@ -629,6 +630,11 @@ class WheelLegEnv(DirectRLEnv):
                 if self.jump is not None and name not in ("joint_torque", "leg_soft_limits"):
                     enabled = torch.where(s["ground_drive"], one, t.stage["jump_smooth_scale"])
                 terms[name] = -cost.clamp_max(1) * enabled * self.step_dt
+        if self.mixed_curriculum is not None:
+            # Fudan Upstairs v2: independent of the SHU PPO reward gates.
+            error = self.commands.value[:, 0] - self.robot.data.root_lin_vel_b[:, 0]
+            rate = (1.3 * torch.exp(-error.square() / 0.25)).clamp_max(1.0)
+            self.stair_tracking_sum += torch.where(self.numerical_bad, 0.0, rate) * self.step_dt
         if self.scanner is not None:
             progress, stuck_start, stuck_time, stuck = route_progress_and_stuck(
                 self.mixed_curriculum.reward_active,
@@ -783,7 +789,10 @@ class WheelLegEnv(DirectRLEnv):
                 (self.episode_length_buf > 0) & (self.reset_terminated | self.reset_time_outs),
                 self.reset_terminated,
                 evaluation=self.cfg.evaluation,
+                final_xy=self.robot.data.root_pos_w[:, :2],
+                tracking_fraction=self.stair_tracking_sum / self.max_episode_length_s,
             )
+            self.stair_tracking_sum[env_ids] = 0
         super()._reset_idx(env_ids)
         n = len(env_ids)
         self.spawn_check_mask[env_ids] = True

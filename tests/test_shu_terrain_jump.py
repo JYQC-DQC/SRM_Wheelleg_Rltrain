@@ -14,12 +14,10 @@ from wheelleg.shu_terrain import (
 
 
 def mixed_settings():
-    gates = {name: dict(row=1, window=2, success_fraction=1.0) for name in MIXED_PROFILES[4:8]}
     return dict(
         rows=3,
         route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2),
         tile_size_m=(8.0, 8.0),
-        gates=gates,
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
         locked_stair_weights=dict(single=0.3, double=0.7),
         stair_lip=dict(height_m=0.05, width_m=0.1),
@@ -56,36 +54,20 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     mix.reset(terrain, ids, no, no, evaluation=False)
     assert not any(MIXED_COLUMN_PROFILES[c].startswith("triple") for c in terrain.terrain_types.unique().tolist())
     assert (terrain.terrain_types == 0).float().mean().item() == pytest.approx(0.30, abs=0.04)
-    before = mix.weights.clone()
-    # Two successes on single-up. Double-up has one wrong row and one terminal failure.
-    terrain.terrain_types[:6] = torch.tensor([4, 4, 5, 5, 5, 5])
-    terrain.terrain_levels[:6] = torch.tensor([1, 1, 0, 1, 1, 1])
-    terrain.env_origins[:6] = origins[terrain.terrain_levels[:6], terrain.terrain_types[:6]]
-    mix.traverse[:6] = True
-    position = terrain.env_origins + torch.tensor([3.0, 0.0, 0.0])
-    ran, failed = ~no, no.clone()
-    failed[3] = True
-    mix.step(terrain, terrain.env_origins, position, torch.ones(count), failed)
-    mix.reset(terrain, ids[:4], ran, failed, evaluation=False)
-    assert mix.passed["single_up"] and not mix.unlocked["triple_up"]
-    assert mix.counts["double_up"] == (1, 0)
-    mix.reset(terrain, ids[4:5], ran, failed, evaluation=False)  # close the failed window
-    assert mix.counts["double_up"] == (0, 0)
-    terrain.terrain_types[4] = 5
-    terrain.terrain_levels[4] = 1
-    terrain.env_origins[4] = origins[1, 5]
-    mix.traverse[4] = True
-    mix.step(
-        terrain, terrain.env_origins, terrain.env_origins + torch.tensor([3.0, 0.0, 0.0]), torch.ones(count), failed
-    )
-    mix.reset(terrain, ids[4:6], ran, failed, evaluation=False)
-    assert mix.unlocked == {"triple_up": True, "triple_down": False}
-    torch.testing.assert_close(mix.weights[[0, 1, 2, 3, 6, 7]], before[[0, 1, 2, 3, 6, 7]])
-    assert mix.weights[4] + mix.weights[5] + mix.weights[8] == pytest.approx(float(before[4] + before[5]))
+    mix.stair_rows.levels[:5] = torch.tensor([0, 1, 2, 2, 1])
+    mix.traverse[:5] = torch.tensor([True, True, True, False, True])
+    ran = ~no.clone()
+    ran[4] = False
+    final = terrain.env_origins[:, :2].clone()
+    final[[0, 2, 3], 0] += 5
+    mix.reset(terrain, ids[:5], ran, no, evaluation=False, final_xy=final, tracking_fraction=torch.zeros(count))
+    assert mix.stair_rows.levels[[0, 1, 3, 4]].tolist() == [1, 0, 2, 1]
+    assert mix.stair_rows.top_cleared[:5].tolist() == [False, False, True, False, False]
     restored = MixedTerrainRuntime(cfg, count, "cpu")
     restored.load_state_dict(mix.state_dict())
+    torch.testing.assert_close(restored.stair_rows.levels, mix.stair_rows.levels)
+    torch.testing.assert_close(restored.stair_rows.top_cleared, mix.stair_rows.top_cleared)
     restored.reset(terrain, ids, no, no, evaluation=False)
-    assert (terrain.terrain_types == 8).any() and not (terrain.terrain_types == 9).any()
     assert torch.equal(terrain.env_origins, origins[terrain.terrain_levels, terrain.terrain_types])
     assert torch.equal(restored.traverse, terrain.terrain_types >= 4)
     assert route_active(torch.tensor([False, True, True]), torch.tensor([1.0, 0.0, 1.0])).tolist() == [

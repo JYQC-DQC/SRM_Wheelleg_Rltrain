@@ -165,12 +165,6 @@ stages:
         single_down: 0.20
         double_down: 0.60
         triple_down: 0.20
-      # Zero-based row, finalized route-attempt window, and required pass fraction per prerequisite.
-      gates:
-        single_up: {row: null, window: null, success_fraction: null}
-        double_up: {row: null, window: null, success_fraction: null}
-        single_down: {row: null, window: null, success_fraction: null}
-        double_down: {row: null, window: null, success_fraction: null}
       profiles:
         flat:
           row_range: null
@@ -202,7 +196,7 @@ stages:
           command_mode: free
           geometry: {spawn_x_m: null, ground_thickness_m: null, slope_angle_range_rad: [0.0, 0.4363323129985824]}
         single_up:
-          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
           command_mode: traverse
           exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
@@ -212,7 +206,7 @@ stages:
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
             step_height_range_m: [0.10, 0.23]
         double_up:
-          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
           command_mode: traverse
           exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
@@ -222,7 +216,7 @@ stages:
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
             step_height_range_m: [0.10, 0.23]
         single_down:
-          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
           command_mode: traverse
           exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
@@ -232,7 +226,7 @@ stages:
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
             step_height_range_m: [0.10, 0.23]
         double_down:
-          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
           command_mode: traverse
           exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
@@ -242,7 +236,7 @@ stages:
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
             step_height_range_m: [0.10, 0.23]
         triple_up:
-          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
           command_mode: traverse
           exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
@@ -252,7 +246,7 @@ stages:
             step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
             step_height_range_m: [0.10, 0.23]
         triple_down:
-          row_range: null  # Inclusive; set both ends to the same approved row to start there.
+          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
           command_mode: traverse
           exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
