@@ -4,13 +4,12 @@ import pytest
 import torch
 from test_shu_mixed_variants import settings
 
-from wheelleg.shu_terrain import MIXED_PROFILES, MixedTerrainRuntime, mixed_columns
+from wheelleg.shu_terrain import STAIR_PROFILES, MixedTerrainRuntime, mixed_columns
 
 
-def setup_routes(count, *, share=1.0, reverse=0.1):
+def setup_routes(count, *, reverse=0.1):
     cfg = settings()
     cfg["tile_size_m"] = (12.0, 8.0)  # intentionally non-square
-    cfg["pyramid"] = {"share_of_stairs": share}
     cfg["route"]["reverse_descent_share_of_stairs"] = reverse
     mix = MixedTerrainRuntime(cfg, count, "cpu")
     columns = mixed_columns(cfg)
@@ -26,11 +25,10 @@ def setup_routes(count, *, share=1.0, reverse=0.1):
     return mix, t, columns
 
 
-@pytest.mark.parametrize("pyramid_share", [0.5, 1.0])
-def test_route_shares_are_of_all_stairs_not_just_inverted_towers(pyramid_share):
+def test_route_shares_are_of_all_stairs_not_just_inverted_towers():
     torch.manual_seed(19)
     n = 30000
-    mix, t, columns = setup_routes(n, share=pyramid_share)
+    mix, t, columns = setup_routes(n)
     ids = torch.arange(n)
     no = ids < 0
     mix.reset(t, ids, no, no, evaluation=False)
@@ -45,30 +43,28 @@ def test_route_shares_are_of_all_stairs_not_just_inverted_towers(pyramid_share):
     )
     reverse = mix.reverse_descent
     assert reverse.shape == (n,) and reverse.dtype == torch.bool
-    assert not (reverse & (~stair | up | ~pyramid)).any()
+    assert torch.equal(stair, pyramid)
+    assert not (reverse & (~stair | up)).any()
     assert stair.float().mean().item() == pytest.approx(0.4, abs=0.015)
     for mode, share in [
-        (up & pyramid, (pyramid_share - 0.1) / 2),
-        (~up & pyramid & ~reverse, (pyramid_share - 0.1) / 2),
+        (up & pyramid, 0.45),
+        (~up & pyramid & ~reverse, 0.45),
         (reverse, 0.1),
     ]:
         assert mode[stair].float().mean().item() == pytest.approx(share, abs=0.015)
         assert lip[mode].float().mean().item() == pytest.approx(0.5, abs=0.05)
-        double = torch.tensor([name.startswith("double") for name, _, _ in columns])[t.terrain_types]
-        assert double[mode].float().mean().item() == pytest.approx(0.6, abs=0.05)
 
     mix.stair_rows.levels[ids[n // 2 :]] = mix.stair_rows.rows - 1
     mix.reset(t, ids, no, no, evaluation=False)
-    triple = mix.column_profiles[t.terrain_types] >= MIXED_PROFILES.index("triple_up")
-    assert triple[: n // 2].any() and triple[n // 2 :].any()
+    for cohort in (ids[: n // 2], ids[n // 2 :]):
+        assert set(t.terrain_types[cohort][mix.traverse[cohort]].tolist()) == {4, 5, 6, 7}
     assert set(t.terrain_types[mix.reverse_descent].tolist()) == {
         i for i, (name, _, p) in enumerate(columns) if p and name.endswith("_down")
     }
 
 
-@pytest.mark.parametrize(
-    "name,lip", [("double_up", False), ("double_up", True), ("double_down", False), ("double_down", True)]
-)
+@pytest.mark.parametrize("name", STAIR_PROFILES)
+@pytest.mark.parametrize("lip", [False, True])
 def test_grounded_platforms_in_order_not_x_lines_or_side_boundaries(name, lip):
     mix, t, columns = setup_routes(1)
     t.terrain_types[:] = columns.index((name, lip, True))
@@ -86,11 +82,9 @@ def test_grounded_platforms_in_order_not_x_lines_or_side_boundaries(name, lip):
     visit(5, 5)
     visit(10, 0)
     assert mix.route_open.item() and not mix.reached_center.item()
-    visit(1.45, 0)  # inside the first X edge, short of the safe central platform
+    visit(2.9, 0)  # inside the outer ring, but short of the safe center
     assert not mix.reached_center.item()
-    visit(5, 1.55)  # inside the outer ring, but not safely inside the innermost tread
-    assert not mix.reached_center.item()
-    center_y = 1.40 if lip and name.endswith("_up") else 1.50
+    center_y = 1.80  # exact half-platform minus route clearance, for all four columns
     visit(5, center_y + 0.01)
     assert not mix.reached_center.item()
     visit(5, center_y - 0.01, grounded=False)
@@ -100,10 +94,11 @@ def test_grounded_platforms_in_order_not_x_lines_or_side_boundaries(name, lip):
     assert mix.reached_center.item() and not mix.reward_active.item() and mix.route_open.item()
 
     # Left outer deck, side deck, far corner, next tile: none is the opposite face's exit.
-    for x, y in [(0, 0), (6, 3), (10, 2.1), (12, 0)]:
+    for x, y in [(0, 0), (6, 3), (10, 3), (12, 0)]:
         visit(x, y)
         assert not mix.crossed.item() and mix.route_open.item()
-    far_x = 9.30 if lip and name.endswith("_down") else 9.20
+    # Relative to spawn: center 5 + outer obstruction (2.4 lip / 2.6 ordinary) + 0.2 clearance.
+    far_x = 7.60 if lip else 7.80
     visit(far_x - 0.01, 0)
     visit(far_x + 0.01, 0, grounded=False)
     visit(far_x + 0.01, 0, failed=True)
@@ -117,7 +112,7 @@ def test_half_route_stops_only_on_central_low_deck_never_counts_full_or_prerequi
     ids = torch.arange(2)
     no = ids < 0
     mix.reset(t, ids, no, no, evaluation=True)
-    t.terrain_types[:] = columns.index(("double_down", True, True))
+    t.terrain_types[:] = columns.index(("pyramid_down", True, True))
     t.terrain_levels[:] = 1  # actually at the prerequisite's configured row
     t.env_origins[:] = t.terrain_origins[1, t.terrain_types]
     mix.traverse[:] = True

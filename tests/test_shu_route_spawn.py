@@ -23,7 +23,6 @@ def stairs_runtime(runtime, *, up=(0.26, 0.32), down=(0.19, 0.29)):
             straight_spawn_probability=0.5,
             max_spawn_yaw_offset_rad=radians(25),
         ),
-        pyramid=dict(share_of_stairs=1.0),
     )
     e.training.task = "p1-stairs"
     e.training.stage["terrain"] = terrain
@@ -34,7 +33,7 @@ def stairs_runtime(runtime, *, up=(0.26, 0.32), down=(0.19, 0.29)):
     traverse = ids % 3 != 0
     reverse = ids % 3 == 2
     # Forward and reverse rows deliberately share the same physical column.
-    pyramid_column = columns.index(("double_down", False, True))
+    pyramid_column = columns.index(("pyramid_down", False, True))
     e.terrain.terrain_types = torch.where(traverse, pyramid_column, 0)
     e.mixed_curriculum = NS(traverse=traverse, reverse_descent=reverse, route_open=traverse, reset=Mock())
     e.stair_tracking_sum = torch.zeros(e.num_envs)

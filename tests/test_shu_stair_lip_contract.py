@@ -24,7 +24,7 @@ def p1_terrain():
     return settings
 
 
-def test_shipped_p1_mix_samples_both_variants_in_each_tower_task_and_step_count(p1_terrain):
+def test_shipped_p1_mix_samples_both_variants_in_each_tower_task_and_direction(p1_terrain):
     columns = mixed_columns(p1_terrain)
     ids = torch.arange(16_000)
     zeros = torch.zeros_like(ids)
@@ -47,21 +47,10 @@ def test_shipped_p1_mix_samples_both_variants_in_each_tower_task_and_step_count(
     stair = profile >= 0
     assert torch.equal(stair, pyramid.bool())
     assert stair.float().mean().item() == pytest.approx(0.45, abs=0.02)
-    up = (
-        (profile == STAIR_PROFILES.index("single_up"))
-        | (profile == STAIR_PROFILES.index("double_up"))
-        | (profile == STAIR_PROFILES.index("triple_up"))
-    )
-    for task, share, direction in (
-        (up, 0.45, "up"),
-        (stair & ~up & ~mix.reverse_descent, 0.45, "down"),
-        (mix.reverse_descent, 0.10, "down"),
-    ):
+    up = profile == STAIR_PROFILES.index("pyramid_up")
+    for task, share in ((up, 0.45), (stair & ~up & ~mix.reverse_descent, 0.45), (mix.reverse_descent, 0.10)):
         assert task.sum().item() / stair.sum().item() == pytest.approx(share, abs=0.02)
-        for steps, fraction in (("single", 0.20), ("double", 0.60), ("triple", 0.20)):
-            subset = task & (profile == STAIR_PROFILES.index(f"{steps}_{direction}"))
-            assert subset.sum().item() / task.sum().item() == pytest.approx(fraction, abs=0.06)
-            assert lip[subset].float().mean().item() == pytest.approx(0.50, abs=0.10)
+        assert lip[task].float().mean().item() == pytest.approx(0.50, abs=0.05)
 
 
 def test_shipped_p1_tower_grid_keeps_every_raised_ring(terrain_module, p1_terrain):  # noqa: F811 (shared fixture)
@@ -84,7 +73,7 @@ def test_shipped_p1_tower_grid_keeps_every_raised_ring(terrain_module, p1_terrai
             if pyramid
         },
     )
-    assert len(generator.cfg.sub_terrains) == 12
+    assert len(generator.cfg.sub_terrains) == 4
     assert generator.cfg.num_rows == 10
     generator.np_rng = np.random.default_rng(42)
     generator._get_terrain_mesh = lambda difficulty, cfg: (
@@ -106,11 +95,24 @@ def test_shipped_p1_tower_grid_keeps_every_raised_ring(terrain_module, p1_terrai
             assert height == pytest.approx(low if row == 0 else high)
         key = (cfg.profile, row)
         assert height == heights.setdefault(key, height)
-        steps, direction = cfg.profile.split("_")
-        count = ("single", "double", "triple").index(steps) + 1
+        direction = cfg.profile.split("_")[-1]
         tread = cfg.parameters["step_width_m"]
-        start = cfg.parameters["first_edge_x_m"]
-        assert tread == pytest.approx(0.30)
+        assert tread == pytest.approx(0.30) and cfg.parameters["platform_width_m"] == pytest.approx(4.0)
+        # Count vertical riser faces independently on a ray parallel to the X axis, facing +X.
+        normals = mesh.face_normals
+        wall = (
+            (np.abs(normals[:, 0]) > 0.999)
+            & (mesh.triangles_center[:, 0] > 0.001)
+            & (mesh.triangles_center[:, 0] < sx / 2)
+        )
+        positions = np.unique(np.round(mesh.triangles_center[wall, 0], 8))
+        expected_normal = -1 if direction == "up" else 1
+        principal = np.unique(np.round(mesh.triangles_center[wall & (normals[:, 0] * expected_normal > 0.999), 0], 8))
+        count = len(principal)
+        assert count >= 2 and len(positions) == count * (2 if cfg.stair_lip is not None else 1)
+        np.testing.assert_allclose(np.diff(principal), tread, atol=1e-6)
+        start = principal[0]
+        assert start >= cfg.parameters["first_edge_x_m"] - 1e-6
         if cfg.stair_lip is None:
             sign = 1 if direction == "up" else -1
             assert np.unique(np.round(z, 8)) == pytest.approx(sorted(sign * height * i for i in range(count + 1)))

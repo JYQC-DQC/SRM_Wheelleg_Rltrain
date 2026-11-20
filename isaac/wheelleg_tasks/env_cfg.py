@@ -109,6 +109,7 @@ def make_env_cfg(
     scanner = None
     if t.task == "p1-stairs":
         s = t.stage["terrain"]
+        columns = mixed_columns(s, production=True)
         lip = stair_lip_dimensions(s)
         terrain.terrain_type = "generator"
         terrain.terrain_generator = TerrainGeneratorCfg(
@@ -117,17 +118,16 @@ def make_env_cfg(
             size=tuple(s["tile_size_m"]),
             border_width=s["border_width_m"],
             num_rows=s["rows"],
-            num_cols=len(mixed_columns(s)),
+            num_cols=len(columns),
             curriculum=True,
             sub_terrains={
-                (name + ("_pyramid" if pyramid else "") + ("_lip" if raised else "")): MixedTerrainCfg(
+                (name + ("_lip" if raised else "")): MixedTerrainCfg(
                     proportion=1.0,
                     profile=name,
                     parameters={**mutable(s["profiles"][name]["geometry"]), "seed": t.settings["seed"]},
                     stair_lip=lip if raised else None,
-                    pyramid=pyramid,
                 )
-                for name, raised, pyramid in mixed_columns(s)
+                for name, raised, _ in columns
             },
         )
         scanner = RayCasterCfg(

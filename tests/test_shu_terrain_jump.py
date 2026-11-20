@@ -2,12 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from test_shu_mixed_variants import settings as pyramid_settings
 
 from wheelleg.jump import JumpEvent, collision_bounds_w, tunnel_geometry
 from wheelleg.shu_terrain import (
-    MIXED_COLUMN_PROFILES,
-    MIXED_PROFILES,
+    LEGACY_PROFILES,
+    LEGACY_STAIR_PROFILES,
     MixedTerrainRuntime,
+    mixed_columns,
     route_active,
     route_progress_and_stuck,
 )
@@ -20,7 +22,7 @@ def mixed_settings():
         tile_size_m=(8.0, 8.0),
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
         stair_lip=dict(height_m=0.05, width_m=0.1),
-        stair_weights=dict.fromkeys(MIXED_PROFILES[4:], 1.0),
+        stair_weights=dict.fromkeys(LEGACY_STAIR_PROFILES, 1.0),
         profiles={
             name: dict(
                 row_range=[0, 2],
@@ -28,20 +30,20 @@ def mixed_settings():
                 exit_distance_m=2.0,
                 geometry={"spawn_x_m": 1.0, "first_edge_x_m": 1.5, "step_width_m": 0.5},
             )
-            for i, name in enumerate(MIXED_PROFILES)
+            for i, name in enumerate(LEGACY_PROFILES)
         },
     )
 
 
-def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
+def test_pyramid_runtime_progresses_rows_and_restores_state():
     torch.manual_seed(1)
     count = 2000
-    cfg = mixed_settings()
+    cfg = pyramid_settings()
     mix = MixedTerrainRuntime(cfg, count, "cpu")
-    columns = torch.arange(len(MIXED_COLUMN_PROFILES))
+    columns = torch.arange(len(mixed_columns(cfg)))
     origins = torch.zeros(3, len(columns), 3)
-    origins[..., 0] = torch.arange(3).unsqueeze(-1) * 8
-    origins[..., 1] = columns * 8
+    origins[..., 0] = torch.arange(3).unsqueeze(-1) * 12
+    origins[..., 1] = columns * 12
     terrain = SimpleNamespace(
         terrain_origins=origins,
         terrain_levels=torch.zeros(count, dtype=torch.long),
@@ -51,14 +53,14 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     ids = torch.arange(count)
     no = torch.zeros(count, dtype=torch.bool)
     mix.reset(terrain, ids, no, no, evaluation=False)
-    assert any(MIXED_COLUMN_PROFILES[c].startswith("triple") for c in terrain.terrain_types.unique().tolist())
+    assert set(terrain.terrain_types[mix.traverse].unique().tolist()) == {4, 5, 6, 7}
     assert (terrain.terrain_types == 0).float().mean().item() == pytest.approx(0.30, abs=0.04)
     mix.stair_rows.levels[:5] = torch.tensor([0, 1, 2, 2, 1])
     mix.traverse[:5] = torch.tensor([True, True, True, False, True])
     ran = ~no.clone()
     ran[4] = False
     final = terrain.env_origins[:, :2].clone()
-    final[[0, 2, 3], 0] += 5
+    final[[0, 2, 3], 0] += 7
     mix.reset(terrain, ids[:5], ran, no, evaluation=False, final_xy=final, tracking_fraction=torch.zeros(count))
     assert mix.stair_rows.levels[[0, 1, 3, 4]].tolist() == [1, 0, 2, 1]
     restored = MixedTerrainRuntime(cfg, count, "cpu")

@@ -151,19 +151,11 @@ stages:
         clearance_m: null  # footprint safety margin for certifying platform entry/exit, NOT a map boundary
       # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
       groups: {rough: 0.05, grid: 0.10, slope: 0.10, stairs: 0.45}
-      pyramid: {share_of_stairs: 1.0}  # 45% full positive, 45% full inverted, 10% reverse half descent
       stair_lip: {height_m: 0.05, width_m: 0.10}  # depth along travel
       free_map:
         edge_margin_m: 0.5
         command_limits:
           slope: {vx_abs_max_m_s: 2.0, wz_abs_max_rad_s: 3.141592653589793}
-      stair_weights:
-        single_up: 0.20
-        double_up: 0.60
-        triple_up: 0.20
-        single_down: 0.20
-        double_down: 0.60
-        triple_down: 0.20
       profiles:
         flat:
           row_range: null
@@ -194,65 +186,25 @@ stages:
           row_range: [0, 9]
           command_mode: free
           geometry: {spawn_x_m: null, ground_thickness_m: null, slope_angle_range_rad: [0.0, 0.4363323129985824]}
-        single_up:
-          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
+        pyramid_up:
+          row_range: [0, 9]
           command_mode: traverse
-          exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
-            spawn_x_m: null
+            spawn_x_m: null       # spawn location not confirmed
             ground_thickness_m: null
-            first_edge_x_m: null
-            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            first_edge_x_m: null   # minimum outer flat apron, not spawn-to-edge travel
+            platform_width_m: 4.0
+            step_width_m: 0.30
             step_height_range_m: [0.10, 0.23]
-        double_up:
-          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
+        pyramid_down:
+          row_range: [0, 9]
           command_mode: traverse
-          exit_distance_m: null  # Along +X, measured from this tile spawn.
           geometry:
             spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
-            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [0.10, 0.23]
-        single_down:
-          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
-          command_mode: traverse
-          exit_distance_m: null  # Along +X, measured from this tile spawn.
-          geometry:
-            spawn_x_m: null
-            ground_thickness_m: null
-            first_edge_x_m: null
-            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [0.10, 0.23]
-        double_down:
-          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
-          command_mode: traverse
-          exit_distance_m: null  # Along +X, measured from this tile spawn.
-          geometry:
-            spawn_x_m: null
-            ground_thickness_m: null
-            first_edge_x_m: null
-            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [0.10, 0.23]
-        triple_up:
-          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
-          command_mode: traverse
-          exit_distance_m: null  # Along +X, measured from this tile spawn.
-          geometry:
-            spawn_x_m: null
-            ground_thickness_m: null
-            first_edge_x_m: null
-            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
-            step_height_range_m: [0.10, 0.23]
-        triple_down:
-          row_range: [0, 9]  # stair rows, including the full 23 cm outer riser
-          command_mode: traverse
-          exit_distance_m: null  # Along +X, measured from this tile spawn.
-          geometry:
-            spawn_x_m: null
-            ground_thickness_m: null
-            first_edge_x_m: null
-            step_width_m: 0.30  # UC figure 4-17 tread run, not the lane width
+            platform_width_m: 4.0
+            step_width_m: 0.30
             step_height_range_m: [0.10, 0.23]
     progress_weight: null
     stuck_weight: null

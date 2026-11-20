@@ -7,7 +7,14 @@ import numpy as np
 import pytest
 import torch
 
-from wheelleg.shu_terrain import MIXED_COLUMN_PROFILES, MIXED_PROFILES, STAIR_PROFILES, MixedTerrainRuntime
+from wheelleg.shu_terrain import (
+    MIXED_COLUMN_PROFILES,
+    MIXED_PROFILES,
+    STAIR_PROFILES,
+    MixedTerrainRuntime,
+    mixed_columns,
+    natural_pyramid_layout,
+)
 
 
 @pytest.fixture
@@ -86,9 +93,9 @@ def test_generator_pairs_difficulties_and_slope_mesh_reaches_25_degrees(terrain_
     gen._get_terrain_mesh = lambda difficulty, cfg: (difficulty, None)
     gen._add_sub_terrain = lambda difficulty, _origin, row, col, _cfg: pairs.update({(col, row): difficulty})
     gen._generate_curriculum_terrains()
-    for col in range(4, 10):
+    for col in range(4, 6):
         for row in range(10):
-            assert pairs[col, row] == pairs[col + 6, row]
+            assert pairs[col, row] == pairs[col + 2, row]
             if row in (0, 9):
                 assert pairs[col, row] == (1.0 if row == 9 else 0.0)
             else:
@@ -106,16 +113,21 @@ def settings():
     return dict(
         rows=3,
         tile_size_m=(12.0, 12.0),
-        route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2),
+        route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2, reverse_descent_share_of_stairs=0.1),
         stair_lip=dict(height_m=0.05, width_m=0.10),
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
-        stair_weights={name: 0.6 if name.startswith("double") else 0.2 for name in STAIR_PROFILES},
         profiles={
             name: dict(
                 row_range=[0, 2],
                 command_mode="traverse" if name in STAIR_PROFILES else "free",
-                exit_distance_m=3.0,
-                geometry=dict(spawn_x_m=1.0, first_edge_x_m=2.0, step_width_m=0.30),
+                geometry=dict(
+                    spawn_x_m=1.0,
+                    ground_thickness_m=0.1,
+                    first_edge_x_m=1.4,
+                    step_width_m=0.30,
+                    step_height_range_m=(0.10, 0.23),
+                    platform_width_m=4.0,
+                ),
             )
             for name in MIXED_PROFILES
         },
@@ -125,8 +137,20 @@ def settings():
 def test_lip_coin_is_independent_of_curriculum_and_eval_does_not_advance_rows():
     torch.manual_seed(5)
     count = 12000
-    mix = MixedTerrainRuntime(settings(), count, "cpu")
-    rows, cols = 3, len(MIXED_COLUMN_PROFILES)
+    cfg = settings()
+    columns = mixed_columns(cfg, production=True)
+    assert columns == [
+        ("flat", False, False),
+        ("rough", False, False),
+        ("grid", False, False),
+        ("slope", False, False),
+        ("pyramid_up", False, True),
+        ("pyramid_down", False, True),
+        ("pyramid_up", True, True),
+        ("pyramid_down", True, True),
+    ]
+    mix = MixedTerrainRuntime(cfg, count, "cpu")
+    rows, cols = 3, len(columns)
     terrain = SimpleNamespace(
         terrain_origins=torch.arange(rows * cols * 3, dtype=torch.float32).reshape(rows, cols, 3),
         terrain_levels=torch.zeros(count, dtype=torch.long),
@@ -136,26 +160,23 @@ def test_lip_coin_is_independent_of_curriculum_and_eval_does_not_advance_rows():
     ids = torch.arange(count)
     no = torch.zeros(count, dtype=torch.bool)
 
-    def check_draws(active):
+    def check_draws():
         histogram = terrain.terrain_types.bincount(minlength=cols)
         assert histogram.sum() == count
-        for col in range(4, 10):
-            sharp, lip = histogram[col], histogram[col + 6]
-            if col in active:
-                assert (lip / (sharp + lip)).item() == pytest.approx(0.5, abs=0.06)
-            else:
-                assert sharp + lip == 0
+        for col in range(4, 6):
+            sharp, lip = histogram[col], histogram[col + 2]
+            assert (lip / (sharp + lip)).item() == pytest.approx(0.5, abs=0.06)
         torch.testing.assert_close(
             terrain.env_origins, terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
         )
         torch.testing.assert_close(mix.traverse, terrain.terrain_types >= 4)
 
     mix.reset(terrain, ids, no, no, evaluation=False)
-    check_draws(range(4, 10))
+    check_draws()
     torch.testing.assert_close(terrain.terrain_levels[mix.traverse], mix.stair_rows.levels[mix.traverse])
     before = mix.stair_rows.levels.clone()
     mix.reset(terrain, ids, ~no, no, evaluation=True)
-    check_draws(range(4, 10))
+    check_draws()
     torch.testing.assert_close(mix.stair_rows.levels, before)
     assert (terrain.terrain_levels == 2).all()
 
@@ -167,28 +188,48 @@ def test_unconfirmed_lip_depth_is_not_replaced_with_a_default():
         MixedTerrainRuntime(cfg, 1, "cpu")
 
 
-@pytest.mark.parametrize("down", [False, True])
+@pytest.mark.parametrize("name", STAIR_PROFILES)
 @pytest.mark.parametrize("lip", [None, (0.05, 0.10)])
-def test_double_pyramid_crosses_four_main_risers(terrain_module, down, lip):
-    mesh = terrain_module._pyramid_mesh((12, 12), 3, 0.30, 2, 0.23, down, 0.10, lip)
+@pytest.mark.parametrize("size,border,counts", [((12, 12), 2.0, (7, 7)), ((12, 8), 1.4, (3, 2))])
+def test_natural_pyramid_has_exact_clear_center_and_full_riser_pitch(terrain_module, name, lip, size, border, counts):
+    geometry = settings()["profiles"][name]["geometry"]
+    geometry["first_edge_x_m"] = border
+    cfg = SimpleNamespace(size=size, profile=name, parameters=geometry, stair_lip=lip)
+    (mesh,), origin = terrain_module.mixed_terrain(1.0, cfg)
     assert mesh.is_watertight and mesh.is_winding_consistent and mesh.volume > 0
-    # Probe horizontal faces on the central traverse, slightly off triangulation diagonals.
-    top = mesh.face_normals[:, 2] > 0.999
+    sx, sy = size
+    down = name == "pyramid_down"
+    count = counts[lip is not None]
+    assert origin == pytest.approx((1.0, sy / 2, 0.0))
 
-    def height(x):
-        for tri in mesh.triangles[top]:
-            a, b, c = tri[:, :2]
-            uv = np.linalg.solve(np.stack((b - a, c - a), axis=1), np.array([x, 6.015]) - a)
-            if min(uv) >= 0 and sum(uv) <= 1:
-                return tri[0, 2]
-        raise AssertionError(x)
-
-    h = 0.18 if lip else 0.23
+    # Measure both the actual top cap and the principal X risers, not just the layout inputs.
+    cap = mesh.triangles[-2:].reshape(-1, 3)
+    assert tuple(cap[:, :2].min(axis=0)) == (sx / 2 - 2.0, sy / 2 - 2.0)
+    assert tuple(cap[:, :2].max(axis=0)) == (sx / 2 + 2.0, sy / 2 + 2.0)
     sign = -1 if down else 1
-    pos = 3.08 if down else 3.20  # outside lip on first tread
-    assert [height(x) for x in (1, pos, 6, 12 - pos, 11)] == pytest.approx([0, sign * h, sign * 2 * h, sign * h, 0])
-    assert height(6) == pytest.approx(sign * 2 * h)
-    assert height(1) == height(11) == 0
+    assert cap[:, 2] == pytest.approx(np.full(6, sign * count * (0.18 if lip else 0.23)))
+    centers, normals = mesh.triangles_center, mesh.face_normals
+    internal_wall = (np.abs(normals[:, 0]) > 0.999) & (centers[:, 0] > 0) & (centers[:, 0] < sx)
+    principal = internal_wall & (np.sign(normals[:, 0] * (centers[:, 0] - sx / 2)) == sign)
+    edges = np.unique(np.round(centers[principal & (centers[:, 0] < sx / 2), 0], 8))
+    assert len(edges) == count
+    np.testing.assert_allclose(np.diff(edges), 0.30)
+    for x in edges:
+        assert np.ptp(mesh.triangles[principal & np.isclose(centers[:, 0], x), :, 2]) == pytest.approx(0.23)
     if lip:
-        for edge in (3, 3.30, 8.70, 9):
-            assert abs(height(edge - 0.001) - height(edge + 0.001)) == pytest.approx(0.23)
+        lip_edges = np.unique(np.round(centers[internal_wall & ~principal & (centers[:, 0] < sx / 2), 0], 8))
+        assert lip_edges == pytest.approx(edges + sign * lip[1])
+
+    first_obstruction_x = centers[internal_wall, 0].min()
+    actual_apron_short_axis = first_obstruction_x - (sx - min(size)) / 2
+    assert border - 1e-8 <= actual_apron_short_axis < border + 0.30
+
+
+def test_pending_border_and_tile_with_no_room_for_riser_fail_clearly():
+    geometry = settings()["profiles"]["pyramid_up"]["geometry"]
+    geometry["first_edge_x_m"] = None
+    with pytest.raises(ValueError, match="first_edge_x_m"):
+        natural_pyramid_layout((12, 12), geometry, down=False, lip_width_m=0.1)
+    geometry["first_edge_x_m"] = 3.95
+    with pytest.raises(ValueError, match="cannot fit a riser"):
+        natural_pyramid_layout((12, 12), geometry, down=False, lip_width_m=0.1)
