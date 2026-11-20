@@ -176,8 +176,9 @@ class JumpSim(WheelLegSim):
         self.peak_rise_m = 0.0
 
     def observation_mode(self) -> np.ndarray:
-        # Commands.mode for p3-jump: first four slots stay zero even on obstacle test sites.
+        # Match Commands.mode for p3-jump, including on obstacle test sites.
         mode = np.zeros(7)
+        mode[0] = 1.0
         active = bool(self.jump.active[0])
         mode[4:] = [
             float(active),

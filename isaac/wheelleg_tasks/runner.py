@@ -31,6 +31,7 @@ class WheelLegRunner(OnPolicyRunner):
             contract["jump_event_features"] = JUMP_FEATURES + (TUNNEL_FEATURES if cfg.task == "p3-tunnel" else 0)
             contract["jump_event_stage"] = mutable(cfg.stage)
             if cfg.task == "p3-jump" and "moving_probability" in cfg.stage:
+                contract["flat_jump_mode_revision"] = 1
                 contract["flat_jump_curriculum_revision"] = 2
                 contract["jump_height_progress_weight"] = cfg.settings["rewards"].get("jump_height_progress", 0.0)
         if cfg.task == "p3-tunnel" and "obstacle_fraction" in cfg.stage["tunnel"]:

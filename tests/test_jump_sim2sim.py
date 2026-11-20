@@ -131,7 +131,7 @@ def test_p3_observation_matches_training_tensor_and_actor(playground):
     command = np.array([-0.5, 0.0, 0.7])
     height = player.body_height_m
     mode = sim.observation_mode()
-    np.testing.assert_allclose(mode[:4], 0)
+    np.testing.assert_allclose(mode[:4], [1, 0, 0, 0])
     np.testing.assert_allclose(mode[4:], [1, 0.15 * sim.cfg.scales["height"], 0.25])
     fields = dict(
         command=command,

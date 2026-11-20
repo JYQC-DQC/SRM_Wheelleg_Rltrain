@@ -283,6 +283,9 @@ class Commands:
             relative = self.reference_yaw - yaw
             mode[:, 5], mode[:, 6] = relative.sin(), relative.cos()
         else:
+            if self.cfg.task == "p3-jump":
+                # Preserve the P1 ground input throughout the jump event.
+                mode[:, 0] = 1
             if self.cfg.task == "p3-tunnel":
                 mode[:, 0] = (-yaw).sin()
                 mode[:, 1] = (-yaw).cos()

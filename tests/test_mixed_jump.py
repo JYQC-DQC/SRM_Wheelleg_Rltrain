@@ -182,6 +182,22 @@ def test_no_takeoff_cannot_receive_landing_success():
     assert not jump.landing_paid.item()
 
 
+def test_flat_jump_mode_preserves_ground_input_across_jump_event():
+    cfg = load_training(
+        "p3-jump", ROOT / "config/reference/scut_robot.template.yaml", ROOT / "config/reference/scut_p3.yaml"
+    )
+    commands = Commands(cfg, 1, "cpu")
+    zero = torch.zeros(1)
+    height = torch.tensor([0.15])
+    phase = torch.tensor([0.25])
+    for active in (zero, torch.ones(1), zero):
+        mode = commands.mode(zero, zero, zero, active, height, phase)
+        torch.testing.assert_close(mode[0, :4], torch.tensor([1.0, 0, 0, 0]))
+        torch.testing.assert_close(mode[:, 4], active)
+        torch.testing.assert_close(mode[:, 5], height * cfg.policy.height_scale * active)
+        torch.testing.assert_close(mode[:, 6], phase * active)
+
+
 def test_staged_commands_and_evaluation_separate_stationary_moving_and_beam():
     from wheelleg.evaluation import evaluation_cases
 
