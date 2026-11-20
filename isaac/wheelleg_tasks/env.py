@@ -671,8 +671,8 @@ class WheelLegEnv(DirectRLEnv):
             self.extras["stairs"] = {
                 "traverse": mix.traverse.clone(),
                 "reverse_descent": mix.reverse_descent.clone(),
-                "reverse_half_completed": (mix.reverse_descent & mix.reached_center).clone(),
-                "full_crossed": mix.crossed.clone(),
+                "reverse_descent_completed": mix.reverse_completed.clone(),
+                "forward_outward_completed": mix.crossed.clone(),
             }
         if self.jump is not None:
             self.extras["jump"] = {

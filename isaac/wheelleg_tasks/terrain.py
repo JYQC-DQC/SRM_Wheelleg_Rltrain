@@ -47,7 +47,7 @@ def _closed_stair_mesh(edges, tops, bottom, width) -> trimesh.Trimesh:
     return mesh
 
 
-def _pyramid_mesh(size, layout, height, down, ground, lip):
+def _pyramid_mesh(size, layout, height, down, ground, lip) -> tuple[trimesh.Trimesh, float]:
     """Watertight rectangular rings, including an optional raised rim on each high tread."""
     sx, sy = size
     lift, depth = lip or (0.0, 0.0)
@@ -79,7 +79,7 @@ def _pyramid_mesh(size, layout, height, down, ground, lip):
             faces.extend(((a, b, b + 4), (a, b + 4, a + 4)))
     t = len(vertices) - 4
     faces.extend(((t, t + 1, t + 2), (t, t + 2, t + 3)))
-    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False), z
 
 
 def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
@@ -88,7 +88,6 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     p, kind = cfg.parameters, cfg.profile
     if kind not in MIXED_PROFILES and kind not in LEGACY_PROFILES:
         raise ValueError(f"Unknown SHU mixed terrain profile: {kind}")
-    spawn_x = p["spawn_x_m"]
     ground = p["ground_thickness_m"]
     meshes = []
 
@@ -101,11 +100,10 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         down = kind.endswith("_down")
         depth = cfg.stair_lip[1] if cfg.stair_lip else 0.0
         layout = natural_pyramid_layout(cfg.size, p, down=down, lip_width_m=depth)
-        if spawn_x is None or not 0 <= spawn_x < sx / 2 - layout.obstacle_half_width_m:
-            raise ValueError(f"{kind}: pyramid spawn must precede the first obstruction")
         height = p["step_height_range_m"][0] + difficulty * np.ptp(p["step_height_range_m"])
-        mesh = _pyramid_mesh(cfg.size, layout, height, down, ground, cfg.stair_lip)
-        return [mesh], np.array((spawn_x, sy / 2, 0.0))
+        mesh, deck_z = _pyramid_mesh(cfg.size, layout, height, down, ground, cfg.stair_lip)
+        return [mesh], np.array((sx / 2, sy / 2, deck_z))
+    spawn_x = p["spawn_x_m"]
     if kind.endswith(("_up", "_down")):
         count = LEGACY_STEP_COUNTS[kind.split("_")[0]]
         down = kind.endswith("_down")

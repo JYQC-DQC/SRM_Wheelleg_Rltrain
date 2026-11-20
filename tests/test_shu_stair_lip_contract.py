@@ -20,7 +20,7 @@ def p1_terrain():
         if profile["row_range"] is None:
             profile["row_range"] = [0, settings["rows"] - 1]
         if name in STAIR_PROFILES:
-            profile["geometry"].update(spawn_x_m=1.0, first_edge_x_m=3.0, ground_thickness_m=0.10)
+            profile["geometry"].update(first_edge_x_m=3.0, ground_thickness_m=0.10)
     return settings
 
 
@@ -47,8 +47,9 @@ def test_shipped_p1_mix_samples_both_variants_in_each_tower_task_and_direction(p
     stair = profile >= 0
     assert torch.equal(stair, pyramid.bool())
     assert stair.float().mean().item() == pytest.approx(0.45, abs=0.02)
-    up = profile == STAIR_PROFILES.index("pyramid_up")
-    for task, share in ((up, 0.45), (stair & ~up & ~mix.reverse_descent, 0.45), (mix.reverse_descent, 0.10)):
+    raised = profile == STAIR_PROFILES.index("pyramid_up")
+    assert not (mix.reverse_descent & ~raised).any()
+    for task, share in ((stair & ~raised, 0.45), (raised & ~mix.reverse_descent, 0.45), (mix.reverse_descent, 0.10)):
         assert task.sum().item() / stair.sum().item() == pytest.approx(share, abs=0.02)
         assert lip[task].float().mean().item() == pytest.approx(0.50, abs=0.05)
 
@@ -76,13 +77,19 @@ def test_shipped_p1_tower_grid_keeps_every_raised_ring(terrain_module, p1_terrai
     assert len(generator.cfg.sub_terrains) == 4
     assert generator.cfg.num_rows == 10
     generator.np_rng = np.random.default_rng(42)
-    generator._get_terrain_mesh = lambda difficulty, cfg: (
-        terrain_module.mixed_terrain(difficulty, cfg)[0][0],
-        difficulty,
-    )
+
+    def get_mesh(difficulty, cfg):
+        (mesh,), center_origin = terrain_module.mixed_terrain(difficulty, cfg)
+        return mesh, (difficulty, center_origin)
+
+    generator._get_terrain_mesh = get_mesh
     heights = {}
 
-    def check_row(mesh, difficulty, row, _col, cfg):
+    def check_row(mesh, origin_and_difficulty, row, _col, cfg):
+        difficulty, origin = origin_and_difficulty
+        assert tuple(origin[:2]) == (sx / 2, sy / 2)
+        np.testing.assert_array_equal(mesh.triangles[-2:, :, 2], origin[2])
+        assert (origin[2] > 0) if cfg.profile == "pyramid_up" else (origin[2] < 0)
         top = mesh.face_normals[:, 2] > 0.999
         centers = mesh.triangles_center[top]
         z = centers[:, 2]

@@ -121,7 +121,6 @@ def settings():
                 row_range=[0, 2],
                 command_mode="traverse" if name in STAIR_PROFILES else "free",
                 geometry=dict(
-                    spawn_x_m=1.0,
                     ground_thickness_m=0.1,
                     first_edge_x_m=1.4,
                     step_width_m=0.30,
@@ -200,7 +199,7 @@ def test_natural_pyramid_has_exact_clear_center_and_full_riser_pitch(terrain_mod
     sx, sy = size
     down = name == "pyramid_down"
     count = counts[lip is not None]
-    assert origin == pytest.approx((1.0, sy / 2, 0.0))
+    assert tuple(origin[:2]) == (sx / 2, sy / 2)
 
     # Measure both the actual top cap and the principal X risers, not just the layout inputs.
     cap = mesh.triangles[-2:].reshape(-1, 3)
@@ -208,6 +207,7 @@ def test_natural_pyramid_has_exact_clear_center_and_full_riser_pitch(terrain_mod
     assert tuple(cap[:, :2].max(axis=0)) == (sx / 2 + 2.0, sy / 2 + 2.0)
     sign = -1 if down else 1
     assert cap[:, 2] == pytest.approx(np.full(6, sign * count * (0.18 if lip else 0.23)))
+    np.testing.assert_array_equal(cap[:, 2], origin[2])
     centers, normals = mesh.triangles_center, mesh.face_normals
     internal_wall = (np.abs(normals[:, 0]) > 0.999) & (centers[:, 0] > 0) & (centers[:, 0] < sx)
     principal = internal_wall & (np.sign(normals[:, 0] * (centers[:, 0] - sx / 2)) == sign)

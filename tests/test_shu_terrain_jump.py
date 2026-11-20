@@ -1,10 +1,14 @@
+from math import pi
 from types import SimpleNamespace
 
 import pytest
 import torch
+from test_shu_commands import settings as command_settings
 from test_shu_mixed_variants import settings as pyramid_settings
+from test_shu_pyramid_routes import setup_routes
 
 from wheelleg.jump import JumpEvent, collision_bounds_w, tunnel_geometry
+from wheelleg.shu_commands import ShuCommands
 from wheelleg.shu_terrain import (
     LEGACY_PROFILES,
     LEGACY_STAIR_PROFILES,
@@ -76,7 +80,7 @@ def test_pyramid_runtime_progresses_rows_and_restores_state():
     ]
 
 
-def test_pure_route_can_return_from_side_excursion_but_not_finish_on_another_tile():
+def test_legacy_straight_route_can_return_from_side_excursion_but_not_finish_on_another_tile():
     count = 7
     mix = MixedTerrainRuntime(mixed_settings(), count, "cpu")
     terrain = SimpleNamespace(
@@ -99,9 +103,39 @@ def test_pure_route_can_return_from_side_excursion_but_not_finish_on_another_til
     mix.step(terrain, halfway, final, forward, failed_at_exit)
     assert mix.crossed.tolist() == [True, True, False, False, False, False, False]
     assert mix.reward_active.tolist() == [True, True, False, False, True, False, False]
-    # The crossing stays latched when braking/returning; no more progress or stuck while stopped.
+    assert not mix.reverse_completed.any()
+    # Only these legacy fixtures still stop driving when their forward crossing latches.
     mix.step(terrain, final, start, torch.zeros(count), no)
     assert mix.crossed[0] and not mix.route_open[0] and not mix.reward_active.any()
+
+
+def test_pyramid_forward_keeps_signed_drive_but_reverse_stops_after_landing():
+    mix, terrain, columns = setup_routes(3)
+    ids = torch.arange(3)
+    no = ids < 0
+    mix.traverse.fill_(True)
+    mix.reverse_descent[2] = True
+    terrain.terrain_types[:] = torch.tensor(
+        [columns.index((name, False, True)) for name in ("pyramid_down", "pyramid_up", "pyramid_up")]
+    )
+    cmd = ShuCommands.for_mixed(command_settings(), len(ids), "cpu", route=dict(vx_range_m_s=(1.0, 1.0)))
+    cmd.reset(ids, route=mix.traverse, reverse_descent=mix.reverse_descent)
+    yaw = torch.tensor([0.0, 0.2, pi - 0.2])
+    cmd.prepare(yaw, ~no, no, no, ids * 0, route_open=mix.route_open)
+    assert cmd.value[:, 0].sign().tolist() == [1, 1, -1]
+
+    center = terrain.env_origins.clone()
+    apron = center + torch.tensor([3.0, 0.4, 0.0])
+    wheels = torch.ones(3, 2, dtype=torch.bool)
+    mix.step(terrain, center, apron, cmd.value[:, 0] * yaw.cos(), no, ~wheels)
+    assert mix.route_open.all() and mix.reward_active.all()
+    mix.step(terrain, apron, apron, cmd.value[:, 0] * yaw.cos(), no, wheels)
+    cmd.prepare(yaw, ~no, no, no, ids * 0 + 1, route_open=mix.route_open)
+    assert cmd.value[:, 0].sign().tolist() == [1, 1, 0]
+    assert cmd.vx_active.tolist() == [True, True, False]
+    assert mix.crossed.tolist() == [True, True, False]
+    assert mix.reverse_completed.tolist() == [False, False, True]
+    assert not mix.reward_active.any()
 
 
 @pytest.mark.parametrize("exit_distance", [1.2, 6.8])

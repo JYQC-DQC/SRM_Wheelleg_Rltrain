@@ -4,7 +4,7 @@ import pytest
 import torch
 from test_shu_mixed_variants import settings
 
-from wheelleg.shu_terrain import STAIR_PROFILES, MixedTerrainRuntime, mixed_columns
+from wheelleg.shu_terrain import MixedTerrainRuntime, mixed_columns
 
 
 def setup_routes(count, *, reverse=0.1):
@@ -25,7 +25,7 @@ def setup_routes(count, *, reverse=0.1):
     return mix, t, columns
 
 
-def test_route_shares_are_of_all_stairs_not_just_inverted_towers():
+def test_route_shares_are_of_all_stairs_and_reverse_starts_on_raised_deck():
     torch.manual_seed(19)
     n = 30000
     mix, t, columns = setup_routes(n)
@@ -33,7 +33,7 @@ def test_route_shares_are_of_all_stairs_not_just_inverted_towers():
     no = ids < 0
     mix.reset(t, ids, no, no, evaluation=False)
     stair = mix.traverse
-    up, pyramid, lip = (
+    raised, pyramid, lip = (
         torch.tensor(mask)[t.terrain_types]
         for mask in (
             [name.endswith("_up") for name, _, _ in columns],
@@ -44,11 +44,11 @@ def test_route_shares_are_of_all_stairs_not_just_inverted_towers():
     reverse = mix.reverse_descent
     assert reverse.shape == (n,) and reverse.dtype == torch.bool
     assert torch.equal(stair, pyramid)
-    assert not (reverse & (~stair | up)).any()
+    assert not (reverse & (~stair | ~raised)).any()
     assert stair.float().mean().item() == pytest.approx(0.4, abs=0.015)
     for mode, share in [
-        (up & pyramid, 0.45),
-        (~up & pyramid & ~reverse, 0.45),
+        (~raised & pyramid, 0.45),
+        (raised & pyramid & ~reverse, 0.45),
         (reverse, 0.1),
     ]:
         assert mode[stair].float().mean().item() == pytest.approx(share, abs=0.015)
@@ -59,17 +59,19 @@ def test_route_shares_are_of_all_stairs_not_just_inverted_towers():
     for cohort in (ids[: n // 2], ids[n // 2 :]):
         assert set(t.terrain_types[cohort][mix.traverse[cohort]].tolist()) == {4, 5, 6, 7}
     assert set(t.terrain_types[mix.reverse_descent].tolist()) == {
-        i for i, (name, _, p) in enumerate(columns) if p and name.endswith("_down")
+        i for i, (name, _, p) in enumerate(columns) if p and name == "pyramid_up"
     }
 
 
-@pytest.mark.parametrize("name", STAIR_PROFILES)
+@pytest.mark.parametrize("name,reverse", [("pyramid_down", False), ("pyramid_up", False), ("pyramid_up", True)])
 @pytest.mark.parametrize("lip", [False, True])
-def test_grounded_platforms_in_order_not_x_lines_or_side_boundaries(name, lip):
+@pytest.mark.parametrize("exit_face", ["forward", "far_slant", "side", "corner", "back"])
+def test_center_to_outside_requires_safe_floor_landing_on_any_face(name, reverse, lip, exit_face):
     mix, t, columns = setup_routes(1)
     t.terrain_types[:] = columns.index((name, lip, True))
     t.env_origins[:] = t.terrain_origins[1, t.terrain_types]
     mix.traverse[:] = True
+    mix.reverse_descent[:] = reverse
     previous = t.env_origins.clone()
 
     def visit(x, y, *, grounded=True, vx=1.0, failed=False):
@@ -78,62 +80,94 @@ def test_grounded_platforms_in_order_not_x_lines_or_side_boundaries(name, lip):
         mix.step(t, previous, pos, torch.tensor([vx]), torch.tensor([failed]), torch.tensor([[grounded, False]]))
         previous = pos
 
-    # Center x=5 relative to spawn. Run around the side, far beyond the old lane.
-    visit(5, 5)
-    visit(10, 0)
-    assert mix.route_open.item() and not mix.reached_center.item()
-    visit(2.9, 0)  # inside the outer ring, but short of the safe center
-    assert not mix.reached_center.item()
-    center_y = 1.80  # exact half-platform minus route clearance, for all four columns
-    visit(5, center_y + 0.01)
-    assert not mix.reached_center.item()
-    visit(5, center_y - 0.01, grounded=False)
-    visit(5, center_y - 0.01, failed=True)
-    assert not mix.reached_center.item()
-    visit(5, center_y - 0.01, vx=-0.3)  # entry from +Y, independent of projected command
-    assert mix.reached_center.item() and not mix.reward_active.item() and mix.route_open.item()
+    visit(0, 0)
+    assert mix.reward_active.item() and mix.route_open.item()
+    assert not (mix.crossed | mix.reverse_completed).any()
+    outer = 2.4 if lip else 2.6
+    visit(outer + 0.19, 0)  # above the apron, but not yet clear of the obstruction
+    assert not (mix.crossed | mix.reverse_completed).any()
 
-    # Left outer deck, side deck, far corner, next tile: none is the opposite face's exit.
-    for x, y in [(0, 0), (6, 3), (10, 3), (12, 0)]:
-        visit(x, y)
-        assert not mix.crossed.item() and mix.route_open.item()
-    # Relative to spawn: center 5 + outer obstruction (2.4 lip / 2.6 ordinary) + 0.2 clearance.
-    far_x = 7.60 if lip else 7.80
-    visit(far_x - 0.01, 0)
-    visit(far_x + 0.01, 0, grounded=False)
-    visit(far_x + 0.01, 0, failed=True)
-    assert not mix.crossed.item()
-    visit(far_x + 0.01, 0)  # land in the accepted area; no second line crossing needed
-    assert mix.crossed.item() and not mix.route_open.item()
+    # The far slant has no narrow Y cap; the corner clears by its geometric
+    # distance to the square, even though neither axis alone clears by 0.20 m.
+    x, y = {
+        "forward": (outer + 0.21, 0.0),
+        "far_slant": (4.0, 3.5),
+        "side": (1.0, -outer - 0.21),
+        "corner": (outer + 0.15, outer + 0.15),
+        "back": (-outer - 0.21, 1.0),
+    }[exit_face]
+    visit(x, y, grounded=False)
+    assert mix.reward_active.item() and mix.route_open.item()
+    assert not (mix.crossed | mix.reverse_completed).any()
+    visit(x, y)  # landing; no second line crossing needed
+    assert mix.crossed.item() == (not reverse)
+    assert mix.reverse_completed.item() == reverse
+    assert mix.route_open.item() == (not reverse)
+    assert not mix.reward_active.any()
+    visit(0, 0)  # both outcomes latch and never resume scoring within this episode
+    assert mix.crossed.item() == (not reverse)
+    assert mix.reverse_completed.item() == reverse
+    assert not mix.reward_active.any()
 
 
-def test_half_route_stops_only_on_central_low_deck_never_counts_full_or_prerequisite():
-    mix, t, columns = setup_routes(2)
-    ids = torch.arange(2)
-    no = ids < 0
-    mix.reset(t, ids, no, no, evaluation=True)
-    t.terrain_types[:] = columns.index(("pyramid_down", True, True))
-    t.terrain_levels[:] = 1  # actually at the prerequisite's configured row
+def test_apron_rejects_stationary_birth_neighbor_reentry_and_failure():
+    mix, t, columns = setup_routes(1)
+    t.terrain_types[:] = columns.index(("pyramid_up", True, True))
     t.env_origins[:] = t.terrain_origins[1, t.terrain_types]
     mix.traverse[:] = True
-    mix.reverse_descent[:] = torch.tensor([True, False])
-    start = t.env_origins
-    center = start + torch.tensor([5, 0, 0])
-    end = start + torch.tensor([10, 0, 0])
-    speed = torch.ones(2)
-    wheels = torch.ones(2, 2, dtype=torch.bool)
+    apron = t.env_origins + torch.tensor([3.0, 0.0, 0.0])
+    near_riser = t.env_origins + torch.tensor([2.59, 0.0, 0.0])
+    near_border = t.env_origins + torch.tensor([3.0, 3.9, 0.0])
+    neighbor = t.env_origins + torch.tensor([3.0, 4.1, 0.0])
+    center = t.env_origins.clone()
+    speed, no = torch.ones(1), torch.zeros(1, dtype=torch.bool)
+    wheels = torch.ones(1, 2, dtype=torch.bool)
     with pytest.raises(ValueError, match="wheel_contact"):
-        mix.step(t, start, center, speed, no)
-    mix.step(t, start, center, speed, no, ~wheels)
-    assert mix.route_open.all()
-    mix.step(t, center, center, speed, no, wheels)
-    assert mix.route_open.tolist() == [False, True] and not mix.crossed.any()
-    mix.step(t, center, end, speed, no, wheels)
-    assert mix.crossed.tolist() == [False, True] and not mix.route_open.any()
-    mix.stair_rows.levels[:] = 0
-    mix.assigned[:] = True
-    mix.reset(t, ids[:1], ~no, no, evaluation=False, final_xy=center[:, :2], tracking_fraction=torch.zeros(2))
-    assert mix.reached_center.tolist() == [False, True] and mix.crossed.tolist() == [False, True]
-    mix.reset(t, ids[1:], ~no, no, evaluation=False, final_xy=end[:, :2], tracking_fraction=torch.zeros(2))
-    assert not mix.reached_center.any() and not mix.crossed.any()
-    assert mix.stair_rows.levels.tolist() == [1, 1]
+        mix.step(t, center, apron, speed, no)
+    for prev, pos, failed in (
+        (apron, apron, no),  # no outward entry
+        (center, near_border, no),  # too close to neighboring tile
+        (near_border, neighbor, no),
+        (neighbor, apron, no),  # re-entry is not an outward transition
+        (apron, near_riser, no),
+        (near_riser, apron, no),  # an apron-only loop after re-entry is not a traversal
+        (center, apron, ~no),  # support on a terminating step cannot certify completion
+    ):
+        mix.step(t, prev, pos, speed, failed, wheels)
+        assert not mix.crossed.any() and mix.route_open.item()
+    # On this same route valid geometry still counts, independently of command projection.
+    mix.step(t, center, apron, -speed, no, wheels)
+    assert mix.crossed.item() and mix.route_open.item() and not mix.reward_active.any()
+
+
+def test_only_landed_reverse_promotes_short_of_fudan_displacement():
+    mix, t, columns = setup_routes(6)
+    ids = torch.arange(6)
+    no = ids < 0
+    mix.reset(t, ids, no, no, evaluation=True)
+    t.terrain_types[:] = columns.index(("pyramid_up", True, True))
+    t.terrain_levels[:] = mix.stair_rows.levels[:] = 1
+    t.env_origins[:] = t.terrain_origins[1, t.terrain_types]
+    mix.traverse[:] = True
+    mix.reverse_descent[:] = ids >= 3
+    start = t.env_origins.clone()
+    apron = start + torch.tensor([3.0, 0.0, 0.0])
+    apron[-1] = start[-1]  # never left the center
+    speed = torch.ones(6)
+    wheels = torch.ones(6, 2, dtype=torch.bool)
+    mix.step(t, start, apron, speed, no, wheels)
+    assert mix.crossed.tolist() == [True, True, True, False, False, False]
+    assert mix.reverse_completed.tolist() == [False, False, False, True, True, False]
+    assert mix.route_open.tolist() == [True, True, True, False, False, True]
+    assert mix.reward_active.tolist() == [False, False, False, False, False, True]
+
+    final = apron.clone()
+    final[1, :2] = start[1, :2] + torch.tensor([6.0, 0.0])  # strict >6 m, not >=
+    final[2, :2] = start[2, :2] + torch.tensor([5.1, 3.3])  # continued forward drive, in-tile slant >6 m
+    mix.step(t, apron, final, speed, no, wheels)
+    assert mix.route_open[:3].all() and not mix.reward_active[:3].any()
+    failed = no.clone()
+    failed[4] = True  # a later failure forfeits the reverse extra promotion
+    mix.reset(t, ids, ~no, failed, evaluation=False, final_xy=final[:, :2], tracking_fraction=torch.full((6,), 0.5))
+    assert not (mix.crossed | mix.reverse_completed | mix.reward_active).any()
+    assert mix.stair_rows.levels.tolist() == [1, 1, 2, 2, 1, 1]

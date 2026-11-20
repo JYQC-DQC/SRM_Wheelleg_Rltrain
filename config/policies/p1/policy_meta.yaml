@@ -190,7 +190,6 @@ stages:
           row_range: [0, 9]
           command_mode: traverse
           geometry:
-            spawn_x_m: null       # spawn location not confirmed
             ground_thickness_m: null
             first_edge_x_m: null   # minimum outer flat apron, not spawn-to-edge travel
             platform_width_m: 4.0
@@ -200,7 +199,6 @@ stages:
           row_range: [0, 9]
           command_mode: traverse
           geometry:
-            spawn_x_m: null
             ground_thickness_m: null
             first_edge_x_m: null
             platform_width_m: 4.0

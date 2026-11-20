@@ -21,7 +21,9 @@ from wheelleg.shu_spawn import (
     sample_spawn,
     sample_spawn_kinds,
 )
-from wheelleg.shu_terrain import mixed_columns
+from wheelleg.shu_terrain import STAIR_PROFILES, mixed_columns
+
+PYRAMID_SPAWN_JITTER_M = 1.0
 
 
 def _exact(finder, names):
@@ -55,8 +57,6 @@ class ShuP1:
             route = terrain["route"]
             columns = mixed_columns(terrain)
             up, down = route["up_height_range_m"], route["down_height_range_m"]
-            shared = (max(up[0], down[0]), min(up[1], down[1]))
-            self.common_height_valid = shared[0] <= shared[1]
             self.down_height_bounds = env.raw_action.new_tensor(down)
             self.straight_spawn_probability = route["straight_spawn_probability"]
             self.max_spawn_yaw_offset_rad = route["max_spawn_yaw_offset_rad"]
@@ -64,16 +64,25 @@ class ShuP1:
                 raise ValueError("terrain.route.straight_spawn_probability must be in [0, 1]")
             if not 0 <= self.max_spawn_yaw_offset_rad <= pi:
                 raise ValueError("terrain.route.max_spawn_yaw_offset_rad must be in [0, pi]")
-            self.up_columns = torch.tensor(
+            self.pyramid_columns = torch.tensor([pyramid for _, _, pyramid in columns], device=dev)
+            if any(pyramid for _, _, pyramid in columns):
+                clearance_m = route["clearance_m"]
+                for name in STAIR_PROFILES:
+                    half_width_m = terrain["profiles"][name]["geometry"]["platform_width_m"] / 2
+                    if half_width_m - clearance_m < PYRAMID_SPAWN_JITTER_M:
+                        raise ValueError(f"{name}: center XY jitter does not fit the platform after route clearance")
+            # Center-out motion flips the direction implied by the outside-in pyramid names.
+            # Only legacy straight ascent holds height; every pyramid keeps its resampling clock.
+            self.hold_height_columns = torch.tensor(
                 [not pyramid and name.endswith("_up") for name, _, pyramid in columns], device=dev
             )
             self.birth_height_bounds = env.raw_action.new_tensor(
                 [
-                    shared
+                    (up if name == "pyramid_down" else down)
                     if pyramid
-                    else route["up_height_range_m"]
+                    else up
                     if name.endswith("_up")
-                    else route["down_height_range_m"]
+                    else down
                     if name.endswith("_down")
                     else cp["height_range_m"]
                     for name, _, pyramid in columns
@@ -154,20 +163,18 @@ class ShuP1:
         if mix is None:
             self.commands.reset(ids)
         else:
-            # Mixed ground starts: perturb during execution, not by seeding root velocity.
+            # Mixed ground starts have no seeded root or joint velocity.
             root[:, 7:13] = 0
             qd.zero_()
             traverse = mix.traverse[ids]
             reverse = mix.reverse_descent[ids]
             columns = env.terrain.terrain_types[ids]
             bounds = torch.where(reverse[:, None], self.down_height_bounds, self.birth_height_bounds[columns])
-            if not self.common_height_valid and (traverse & (bounds[:, 0] > bounds[:, 1])).any():
-                raise ValueError("No common calibrated standing height for the combined stair route")
             self.commands.reset(
                 ids,
                 route=traverse,
                 reverse_descent=reverse,
-                upstairs=self.up_columns[columns] & ~reverse,
+                upstairs=self.hold_height_columns[columns] & ~reverse,
                 birth_height_bounds=bounds,
             )
             # Write the route incidence angle into the actual upright root pose (wxyz).
@@ -178,6 +185,12 @@ class ShuP1:
             half_yaw = (reverse_route.to(root.dtype) * pi + offset) / 2
             zeros = torch.zeros_like(half_yaw)
             root[traverse, 3:7] = torch.stack((half_yaw.cos(), zeros, zeros, half_yaw.sin()), dim=-1)
+            # Anchor XY to the deck center, independent of the asset's default XY offset.
+            # Root Z already includes the signed deck elevation from env_origins.
+            center_birth = traverse & self.pyramid_columns[columns]
+            center_xy = env.terrain.env_origins[ids[center_birth], :2]
+            jitter = torch.rand_like(center_xy)
+            root[center_birth, :2] = center_xy + (2 * jitter - 1) * PYRAMID_SPAWN_JITTER_M
         preset = air = torch.zeros(len(ids), dtype=torch.bool, device=env.device)
         if self.spawn_cfg is not None:
             kinds = sample_spawn_kinds(
