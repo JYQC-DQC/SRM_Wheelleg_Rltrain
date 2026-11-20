@@ -20,7 +20,7 @@ def p1_terrain():
         if profile["row_range"] is None:
             profile["row_range"] = [0, settings["rows"] - 1]
         if name in STAIR_PROFILES:
-            profile["geometry"].update(first_edge_x_m=3.0, ground_thickness_m=0.10)
+            profile["geometry"]["ground_thickness_m"] = 0.10
     return settings
 
 
@@ -116,6 +116,11 @@ def test_shipped_p1_tower_grid_keeps_every_raised_ring(terrain_module, p1_terrai
         expected_normal = -1 if direction == "up" else 1
         principal = np.unique(np.round(mesh.triangles_center[wall & (normals[:, 0] * expected_normal > 0.999), 0], 8))
         count = len(principal)
+        assert cfg.parameters["first_edge_x_m"] == pytest.approx(0.60)
+        assert count == 12
+        outer_obstruction_x = principal[0] - (depth if cfg.stair_lip is not None and direction == "down" else 0)
+        assert outer_obstruction_x == pytest.approx(0.60 if cfg.stair_lip is not None else 0.70)
+
         assert count >= 2 and len(positions) == count * (2 if cfg.stair_lip is not None else 1)
         np.testing.assert_allclose(np.diff(principal), tread, atol=1e-6)
         start = principal[0]
