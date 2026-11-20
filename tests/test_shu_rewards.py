@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from wheelleg.shu_rewards import AIR, CATCH, DRIVE, RELEASE, RISE, shu_reward_terms
+from wheelleg.shu_rewards import AIR, CATCH, DRIVE, RELEASE, RISE, air_wheel_height_reward, shu_reward_terms
 
 _DT = 0.01
 
@@ -58,6 +58,15 @@ def assert_rates(terms, **rates):
     for key, values in rates.items():
         expected = torch.as_tensor(values, dtype=terms[key].dtype) * _DT
         torch.testing.assert_close(terms[key], expected, rtol=1e-10, atol=1e-12, msg=key)
+
+
+def test_air_wheel_height_uses_higher_wheel_cap_and_stops_on_first_touch():
+    phase = torch.tensor([AIR, AIR, AIR, CATCH, DRIVE, RELEASE, RISE])
+    z = torch.tensor([[-0.25, -0.4], [-0.4, -0.25], [-0.20, -0.40]] + [[-0.25, -0.40]] * 4)
+    cmd = torch.tensor([0.20, 0.45, 0.20] + [0.20] * 4)
+    got = air_wheel_height_reward(z, 0.05, cmd, 0.10, 0.30, phase, _DT)
+    expect = torch.tensor([1, 1, math.exp(-(0.05**2) / 0.001), 0, 0, 0, 0]) * _DT
+    torch.testing.assert_close(got, expect)
 
 
 def test_phase_switches_and_release():

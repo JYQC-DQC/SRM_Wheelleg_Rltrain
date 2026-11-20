@@ -130,6 +130,8 @@ stages:
     error_floor: [0.10, 0.10, 0.05]  # vx (m/s), yaw (rad/s), height (m); grading, not reward dead zones
     relative_error: [0.25, 0.25, 0.0]
   landing:
+    air_wheel_height_bias_m: null  # calibrate with SHU leg workspace and wheel radius
+    air_wheel_height_max_m: null   # root to highest wheel bottom, measured vertically
     disturbance_phase: 1
     height_edges_m: [null, null, null, null, 0.45]  # provisional H4; confirm all five on the actual chassis
   stairs:

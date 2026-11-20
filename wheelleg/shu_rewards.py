@@ -9,6 +9,13 @@ DRIVE, AIR, CATCH, RISE, RELEASE = range(5)
 _LEGS = (0, 1, 3, 4)  # LF, LR, LW, RF, RR, RW (docs/INTERFACE.md)
 
 
+def air_wheel_height_reward(relative_wheel_z, wheel_radius, height_cmd, bias, ceiling, reward_phase, dt):
+    """SCUT tight kernel in world vertical, only before first touch; no absolute altitude or leg IK target."""
+    actual = wheel_radius - relative_wheel_z.amax(dim=-1)
+    target = (height_cmd + bias).clamp_max(ceiling)
+    return torch.where(reward_phase == AIR, torch.exp(-(actual - target).square() / 0.001) * dt, 0.0)
+
+
 def motion_bonus(target, error, maximum, knee):
     speed = target.abs()
     relative = error / torch.where(speed > 0, speed, 1.0)

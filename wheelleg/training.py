@@ -97,7 +97,7 @@ _SHU_SPAWN = (
 )
 _SHU_STAGE = {
     "p1-flat": ("recovery_probability", "min_segments", "initial_fraction", "error_floor", "relative_error"),
-    "p1-landing": ("height_edges_m",),
+    "p1-landing": ("height_edges_m", "air_wheel_height_bias_m", "air_wheel_height_max_m"),
     "p2-spin": ("spin_rates_rad_s", "spin_probabilities", "center_drift_tolerance_m"),
     "p3-jump": (
         "height_range_m",
@@ -674,6 +674,11 @@ def _validate_shu(cfg: TrainingConfig) -> None:
                     raise ValueError("flat.min_segments must be positive integers")
                 if key == "initial_fraction" and (type(x) not in (float, int) or not 0 < x <= 1):
                     raise ValueError("flat.initial_fraction must be in (0,1]")
+    if cfg.task == "p1-landing":
+        for key in ("air_wheel_height_bias_m", "air_wheel_height_max_m"):
+            value = cfg.stage.get(key)
+            if value is not None and (type(value) not in (int, float) or not isfinite(value) or value <= 0):
+                raise ValueError(f"landing.{key}: expected finite positive metres or null")
     if cfg.task == "p1-landing" and cfg.stage.get("height_edges_m") is not None:
         edges = _values(cfg.stage["height_edges_m"], "height_edges_m", 5)
         if any(x < 0 for x in edges) or any(a >= b for a, b in zip(edges, edges[1:])):

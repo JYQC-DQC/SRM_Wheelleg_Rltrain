@@ -8,7 +8,7 @@ from wheelleg.shu_curriculum import AirHeightCurriculum, FlatCommandCurriculum
 from wheelleg.shu_landing import ShuLanding
 from wheelleg.shu_logging import ShuLandingLog
 from wheelleg.shu_map import ShuFreeMap
-from wheelleg.shu_rewards import DRIVE, RELEASE, RISE, shu_reward_terms
+from wheelleg.shu_rewards import DRIVE, RELEASE, RISE, air_wheel_height_reward, shu_reward_terms
 from wheelleg.shu_spawn import AIR as AIR_BIRTH
 from wheelleg.shu_spawn import (
     ORDINARY,
@@ -272,6 +272,17 @@ class ShuP1:
         )
         self.params["height_fraction"] = c.fraction
         terms = shu_reward_terms(s, ev.reward_phase, self.params, e.step_dt)
+        if self.stage == "p1-landing":
+            cfg = e.training
+            terms["air_wheel_height"] = air_wheel_height_reward(
+                rel[:, :, 2],
+                cfg.shared["wheel_radius_m"],
+                c.height[:, 0],
+                cfg.stage["air_wheel_height_bias_m"],
+                cfg.stage["air_wheel_height_max_m"],
+                ev.reward_phase,
+                e.step_dt,
+            )
         terms.update(ev.event_terms)
         terms["termination"] = -4.0 * ev.physical_failure.float()
         self.prev_qd.copy_(qd)

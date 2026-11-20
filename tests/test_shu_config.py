@@ -71,6 +71,8 @@ def test_shu_stage_scope(tmp_path):
         assert ("robot.asset.shu_leg_reset_joint_names[0]" in missing) == (task != "p1-stairs")
         assert ("policy.stages.flat.min_segments" in missing) == (task == "p1-flat")
         assert ("policy.stages.landing.height_edges_m[0]" in missing) == (task == "p1-landing")
+        for key in ("air_wheel_height_bias_m", "air_wheel_height_max_m"):
+            assert (f"policy.stages.landing.{key}" in missing) == (task == "p1-landing")
         assert not any("states_npz" in key or ".evaluation." in key for key in missing)
         with pytest.raises(ValueError, match="Training is not ready"):
             cfg.require_ready()
@@ -101,6 +103,8 @@ def test_real_p2_p3_templates_block_unmeasured(task, required):
         ("p1-flat", "min_segments", 0),
         ("p1-flat", "error_floor", [0, 1]),
         ("p1-landing", "height_edges_m", [0, None, 0.4, 0.3, 0.45]),
+        ("p1-landing", "air_wheel_height_bias_m", -0.1),
+        ("p1-landing", "air_wheel_height_max_m", 0),
         ("p2-spin", "spin_rates_rad_s", [-19, 19]),
     ],
 )

@@ -309,6 +309,8 @@ def make_runtime(runtime, stage, proof=None):
             error_floor=[0.2] * 3,
             relative_error=[0.1] * 3,
             height_edges_m=[0.05, 0.12, 0.2, 0.3, 0.45],
+            air_wheel_height_bias_m=0.05,
+            air_wheel_height_max_m=0.30,  # synthetic geometry only
         ),
         settings=dict(commands=commands, shu_rewards=rewards, episode_length_s=20.0),
         asset=dict(shu_leg_reset_joint_names=LEG_JOINT_ORDER, guide_body_names=["guide"], leg_body_names=["leg"]),
