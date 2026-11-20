@@ -52,6 +52,8 @@ def shu_reward_terms(
     phase: torch.Tensor,
     parameters: Mapping[str, float | torch.Tensor],
     dt: float,
+    *,
+    terrain_masks: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Return weighted, individually clipped (where applicable), per-step terms of shape (N,).
 
@@ -64,6 +66,11 @@ def shu_reward_terms(
     including during RELEASE when every continuous payoff is zero.
     ``dt`` is the positive policy-step interval in seconds. Sum the returned values and
     add event payments separately; do not apply dt, weights or aggregate clipping again.
+
+    For P1 mixed only, ``terrain_masks`` is (nonflat, pyramid), a pair of (N,) bool
+    masks for the current surface, not the birth column or route flag. Pyramid is a
+    subset of nonflat. The mixed path also requires state["velocity"] (N,3), true
+    body root linear velocity [m/s]. Without masks use legacy flat/landing shaping.
 
     State (all tensors; scalar-per-env fields are (N,), not (N,1)):
         velocity_w, angular_velocity, gravity: (N,3), true world root linear velocity
@@ -141,13 +148,28 @@ def shu_reward_terms(
     )
     height_gate = motion_height_factor(h_error, p["height_gate_shape"])
 
+    gx, gy = s["gravity"][:, :2].unbind(-1)
+    tilt_sq = torch.where(air, 0.0, gx.square()) + gy.square()
+    tilt = -100.0 * tilt_sq
+    angular_xy_sq = wx.square() + wy.square()
+    angular_xy_rate = -0.20 * angular_xy_sq
+    # Only driving follows the height target derivative; AIR/CATCH penalize raw world vz.
+    vz_error = vz_w - torch.where(drive, s["height_target_rate"], 0.0)
+    vertical_rate = -vz_error.square()
+    fork_threshold = s["fork_threshold_enabled"]
+    if terrain_masks is not None:
+        nonflat, pyramid = terrain_masks
+        # A scan median can jump at a riser; don't use its change as a velocity target
+        # or let a pyramid riser suppress otherwise correct motion tracking.
+        vertical_rate = torch.where(nonflat, -0.10 * s["velocity"][:, 2].square(), vertical_rate)
+        angular_xy_rate = torch.where(nonflat, -0.05 * angular_xy_sq, angular_xy_rate)
+        tilt = torch.where(nonflat, -20.0 * tilt_sq, tilt)
+        height_gate = torch.where(pyramid, 1.0, height_gate)
+        fork_threshold = fork_threshold & ~pyramid
+
     def tracking(axis: str, target: torch.Tensor, error: torch.Tensor) -> torch.Tensor:
         return motion_bonus(target, error, p[f"{axis}_tol_max"], p[f"{axis}_tol_knee"]) * height_gate
 
-    gx, gy = s["gravity"][:, :2].unbind(-1)
-    tilt = -100.0 * (torch.where(air, 0.0, gx.square()) + gy.square())
-    # Only driving follows the height target derivative; AIR/CATCH penalize raw world vz.
-    vz_error = vz_w - torch.where(drive, s["height_target_rate"], 0.0)
     dx = s["wheel_x_b"][:, 0] - s["wheel_x_b"][:, 1]
     leg_contact, other_contact = s["leg_or_guide_contact"], s["other_undesired_contact"]
     contact_rate = torch.where(
@@ -169,11 +191,11 @@ def shu_reward_terms(
         "ang_vel_error": paid(torch.expm1(-wz_error.square() / p["wz_error_sigma"]), drive | rise) * steady_scale,
         "stand_still": paid(-horizontal_l1, (drive & ~vx_active) | rise) * steady_scale,
         "track_height": paid(height, drive),
-        "vertical_velocity": paid(-vz_error.square(), drive | drop),
-        "angular_xy": paid(-0.20 * (wx.square() + wy.square()), controlled),
+        "vertical_velocity": paid(vertical_rate, drive | drop),
+        "angular_xy": paid(angular_xy_rate, controlled),
         "orientation": paid(tilt, controlled) * torch.where(rise, 0.6, one),
         "no_fork_square": paid(-(5.0 * dx).square(), on_ground_terms),
-        "no_fork": paid(-(dx.abs() > 0.05).to(dx.dtype), drive & s["fork_threshold_enabled"]),
+        "no_fork": paid(-(dx.abs() > 0.05).to(dx.dtype), drive & fork_threshold),
         "undesired_contact": paid(contact_rate, on_ground_terms, -2.0, 0.0),
         **{
             name: paid(-cost * (1 if name in ("joint_torque", "leg_soft_limits") else smooth_scale), controlled)

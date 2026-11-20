@@ -317,7 +317,7 @@ def make_runtime(runtime, stage, proof=None):
     )
     e.commands_fixed, e.fixed_command = False, None
     e.extras, e.reward_sums = {}, {}
-    e.jump = e.scanner = e.mixed_curriculum = e.transition_states = None
+    e.jump = e.scanner = e.mixed_diagnostics = e.mixed_curriculum = e.transition_states = None
     e.sensor_counter = e.history_tick = -1
     e._sim_step_counter = 0
     e.spawn_checked = False

@@ -162,3 +162,46 @@ def test_route_rewards_penalize_yaw_rate_not_absolute_yaw(runtime):
     assert not offset_yaw["track_ang_vel"][route].any()
     assert (offset_yaw["ang_vel_error"][route] < 0).all()
     torch.testing.assert_close(actual_rate["ang_vel_error"][route], offset_yaw["ang_vel_error"][route])
+
+
+def test_mixed_route_diagnostics_settle_without_entering_ppo(runtime):
+    from wheelleg.shu_mixed_diagnostics import ShuMixedDiagnostics
+
+    e = stairs_runtime(runtime)
+    mix = e.mixed_curriculum
+    ids = torch.arange(e.num_envs)
+    cols = mixed_columns(e.training.stage["terrain"])
+    e.mixed_up_columns = torch.tensor([name == "pyramid_down" for name, _, _ in cols])
+    e.mixed_lip_columns = torch.tensor([lip for _, lip, _ in cols])
+    e.mixed_diagnostics = ShuMixedDiagnostics(
+        e.num_envs,
+        e.device,
+        wheels=e.contact_wheels,
+        guides=e.shu.event.guides,
+        body_count=len(e.contact.body_names),
+        step_dt=e.step_dt,
+        physics_dt=e.physics_dt,
+        contact_force_n=2.0,
+    )
+    mix.crossed = torch.zeros_like(mix.traverse)
+    mix.reverse_completed = torch.zeros_like(mix.traverse)
+    mix.step = Mock()
+    e._reset_idx(ids)
+    e.shu.observe_commands(e._measure()["yaw"])
+    e._sim_step_counter += 5
+    e.episode_length_buf += 1
+    e.contact.data.net_forces_w[:, e.contact_wheels, 2] = 20
+    e._get_dones()
+    mix.reverse_completed.copy_(
+        mix.reverse_descent
+    )  # supported arrival supplied by the separately tested route geometry
+    reward = e._get_rewards()
+    torch.testing.assert_close(reward, sum(e.reward_sums.values()))
+    assert not {"progress", "stuck", "stair_impact", "completion"}.intersection(e.reward_sums)
+    assert e.extras["stairs"]["reverse_descent_completed"].equal(mix.reverse_descent)
+    e.reset_time_outs[:] = True
+    e._reset_idx(ids)
+    stats = e.mixed_diagnostics.take()
+    assert sum(v for k, v in stats.items() if k.endswith("/episode_count")) == mix.traverse.sum().item()
+    assert sum(v for k, v in stats.items() if k.endswith("/completed_count")) == mix.reverse_descent.sum().item()
+    assert all(v == 1 for k, v in stats.items() if "/reverse_down/" in k and k.endswith("/completion_rate"))

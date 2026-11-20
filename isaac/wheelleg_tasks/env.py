@@ -18,8 +18,9 @@ from wheelleg.jump import JumpEvent, TrainingJumpButton, collision_bounds_w, tun
 from wheelleg.randomization import disturbance_progress, perturb_sensors
 from wheelleg.rewards import compute_rewards
 from wheelleg.safety import airborne_enabled, leaky_termination, numerical_failure
+from wheelleg.shu_mixed_diagnostics import FORWARD_DOWN, FORWARD_UP, FREE, REVERSE_DOWN, ShuMixedDiagnostics
 from wheelleg.shu_rewards import RELEASE, joint_costs
-from wheelleg.shu_terrain import MixedTerrainRuntime, route_progress_and_stuck
+from wheelleg.shu_terrain import MixedTerrainRuntime, mixed_columns
 from wheelleg.tasks import TASKS
 from wheelleg.tensor_ops import (
     action_targets,
@@ -100,6 +101,25 @@ class WheelLegEnv(DirectRLEnv):
         self.command_curriculum = None
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
         self.mixed_curriculum = MixedTerrainRuntime(t.stage["terrain"], n, d) if t.task == "p1-stairs" else None
+        self.mixed_diagnostics = None
+        if self.mixed_curriculum is not None:
+            if any(t.stage[k] != 0 for k in ("progress_weight", "stuck_weight", "impact_weight")):
+                raise ValueError("P1 mixed route and impact diagnostics are not PPO rewards")
+            columns = mixed_columns(t.stage["terrain"], production=True)
+            self.mixed_up_columns = torch.tensor([name == "pyramid_down" for name, _, _ in columns], device=d)
+            self.mixed_lip_columns = torch.tensor([lip for _, lip, _ in columns], device=d)
+            self.mixed_diagnostics = ShuMixedDiagnostics(
+                n,
+                d,
+                wheels=self.contact_wheels,
+                guides=self.shu.event.guides,
+                body_count=len(self.contact.body_names),
+                physics_dt=self.physics_dt,
+                step_dt=self.step_dt,
+                contact_force_n=self.shu.event.p["contact_force_n"],
+                window_s=t.stage["stuck_window_s"],
+                distance_m=t.stage["stuck_distance_m"],
+            )
         self.airborne = torch.zeros(n, dtype=torch.bool, device=d)
         self.air_enter = torch.zeros(n, device=d)
         self.air_exit = torch.zeros(n, device=d)
@@ -112,9 +132,6 @@ class WheelLegEnv(DirectRLEnv):
         self.state = {}
         self.initial_position = torch.zeros(n, 3, device=d)
         self.previous_position = torch.zeros_like(self.initial_position)
-        self.stuck_start = torch.zeros_like(self.initial_position)
-        self.stuck_time = torch.zeros(n, device=d)
-        self.stuck = self.airborne.clone()
         self._stage_command_tick = -1
         self._jump_sample_tick = -1
         self.jump_blocked = self.obstacle_hit.clone()
@@ -400,6 +417,8 @@ class WheelLegEnv(DirectRLEnv):
     def _record_contacts(self, tick: int) -> None:
         if self.shu is not None:
             self.shu.sample(tick)
+            if self.mixed_diagnostics is not None:
+                self.mixed_diagnostics.sample_contacts(tick, self.contact.data.net_forces_w)
         forces = torch.linalg.vector_norm(self.contact.data.net_forces_w_history, dim=-1).amax(1)
         self.contact_peaks = torch.maximum(self.contact_peaks, forces)
         if self.jump is None or tick <= self._jump_sample_tick:
@@ -497,7 +516,6 @@ class WheelLegEnv(DirectRLEnv):
             torque=self.torque,
             wheel_torque=self.torque[:, self.wheel_channels],
             wheel_velocity=data.joint_vel[:, self.joints][:, self.wheel_channels],
-            hip_torque=self.torque[:, self.legs],
             hip_velocity=data.joint_vel[:, self.joints][:, self.legs],
             action=self.raw_action,
             previous_action=self.previous_action,
@@ -635,24 +653,13 @@ class WheelLegEnv(DirectRLEnv):
             error = self.commands.value[:, 0] - self.robot.data.root_lin_vel_b[:, 0]
             rate = (1.3 * torch.exp(-error.square() / 0.25)).clamp_max(1.0)
             self.stair_tracking_sum += torch.where(self.numerical_bad, 0.0, rate) * self.step_dt
-        if self.scanner is not None:
-            progress, stuck_start, stuck_time, stuck = route_progress_and_stuck(
-                self.mixed_curriculum.reward_active,
-                self.robot.data.root_pos_w[:, 0],
-                self.previous_position[:, 0],
-                self.stuck_start[:, 0],
-                self.stuck_time,
-                self.stuck,
-                dt=self.step_dt,
-                window_s=t.stage["stuck_window_s"],
-                distance_m=t.stage["stuck_distance_m"],
+            mix = self.mixed_curriculum
+            self.mixed_diagnostics.step_route(
+                self.robot.data.root_pos_w[:, :2] - self.previous_position[:, :2],
+                self.commands.value[:, 0],
+                completed=mix.crossed | mix.reverse_completed,
+                invalid_motion=self.numerical_bad,
             )
-            terms["progress"] = t.stage["progress_weight"] * progress
-            self.stuck_start[:, 0] = stuck_start
-            self.stuck_time.copy_(stuck_time)
-            self.stuck.copy_(stuck)
-            terms["stuck"] = t.stage["stuck_weight"] * self.step_dt * self.stuck
-            terms["stair_impact"] = t.stage["impact_weight"] * self.step_dt * s["hip_torque"].square().amax(-1)
         self.previous_position.copy_(self.robot.data.root_pos_w)
         for name, value in terms.items():
             # SCUT wheelbipe25_v3/env.py:4007-4018: mask with where, never NaN * 0.
@@ -673,6 +680,7 @@ class WheelLegEnv(DirectRLEnv):
                 "reverse_descent": mix.reverse_descent.clone(),
                 "reverse_descent_completed": mix.reverse_completed.clone(),
                 "forward_outward_completed": mix.crossed.clone(),
+                "stuck_now": self.mixed_diagnostics.stuck_now.clone(),
             }
         if self.jump is not None:
             self.extras["jump"] = {
@@ -783,6 +791,14 @@ class WheelLegEnv(DirectRLEnv):
             for value in self.reward_sums.values():
                 value[env_ids] = 0
         if self.mixed_curriculum is not None:
+            if self.mixed_diagnostics is not None:
+                self.mixed_diagnostics.record_ended(
+                    env_ids[self.episode_length_buf[env_ids] > 0],
+                    terminated=self.reset_terminated,
+                    timeout=self.reset_time_outs,
+                    physical_failure=self.shu.event.physical_failure,
+                    numerical_failure=self.numerical_bad,
+                )
             self.mixed_curriculum.reset(
                 self.terrain,
                 env_ids,
@@ -825,7 +841,21 @@ class WheelLegEnv(DirectRLEnv):
         self.robot.write_joint_state_to_sim(q, qd, env_ids=env_ids)
         self.initial_position[env_ids] = root[:, :3]
         self.previous_position[env_ids] = root[:, :3]
-        self.stuck_start[env_ids] = root[:, :3]
+        if self.mixed_diagnostics is not None:
+            mix = self.mixed_curriculum
+            cols = self.terrain.terrain_types[env_ids]
+            route = torch.where(self.mixed_up_columns[cols], FORWARD_UP, FORWARD_DOWN)
+            route = torch.where(mix.reverse_descent[env_ids], REVERSE_DOWN, route)
+            route = torch.where(mix.traverse[env_ids], route, FREE)
+            _, _, yaw = euler_xyz_from_quat(root[:, 3:7])
+            self.mixed_diagnostics.reset(
+                env_ids,
+                route=route,
+                with_lip=self.mixed_lip_columns[cols],
+                oblique=self.shu.oblique_birth[env_ids],
+                spawn_yaw_rad=yaw,
+                tick=self._sim_step_counter,
+            )
         # Mixed P1 must issue fixed commands from the realized post-reset pose in observe_commands.
         if self.commands_fixed and self.mixed_curriculum is None:
             if self.jump is None:
@@ -842,8 +872,6 @@ class WheelLegEnv(DirectRLEnv):
             self.air_enter,
             self.air_exit,
             self.air_elapsed,
-            self.stuck,
-            self.stuck_time,
             self.raw_action,
             self.previous_action,
             self.bad_action,

@@ -27,6 +27,24 @@ def atlas(**settings):
     return ShuFreeMap(generator, settings, "cpu")
 
 
+def test_reward_masks_follow_current_tile_not_spawn_without_command_caps():
+    names = ("flat", "rough", "grid", "slope", "pyramid_up", "pyramid_down", "pyramid_up_lip", "pyramid_down_lip")
+    generator = NS(
+        size=(12, 12),
+        num_rows=10,
+        num_cols=len(names),
+        border_width=5,
+        curriculum=True,
+        sub_terrains={name: NS(proportion=1) for name in names},
+    )
+    m = ShuFreeMap(generator, {}, "cpu")
+    # One robot driving across the atlas and then onto its flat exterior border.
+    xy = torch.tensor([[0, -48 + i * 12] for i in range(8)] + [[60, 3], [0, 48]])
+    nonflat, pyramid = m.reward_masks_at(xy)
+    assert nonflat.tolist() == [False, True, True, True, True, True, True, True, False, False]
+    assert pyramid.tolist() == [False] * 4 + [True] * 4 + [False] * 2
+
+
 def capped_atlas():
     return atlas(
         command_limits={

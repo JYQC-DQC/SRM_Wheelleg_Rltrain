@@ -58,6 +58,7 @@ class ShuP1:
             columns = mixed_columns(terrain)
             up, down = route["up_height_range_m"], route["down_height_range_m"]
             self.down_height_bounds = env.raw_action.new_tensor(down)
+            self.oblique_birth = torch.zeros(n, dtype=torch.bool, device=dev)
             self.straight_spawn_probability = route["straight_spawn_probability"]
             self.max_spawn_yaw_offset_rad = route["max_spawn_yaw_offset_rad"]
             if not 0 <= self.straight_spawn_probability <= 1:
@@ -182,6 +183,8 @@ class ShuP1:
             straight, offset = torch.rand((2, len(reverse_route)), device=root.device, dtype=root.dtype)
             offset = (2 * offset - 1) * self.max_spawn_yaw_offset_rad
             offset.masked_fill_(straight < self.straight_spawn_probability, 0.0)
+            self.oblique_birth[ids] = False
+            self.oblique_birth[ids[traverse]] = offset != 0
             half_yaw = (reverse_route.to(root.dtype) * pi + offset) / 2
             zeros = torch.zeros_like(half_yaw)
             root[traverse, 3:7] = torch.stack((half_yaw.cos(), zeros, zeros, half_yaw.sin()), dim=-1)
@@ -318,7 +321,8 @@ class ShuP1:
 
     def rewards(self, s):
         e, ev, c = self.env, self.event, self.commands
-        rel = s["wheel_position_w"] - e.robot.data.root_pos_w[:, None]
+        root_pos_w = e.robot.data.root_pos_w
+        rel = s["wheel_position_w"] - root_pos_w[:, None]
         yaw = s["yaw"]
         q = e.robot.data.joint_pos[:, e.joints]
         qd = e.robot.data.joint_vel[:, e.joints]
@@ -345,7 +349,14 @@ class ShuP1:
             previous_previous_action=self.second_action,
         )
         self.params["height_fraction"] = c.fraction
-        terms = shu_reward_terms(s, ev.reward_phase, self.params, e.step_dt)
+        terrain_masks = self.free_map.reward_masks_at(root_pos_w) if self.stage == "p1-stairs" else None
+        terms = shu_reward_terms(s, ev.reward_phase, self.params, e.step_dt, terrain_masks=terrain_masks)
+        if self.stage == "p1-stairs":
+            # Before autoreset, keep the scan-derived reference and error independently of the reward gates.
+            e.extras["p1_mixed"] = {
+                "ground_z_w_m": s["ground"].detach().clone(),
+                "height_error_m": s["height_error"].detach().clone(),
+            }
         if self.stage == "p1-landing":
             cfg = e.training
             terms["air_wheel_height"] = air_wheel_height_reward(

@@ -39,28 +39,42 @@ class ShuFreeMap:
                 raise ValueError(f"terrain.free_map.command_limits.{name} caps must be positive or null")
             caps.append([torch.inf if v is None else v for v in values])
         self.column_caps = None
-        if any(isfinite(v) for pair in caps for v in pair):
-            if not generator.curriculum:
-                raise ValueError("terrain.free_map.command_limits requires the fixed-column terrain curriculum")
-            # Match Isaac Lab's curriculum column assignment, as in SCUT's
-            # TerrainCommandManager._build_tile_key_indices_from_proportions.
-            weights = [cfg.proportion for cfg in terrains.values()]
-            total = sum(weights)
-            cumulative = list(accumulate(w / total for w in weights))
+        # Production MixedTerrainGenerator lays out exactly one named profile per column.
+        # Generic Isaac generators can repeat profiles according to their proportions.
+        if len(terrains) == self.num_cols:
+            columns = list(range(self.num_cols))
+        else:
+            weights = [getattr(cfg, "proportion", 1.0) for cfg in terrains.values()]
+            cumulative = list(accumulate(w / sum(weights) for w in weights))
             columns = [
                 min(bisect_right(cumulative, c / self.num_cols + 1.0e-3), len(caps) - 1) for c in range(self.num_cols)
             ]
+        names = list(terrains)
+        self.column_nonflat = torch.tensor([names[c] != "flat" for c in columns], device=device)
+        self.column_pyramid = torch.tensor([names[c].startswith("pyramid_") for c in columns], device=device)
+        if any(isfinite(v) for pair in caps for v in pair):
+            if not generator.curriculum:
+                raise ValueError("terrain.free_map.command_limits requires the fixed-column terrain curriculum")
             self.column_caps = torch.tensor([caps[c] for c in columns], dtype=torch.float32, device=device)
 
     def outside(self, position_w: torch.Tensor) -> torch.Tensor:
         x, y = position_w[:, :2].abs().unbind(-1)
         return (x > self.edge_x) | (y > self.edge_y)
 
-    def limits_at(self, position_w: torch.Tensor) -> torch.Tensor | None:
-        if self.column_caps is None:
-            return None
+    def _tile_at(self, position_w: torch.Tensor):
         x, y = position_w[:, :2].unbind(-1)
         col = ((y + self.half_y) / self.tile_y).floor().long().clamp_(0, self.num_cols - 1)
         # The outer border mesh has no terrain type; do not extend the last tile's caps onto it.
         in_tiles = (x >= -self.half_x) & (x < self.half_x) & (y >= -self.half_y) & (y < self.half_y)
+        return col, in_tiles
+
+    def reward_masks_at(self, position_w: torch.Tensor):
+        """Physical shaping follows the current surface; the outer border is flat."""
+        col, inside = self._tile_at(position_w)
+        return inside & self.column_nonflat[col], inside & self.column_pyramid[col]
+
+    def limits_at(self, position_w: torch.Tensor) -> torch.Tensor | None:
+        if self.column_caps is None:
+            return None
+        col, in_tiles = self._tile_at(position_w)
         return torch.where(in_tiles[:, None], self.column_caps[col], torch.inf)

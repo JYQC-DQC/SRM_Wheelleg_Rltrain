@@ -168,6 +168,9 @@ class WheelLegRunner(OnPolicyRunner):
             if env.shu.flat is not None:
                 for kind, fraction in enumerate(env.shu.flat.fraction.tolist()):
                     self.writer.add_scalar(f"Curriculum/flat_bucket_{kind}", fraction, iteration)
+        if env.mixed_diagnostics is not None:
+            for key, scalar in env.mixed_diagnostics.take().items():
+                self.writer.add_scalar(key, scalar, iteration)
         self.writer.add_scalar("Safety/raw_action_abs_max", env.iteration_raw_action_max.item(), iteration)
         self.writer.add_scalar("Safety/numerical_terminations", env.iteration_numerical_terminations.item(), iteration)
         # The rollout runs under torch.inference_mode(); its tensors cannot be zeroed in place here.

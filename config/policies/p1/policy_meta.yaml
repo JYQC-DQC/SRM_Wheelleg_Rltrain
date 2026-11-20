@@ -203,10 +203,10 @@ stages:
             platform_width_m: 4.0
             step_width_m: 0.30
             step_height_range_m: [0.10, 0.23]
-    progress_weight: null
-    stuck_weight: null
-    impact_weight: null
-    stuck_window_s: null
-    stuck_distance_m: null
+    progress_weight: 0.0
+    stuck_weight: 0.0
+    impact_weight: 0.0
+    stuck_window_s: 1.0
+    stuck_distance_m: 0.05
     disturbance_phase: 2
 guide_version: '2.1'
