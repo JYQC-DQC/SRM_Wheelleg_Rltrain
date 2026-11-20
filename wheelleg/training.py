@@ -656,6 +656,12 @@ def _validate_shu(cfg: TrainingConfig) -> None:
                 x = (cfg.shared.get(section) or {}).get(key)
                 if x is not None and (type(x) not in (int, float) or not isfinite(x) or x <= 0):
                     raise ValueError(f"robot.training.{section}.{key}: expected a finite positive value")
+    if cfg.task == "p1-stairs":
+        route = cfg.stage["terrain"]["route"]
+        for key in ("up_height_range_m", "down_height_range_m"):
+            bounds = _values(route.get(key), key, 2)
+            if any(x <= 0 for x in bounds) or (len(bounds) == 2 and bounds[0] > bounds[1]):
+                raise ValueError(f"{key}: expected positive ordered heights")
     if cfg.task == "p1-flat":
         for key in ("error_floor", "relative_error"):
             value = cfg.stage.get(key)

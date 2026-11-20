@@ -359,3 +359,29 @@ def test_prepare_reset_rows_isolates_survivors_keeps_route_gate_and_matches_firs
     for name, old in first.items():
         assert torch.equal(getattr(c, name), old), name
     assert torch.equal(c.remaining, remaining) and torch.equal(torch.get_rng_state(), rng)
+
+
+def test_up_height_holds_down_height_resamples_within_bounds_even_across_motion_segments():
+    torch.manual_seed(454)
+    c = ShuCommands.for_mixed(
+        settings(height_duration_s=(0.01, 0.01)),
+        3,
+        "cpu",
+        route=dict(vx_range_m_s=(1, 2), heading_kp=1, heading_max_wz_rad_s=1),
+    )
+    ids = torch.arange(3)
+    route = torch.tensor([True, True, False])
+    bounds = torch.tensor([[0.31, 0.33], [0.21, 0.23], [0.16, 0.36]])
+    c.reset(ids, route=route, upstairs=ids == 0, birth_height_bounds=bounds)
+    born = c.height.clone()
+    assert ((born[:, 0] >= bounds[:, 0]) & (born[:, 0] <= bounds[:, 1])).all()
+    no = torch.zeros_like(route)
+    for i in range(8):
+        c.prepare(ids.float(), ~no, no, no, c.steps, route_open=route if i < 3 else no)
+        torch.testing.assert_close(c.height[0], born[0], rtol=0, atol=0)
+        assert c.height_rate[0] == 0
+        assert bounds[1, 0] <= c.height[1, 0] <= bounds[1, 1]
+        if i > 0:
+            assert c.height_rate[1] != 0
+        c.finish(observed(c), no, no)
+    assert c.height[2] != born[2]

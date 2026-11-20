@@ -19,6 +19,7 @@ from wheelleg.shu_spawn import (
     sample_spawn,
     sample_spawn_kinds,
 )
+from wheelleg.shu_terrain import MIXED_COLUMN_PROFILES
 
 
 def _exact(finder, names):
@@ -49,6 +50,18 @@ class ShuP1:
         else:
             terrain = t.stage["terrain"]
             self.commands = ShuCommands.for_mixed(cp, n, dev, route=terrain["route"])
+            route = terrain["route"]
+            self.up_columns = torch.tensor([name.endswith("_up") for name in MIXED_COLUMN_PROFILES], device=dev)
+            self.birth_height_bounds = env.raw_action.new_tensor(
+                [
+                    route["up_height_range_m"]
+                    if name.endswith("_up")
+                    else route["down_height_range_m"]
+                    if name.endswith("_down")
+                    else cp["height_range_m"]
+                    for name in MIXED_COLUMN_PROFILES
+                ]
+            )
             self.free_map = ShuFreeMap(env.cfg.terrain.terrain_generator, terrain.get("free_map") or {}, dev)
         if t.task != "p1-stairs":
             self.spawn_cfg = SpawnConfig(
@@ -121,7 +134,15 @@ class ShuP1:
     def reset(self, ids, root, q, qd):
         env = self.env
         mix = env.mixed_curriculum
-        self.commands.reset(ids, route=None if mix is None else mix.traverse[ids])
+        if mix is None:
+            self.commands.reset(ids)
+        else:
+            self.commands.reset(
+                ids,
+                route=mix.traverse[ids],
+                upstairs=self.up_columns[env.terrain.terrain_types[ids]],
+                birth_height_bounds=self.birth_height_bounds[env.terrain.terrain_types[ids]],
+            )
         preset = air = torch.zeros(len(ids), dtype=torch.bool, device=env.device)
         if self.spawn_cfg is not None:
             kinds = sample_spawn_kinds(
@@ -188,8 +209,8 @@ class ShuP1:
             cmd.masked_fill_(recovering[fixed_ids, None], 0)
             c.clamp_free_motion(cmd, fixed_ids)
             c.value[fixed_ids] = cmd
-            c.height[fixed_ids] = height
-            c.height_rate[fixed_ids] = 0
+            c.height[fixed_ids] = torch.where(c.route[fixed_ids, None], c.height_target[fixed_ids], height)
+            c.height_rate[fixed_ids] = torch.where(c.route[fixed_ids], c.height_rate[fixed_ids], 0.0)
             c.vx_active[fixed_ids] = cmd[:, 0] != 0
             c.wz_active[fixed_ids] = cmd[:, 2] != 0
             c.heading_active[fixed_ids] = False

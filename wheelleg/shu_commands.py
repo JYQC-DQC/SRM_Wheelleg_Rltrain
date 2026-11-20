@@ -113,6 +113,8 @@ class ShuCommands:
         self.wz_active = self.vx_active.clone()
         self.heading_active = self.vx_active.clone()
         self.route = self.vx_active.clone()
+        self.upstairs = self.route.clone()
+        self.route_height_bounds = self.value.new_tensor(p["height_range_m"]).expand(count, 2).clone()
         self._route_open = self.vx_active.clone()
         self._route_settings = _route_settings
         self._driving = self.vx_active.clone()
@@ -213,15 +215,28 @@ class ShuCommands:
     def _heights(self, ids: torch.Tensor) -> None:
         lo, hi = self.settings["height_range_m"]
         mid = (lo + hi) / 2
-        self.height_target[ids, 0] = mid + self.fraction[ids] * (self._uniform(ids, "height_range_m") - mid)
+        u = torch.rand(len(ids), device=ids.device)
+        free = mid + self.fraction[ids] * (lo + (hi - lo) * u - mid)
+        route_lo, route_hi = self.route_height_bounds[ids].unbind(-1)
+        self.height_target[ids, 0] = torch.where(self.route[ids], route_lo + (route_hi - route_lo) * u, free)
         self.height_remaining[ids] = self._duration(ids, "height_duration_s")
 
-    def reset(self, ids: torch.Tensor, *, route: torch.Tensor | None = None) -> None:
+    def reset(
+        self,
+        ids: torch.Tensor,
+        *,
+        route: torch.Tensor | None = None,
+        upstairs: torch.Tensor | None = None,
+        birth_height_bounds: torch.Tensor | None = None,
+    ) -> None:
         """True resets only. Route labels are set before the first motion sample."""
         if route is not None:
             if self._route_settings is None:
                 raise ValueError("Route-labelled resets require mixed terrain route settings")
             self.route[ids] = self._route_open[ids] = route
+        self.upstairs[ids] = False if upstairs is None else self.route[ids] & upstairs
+        if birth_height_bounds is not None:
+            self.route_height_bounds[ids] = birth_height_bounds
         self.value[ids] = 0
         self._brake_pending[ids] = False
         self._first_interval[ids] = True
@@ -297,7 +312,7 @@ class ShuCommands:
         if route_open is not None:
             self._route_open[ids] = route_open[ids]
         drive, rise, air = driving[ids], recovering[ids], air_birth[ids]
-        self._driving[ids], self._recovering[ids], self._height_held[ids] = drive, rise, rise
+        self._driving[ids], self._recovering[ids], self._height_held[ids] = drive, rise, rise | self.upstairs[ids]
         self._air_limit[ids] = air & (age_steps[ids] < 300)
         self._previous[ids] = torch.where(air[:, None], self.target[ids], self.value[ids])
         self._issue(ids, yaw[ids], self._first_interval[ids])
@@ -324,9 +339,9 @@ class ShuCommands:
         due = self.height_remaining == 0
         lo, hi = self.settings["height_range_m"]
         mid = (lo + hi) / 2
-        due |= new & ((self.height_target[:, 0] - mid).abs() > (hi - lo) / 2 * self.fraction)
-        self._height_held.copy_(recovering)
-        self._heights((due & ~recovering).nonzero().flatten())
+        due |= new & ~self.route & ((self.height_target[:, 0] - mid).abs() > (hi - lo) / 2 * self.fraction)
+        self._height_held.copy_(recovering | self.upstairs)
+        self._heights((due & ~self._height_held).nonzero().flatten())
         issued_height = torch.where(recovering[:, None], self.height, self.height_target)
         self.height_rate.copy_((issued_height[:, 0] - self.height[:, 0]) / _DT)
         self.height.copy_(issued_height)
