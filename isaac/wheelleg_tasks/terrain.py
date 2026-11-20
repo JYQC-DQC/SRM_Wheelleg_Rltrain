@@ -88,6 +88,8 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     p, kind = cfg.parameters, cfg.profile
     if kind not in MIXED_PROFILES and kind not in LEGACY_PROFILES:
         raise ValueError(f"Unknown SHU mixed terrain profile: {kind}")
+    if kind == "rough":
+        raise ValueError("rough uses Isaac Lab HfRandomUniformTerrainCfg, not the custom mesh builder")
     ground = p["ground_thickness_m"]
     meshes = []
 
@@ -140,23 +142,6 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     elif kind == "slope":
         meshes = _slope_mesh(difficulty, cfg.size, p["slope_angle_range_rad"])
         spawn_z = 0.0
-    elif kind == "rough":
-        start, end = p["surface_x_range_m"]
-        resolution = p["surface_resolution_m"]
-        interior = np.linspace(start, end, max(3, int(np.ceil((end - start) / resolution)) + 1))
-        xs = np.r_[0.0, interior, sx]
-        ys = np.linspace(0, sy, max(3, int(np.ceil(sy / resolution)) + 1))
-        seed = np.random.SeedSequence([p["seed"], round(difficulty * 1e6)])
-        rng = np.random.default_rng(seed)
-        amplitude = p["rough_amplitude_range_m"][0] + difficulty * np.ptp(p["rough_amplitude_range_m"])
-        heights = np.zeros((len(xs), len(ys)))
-        heights[2:-2, 1:-1] = rng.uniform(-amplitude, amplitude, (len(xs) - 4, len(ys) - 2))
-        vertices = np.column_stack((np.repeat(xs, len(ys)), np.tile(ys, len(xs)), heights.ravel()))
-        a = (np.arange(len(xs) - 1)[:, None] * len(ys) + np.arange(len(ys) - 1)).ravel()
-        b = a + len(ys)
-        faces = np.concatenate((np.column_stack((a, b, a + 1)), np.column_stack((a + 1, b, b + 1))))
-        meshes.append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
-        spawn_z = 0.0
     else:
         box(0, sx, 0, sy, 0)
         spawn_z = 0.0
@@ -184,12 +169,13 @@ class MixedTerrainGenerator(TerrainGenerator):
         # the paired lip column so only its geometry, not its difficulty, changes.
         lower, upper = self.cfg.difficulty_range
         difficulties = {}
-        for col, cfg in enumerate(self.cfg.sub_terrains.values()):
+        for col, (name, cfg) in enumerate(self.cfg.sub_terrains.items()):
+            profile = getattr(cfg, "profile", name)  # native rough config has no SHU profile field
             for row in range(self.cfg.num_rows):
-                key = (cfg.profile, row)
+                key = (profile, row)
                 if key not in difficulties:
                     fraction = (row + self.np_rng.uniform()) / self.cfg.num_rows
-                    if cfg.profile == "slope" or cfg.profile.endswith(("_up", "_down")):
+                    if profile == "slope" or profile.endswith(("_up", "_down")):
                         if row == self.cfg.num_rows - 1:
                             fraction = 1.0
                         elif row == 0:

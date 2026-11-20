@@ -233,3 +233,30 @@ def test_pending_border_and_tile_with_no_room_for_riser_fail_clearly():
     geometry["first_edge_x_m"] = 3.95
     with pytest.raises(ValueError, match="cannot fit a riser"):
         natural_pyramid_layout((12, 12), geometry, down=False, lip_width_m=0.1)
+
+
+def test_rough_shipped_config_and_native_heightfield_column(terrain_module):
+    from pathlib import Path
+
+    import yaml
+
+    policy = Path(__file__).resolve().parents[1] / "config/policies/p1/policy_meta.yaml"
+    rough = yaml.safe_load(policy.read_text(encoding="utf8"))["stages"]["stairs"]["terrain"]["profiles"]["rough"]
+    assert rough["geometry"] == dict(
+        noise_range=[0, 0.03],
+        noise_step=0.005,
+        downsampled_scale=0.20,
+        border_width=1.0,
+        horizontal_scale=0.10,
+        vertical_scale=0.005,
+        slope_threshold=0.5,
+    )
+    g = terrain_module.MixedTerrainGenerator()
+    native = SimpleNamespace(proportion=1.0)  # native hf config has no .profile attribute
+    g.cfg = SimpleNamespace(difficulty_range=(0, 1), num_rows=2, sub_terrains={"rough": native})
+    g.np_rng = np.random.default_rng(12)
+    calls = []
+    g._get_terrain_mesh = lambda difficulty, cfg: (None, None)
+    g._add_sub_terrain = lambda mesh, origin, row, col, cfg: calls.append((row, col, cfg))
+    g._generate_curriculum_terrains()
+    assert calls == [(0, 0, native), (1, 0, native)]

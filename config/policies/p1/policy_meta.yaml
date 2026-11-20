@@ -162,14 +162,16 @@ stages:
           command_mode: free
           geometry: {spawn_x_m: null, ground_thickness_m: null}
         rough:
-          row_range: null
+          row_range: [0, 9]  # identical noise distribution at every row; not a height curriculum
           command_mode: free
           geometry:
-            spawn_x_m: null
-            ground_thickness_m: null
-            surface_x_range_m: null
-            surface_resolution_m: null
-            rough_amplitude_range_m: null
+            noise_range: [0.0, 0.03]
+            noise_step: 0.005
+            downsampled_scale: 0.20
+            border_width: 1.0
+            horizontal_scale: 0.10
+            vertical_scale: 0.005
+            slope_threshold: 0.5
         grid:
           row_range: null
           command_mode: free

@@ -8,7 +8,7 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
-from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
+from isaaclab.terrains import HfRandomUniformTerrainCfg, TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
 from wheelleg.observation import POLICY_OBS_DIM
@@ -112,7 +112,12 @@ def make_env_cfg(
         columns = mixed_columns(s, production=True)
         lip = stair_lip_dimensions(s)
         terrain.terrain_type = "generator"
+        rough = mutable(s["profiles"]["rough"]["geometry"])
+        # TerrainGenerator propagates these three atlas parameters to every height-field sub-config.
         terrain.terrain_generator = TerrainGeneratorCfg(
+            horizontal_scale=rough["horizontal_scale"],
+            vertical_scale=rough["vertical_scale"],
+            slope_threshold=rough["slope_threshold"],
             class_type=MixedTerrainGenerator,
             seed=t.settings["seed"],
             size=tuple(s["tile_size_m"]),
@@ -121,7 +126,9 @@ def make_env_cfg(
             num_cols=len(columns),
             curriculum=True,
             sub_terrains={
-                (name + ("_lip" if raised else "")): MixedTerrainCfg(
+                (name + ("_lip" if raised else "")): HfRandomUniformTerrainCfg(proportion=1.0, **rough)
+                if name == "rough"
+                else MixedTerrainCfg(
                     proportion=1.0,
                     profile=name,
                     parameters={**mutable(s["profiles"][name]["geometry"]), "seed": t.settings["seed"]},
