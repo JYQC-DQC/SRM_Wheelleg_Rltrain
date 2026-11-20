@@ -17,9 +17,7 @@ def mixed_settings():
     gates = {name: dict(row=1, window=2, success_fraction=1.0) for name in MIXED_PROFILES[4:8]}
     return dict(
         rows=3,
-        route=dict(
-            vx_range_m_s=(0.5, 1.0), heading_kp=2.0, heading_max_wz_rad_s=1.0, corridor_width_m=2.0, clearance_m=0.2
-        ),
+        route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2),
         tile_size_m=(8.0, 8.0),
         gates=gates,
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
@@ -97,7 +95,7 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     ]
 
 
-def test_route_crossing_cannot_pass_by_coming_back_from_another_lane():
+def test_pure_route_can_return_from_side_excursion_but_not_finish_on_another_tile():
     count = 7
     mix = MixedTerrainRuntime(mixed_settings(), count, "cpu")
     terrain = SimpleNamespace(
@@ -106,20 +104,20 @@ def test_route_crossing_cannot_pass_by_coming_back_from_another_lane():
     mix.traverse[:6] = True
     start = torch.zeros(count, 3)
     halfway = start + torch.tensor([1.0, 0.0, 0.0])
-    halfway[1, 1] = 0.81  # effective limit is 1.0 - 0.2 m
+    halfway[1, 1] = 5.0  # beyond this tile: not a route stop or a latched failure
     no = torch.zeros(count, dtype=torch.bool)
     forward = torch.ones(count)
     mix.step(terrain, start, halfway, forward, no)
-    assert mix.left_corridor.tolist() == [False, True, False, False, False, False, False]
+    assert torch.equal(mix.route_open, mix.traverse)
     final = start + torch.tensor([2.1, 0.0, 0.0])
-    final[4, 1] = 0.81
+    final[4, 1] = 5.0
     forward[2] = 0.0
     forward[5] = -1.0
     failed_at_exit = no.clone()
     failed_at_exit[3] = True
     mix.step(terrain, halfway, final, forward, failed_at_exit)
-    assert mix.crossed.tolist() == [True, False, False, False, False, False, False]
-    assert mix.reward_active.tolist() == [True, False, False, False, False, False, False]
+    assert mix.crossed.tolist() == [True, True, False, False, False, False, False]
+    assert mix.reward_active.tolist() == [True, True, False, False, True, False, False]
     # The crossing stays latched when braking/returning; no more progress or stuck while stopped.
     mix.step(terrain, final, start, torch.zeros(count), no)
     assert mix.crossed[0] and not mix.route_open[0] and not mix.reward_active.any()

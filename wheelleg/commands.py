@@ -2,7 +2,7 @@ import torch
 
 from .tasks import TASKS
 from .tensor_ops import rotate_xy, slew
-from .training import TrainingConfig
+from .training import TrainingConfig, command_rate
 
 SPIN_SIM_LIMIT_RAD_S = 18.0
 
@@ -28,7 +28,7 @@ class Commands:
         self.translation_target = torch.zeros_like(self.translation)
         self.reference_yaw = torch.zeros_like(self.remaining)
         self.rates = self.value.new_tensor(
-            [self.settings["linear_slew_m_s2"], self.settings["linear_slew_m_s2"], self.settings["angular_slew_rad_s2"]]
+            [command_rate(self.settings, "linear_slew_m_s2"), 0.0, command_rate(self.settings, "angular_slew_rad_s2")]
         )
         self.command_fraction = cfg.settings["command_curriculum"]["initial_fraction"] if self.family == "p1" else 1.0
         if self.family == "p2":
@@ -107,7 +107,7 @@ class Commands:
             self.translation.zero_()
             self.translation_target.zero_()
         else:
-            self.translation = slew(self.translation, self.translation_target, self.settings["linear_slew_m_s2"], dt)
+            self.translation = slew(self.translation, self.translation_target, self.rates[0], dt)
 
     def world_translation(self) -> torch.Tensor:
         return rotate_xy(self.translation, self.reference_yaw)

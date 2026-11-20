@@ -278,12 +278,12 @@ def test_bad_sample_cannot_win_on_exact_segment_boundary_even_if_criterion_accep
     assert c.flat.interruptions[STRAIGHT] == 2 and c.flat.attempts[STRAIGHT] == 1 and c.flat.successes[STRAIGHT] == 1
 
 
-def test_mixed_route_label_uses_own_speed_and_world_heading_without_changing_free_turns():
+def test_mixed_route_label_uses_own_speed_without_heading_or_changing_free_turns():
     c = ShuCommands.for_mixed(
         settings(TURN, wz_range_rad_s=(1.0, 1.0)),
         2,
         "cpu",
-        route=dict(vx_range_m_s=(0.5, 0.5), heading_kp=2.0, heading_max_wz_rad_s=0.3),
+        route=dict(vx_range_m_s=(0.5, 0.5)),
     )
     ids = torch.arange(2)
     open_route = torch.tensor([False, True])
@@ -295,8 +295,8 @@ def test_mixed_route_label_uses_own_speed_and_world_heading_without_changing_fre
     for _ in range(30):
         c.prepare(yaw, ~no, no, no, c.steps, route_open=open_route)
         c.finish(observed(c), no, no)
-    torch.testing.assert_close(c.value, torch.tensor([[0.0, 0.0, 1.0], [0.5, 0.0, -0.3]]))
-    assert c.heading_active.tolist() == [False, True]
+    torch.testing.assert_close(c.value, torch.tensor([[0.0, 0.0, 1.0], [0.5, 0.0, 0.0]]))
+    assert not c.heading_active.any()
     assert c.reference_yaw[1] == 0 and c.vx_active.tolist() == [False, True]
     c.prepare(yaw, ~no, no, no, c.steps, route_open=no)
     assert not c.value[1].any() and not c.vx_active[1]
@@ -319,7 +319,7 @@ def test_prepare_reset_rows_isolates_survivors_keeps_route_gate_and_matches_firs
         settings(vx_range_m_s=(3.8, 3.8), segment_duration_s=(0.05, 0.05)),
         n,
         "cpu",
-        route=dict(vx_range_m_s=(0.5, 0.5), heading_kp=2.0, heading_max_wz_rad_s=0.3),
+        route=dict(vx_range_m_s=(0.5, 0.5)),
     )
     c.reset(ids, route=route)
     c.prepare(ids.float(), ~z, z, z, ids * 0, route_open=route)
@@ -367,7 +367,7 @@ def test_up_height_holds_down_height_resamples_within_bounds_even_across_motion_
         settings(height_duration_s=(0.01, 0.01)),
         3,
         "cpu",
-        route=dict(vx_range_m_s=(1, 2), heading_kp=1, heading_max_wz_rad_s=1),
+        route=dict(vx_range_m_s=(1, 2)),
     )
     ids = torch.arange(3)
     route = torch.tensor([True, True, False])
@@ -387,27 +387,46 @@ def test_up_height_holds_down_height_resamples_within_bounds_even_across_motion_
     assert c.height[2] != born[2]
 
 
-def test_pyramid_spawn_no_turn_then_heading_and_common_height_clock():
+def test_pyramid_keeps_episode_direction_and_zero_turn_across_resampling():
+    torch.manual_seed(745)
     c = ShuCommands.for_mixed(
-        settings(height_duration_s=(0.02, 0.02)),
+        settings(segment_duration_s=(0.02, 0.02), height_duration_s=(0.02, 0.02)),
         2,
         "cpu",
-        route=dict(vx_range_m_s=(0.5, 2.5), heading_kp=3.0, heading_max_wz_rad_s=1.0),
+        route=dict(vx_range_m_s=(0.5, 2.5)),
     )
     ids = torch.arange(2)
     yes = ids >= 0
     no = ~yes
-    c.reset(ids, route=yes, upstairs=no, birth_height_bounds=torch.tensor([[0.21, 0.24]] * 2))
-    assert ((c.target[:, 0] >= 0.5) & (c.target[:, 0] <= 2.5)).all()
-    birth = c.height.clone()
-    for step in range(3):
-        c.prepare(torch.tensor([0.2, -0.2]), yes, no, no, c.steps, route_open=yes)
-        assert (c.value[:, 1] == 0).all() and not c.wz_active.any()
+    reverse = ids == 1
+    c.reset(ids, route=yes, reverse_descent=reverse, birth_height_bounds=torch.tensor([[0.21, 0.24]] * 2))
+    birth_target, birth_height = c.target.clone(), c.height.clone()
+    for step in range(8):
+        yaw = torch.tensor([0.2 + step / 10, pi - 0.2 - step / 10])
+        c.prepare(yaw, yes, no, no, c.steps, route_open=yes)
+        assert ((c.target[:, 0].abs() >= 0.5) & (c.target[:, 0].abs() <= 2.5)).all()
+        assert c.target[0, 0] > 0 > c.target[1, 0] and c.value[0, 0] > 0 > c.value[1, 0]
+        assert c.vx_active.all() and not (c.heading_active | c.wz_active).any()
+        assert not c.value[:, 1:].any() and not c.reference_yaw.any()
         assert ((c.height >= 0.21) & (c.height <= 0.24)).all()
         if step == 0:
-            assert (c.value[:, 2] == 0).all()
-        else:
-            assert c.value[0, 2] < 0 < c.value[1, 2]
+            torch.testing.assert_close(c.value[:, 0], torch.tensor([0.02, -0.02]))
         if step == 2:
-            assert not torch.equal(c.height, birth)
+            assert not torch.equal(c.target, birth_target) and not torch.equal(c.height, birth_height)
         c.finish(observed(c), no, no)
+    c.prepare(yaw, yes, no, no, c.steps, route_open=~reverse)
+    assert c.vx_active.tolist() == [True, False] and not c.value[1].any()
+    # Recycling a reverse row into a forward route must not carry its sign over.
+    c.reset(ids[1:], route=yes[1:])
+    c.prepare_reset_rows(ids[1:], yaw, yes, no, no, c.steps, route_open=yes)
+    assert c.value[1, 0] > 0 and not c.value[1, 1:].any()
+
+
+def test_step_velocity_command_jumps_to_target_without_changing_body_state():
+    cfg = settings(COMBINED, linear_slew_m_s2="step", angular_slew_rad_s2="step")
+    c = ShuCommands.for_mixed(cfg, 1, "cpu")
+    c.reset(torch.tensor([0]))
+    for sign in (1, -1):
+        c.target[0] = torch.tensor([2.0, 0.0, 1.0]) * sign
+        ordinary(c)
+        torch.testing.assert_close(c.value, c.target)

@@ -171,88 +171,96 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         lo, hi = route["vx_range_m_s"]
         if not (isfinite(lo) and isfinite(hi) and 0 < lo <= hi):
             raise ValueError("terrain.route.vx_range_m_s must be positive and ordered")
-        for key in ("heading_kp", "heading_max_wz_rad_s"):
-            if not (isfinite(route[key]) and route[key] > 0):
-                raise ValueError(f"terrain.route.{key} must be positive and finite")
         sx, sy = settings["tile_size_m"]
-        width, clearance = route["corridor_width_m"], route["clearance_m"]
-        if not (isfinite(width) and isfinite(clearance) and 0 < 2 * clearance < width <= sy):
-            raise ValueError("terrain.route needs 0 < 2 * clearance_m < corridor_width_m <= tile width")
+        clearance = route["clearance_m"]
+        if clearance is None or not isfinite(clearance) or not 0 < 2 * clearance < min(sx, sy):
+            raise ValueError("terrain.route.clearance_m must leave room within the tile")
+        self.reverse_share = route.get("reverse_descent_share_of_stairs", 0.0 if not self.pyramid_share else None)
+        if self.reverse_share is None or not 0 <= self.reverse_share <= self.pyramid_share:
+            raise ValueError("terrain.route.reverse_descent_share_of_stairs must be in [0, pyramid.share_of_stairs]")
         _, lip_width = stair_lip_dimensions(settings)
-        exits, starts, ends = [], [], []
-        for name, mode in zip(MIXED_PROFILES, modes, strict=True):
-            if mode != "traverse":
-                exits.append(0.0)
-                starts.append(0.0)
-                ends.append(0.0)
-                continue
+        centers, exits = [], []
+        for name, lip, pyramid in columns:
             p = profiles[name]
+            stair = name in STAIR_PROFILES
+            if p["command_mode"] != "traverse" or (stair and not pyramid and self.pyramid_share == 1):
+                centers.append((0.0, 0.0, 0.0))
+                exits.append((0.0, 0.0, 0.0))
+                continue
+            # All bounds are relative to the mesh origin (spawn_x, tile mid-y).
             g = p["geometry"]
+            center = (0.0, 0.0, 0.0)
             spawn = g["spawn_x_m"]
-            if name.endswith(("_up", "_down")):
+            if stair:
                 count_steps = {"single": 1, "double": 2, "triple": 3}[name.split("_")[0]]
-                obstacle_start = g["first_edge_x_m"]
-                obstacle_end = obstacle_start + (count_steps - 1) * g["step_width_m"]
-                if name.endswith("_down"):
-                    obstacle_start -= lip_width
-                else:
-                    obstacle_end += lip_width
+                first, tread = g["first_edge_x_m"], g["step_width_m"]
+                run = (count_steps - 1) * tread
+                depth = lip_width if lip else 0.0
+                down = name.endswith("_down")
+                obstacle_start = first - (depth if down else 0.0)
+                obstacle_end = first + run + (0.0 if down else depth)
             elif name == "slope":
                 obstacle_start, obstacle_end = sx / 4, 3 * sx / 4
             else:
                 obstacle_start, obstacle_end = g["surface_x_range_m"]
-            distance = p["exit_distance_m"]
-            if not (
-                clearance <= spawn < obstacle_start - clearance
-                and obstacle_end + clearance < spawn + distance < sx - clearance
-            ):
-                raise ValueError(f"{name}: route spawn and exit must clear the obstacle and tile boundaries")
-            exits.append(distance)
-            starts.append(clearance - spawn)
-            ends.append(sx - clearance - spawn)
-        physical_exits = [exits[MIXED_PROFILES.index(name)] for name, _, _ in columns]
-        for i, (name, lip, pyramid) in enumerate(columns):
-            if not pyramid:
-                continue
-            g = profiles[name]["geometry"]
-            count_steps = {"single": 1, "double": 2, "triple": 3}[name.split("_")[0]]
-            hx, hy = pyramid_extent((sx, sy), g["first_edge_x_m"], g["step_width_m"], count_steps, lip_width)
-            if width / 2 > hy - (count_steps - 1) * g["step_width_m"] - lip_width:
-                raise ValueError(f"{name}: corridor must cross all pyramid tiers without bypassing the center")
-            first = sx / 2 - hx
-            # Same margin to the far edge as at entry. An inverted lip projects onto the outer deck.
-            if not clearance <= g["spawn_x_m"] < first - clearance - lip_width:
-                raise ValueError(f"{name}: pyramid spawn and exit need a clear outer platform")
-            physical_exits[i] = sx - 2 * g["spawn_x_m"]
-        self.exit_distances = torch.tensor(physical_exits, device=device)
-        self.x_min = torch.tensor(starts, device=device)
-        self.x_max = torch.tensor(ends, device=device)
-        self.y_limit = width / 2 - clearance
+            if pyramid:
+                hx, hy = pyramid_extent((sx, sy), first, tread, count_steps, depth)
+                # A raised tower's last lip occupies the inside of the central rim;
+                # an inverted tower's first lip projects onto the outer deck instead.
+                inset = run + clearance + (0.0 if down else depth)
+                if min(hx, hy) <= inset or not clearance <= spawn < obstacle_start - clearance:
+                    raise ValueError(f"{name}: pyramid needs clear central and outer platforms")
+                center = (sx / 2 - spawn, hx - inset, hy - inset)
+                exit_box = (sx - obstacle_start + clearance - spawn, sx - clearance - spawn, hy - clearance)
+            else:
+                distance = p["exit_distance_m"]
+                if not (
+                    clearance <= spawn < obstacle_start - clearance
+                    and obstacle_end + clearance < spawn + distance < sx - clearance
+                ):
+                    raise ValueError(f"{name}: route spawn and exit must clear the obstacle and tile boundaries")
+                exit_box = (distance, sx - clearance - spawn, sy / 2 - clearance)
+            centers.append(center)
+            exits.append(exit_box)
+        self.central_platforms = torch.tensor(centers, device=device)
+        self.exit_boxes = torch.tensor(exits, device=device)
         self.traverse = torch.zeros(count, dtype=torch.bool, device=device)
         self.assigned = torch.zeros_like(self.traverse)
         self.crossed = torch.zeros_like(self.traverse)
-        self.left_corridor = torch.zeros_like(self.traverse)
+        self.reached_center = torch.zeros_like(self.traverse)
+        self.reverse_descent = torch.zeros_like(self.traverse)
         self.reward_active = torch.zeros_like(self.traverse)
-        self.weights = torch.empty(len(MIXED_PROFILES), device=device)
+        self.draw_weights = torch.empty((3, len(MIXED_PROFILES)), device=device)
         self._update_weights()
 
     def _update_weights(self) -> None:
         weights = self.proportions(
             self.settings["groups"], self.settings["stair_weights"], self.settings.get("locked_stair_weights")
         )
-        if self.pyramid_share == 1.0 and not all(self.unlocked.values()):
-            # A tower traverses BOTH directions. Never fall back to a pure triple on a one-sided unlock.
-            for triple, pair in PREREQUISITES.items():
-                mass = sum(weights[n] for n in (*pair, triple))
-                locked = self.settings["locked_stair_weights"]
-                for name in pair:
-                    weights[name] = mass * locked[name.split("_")[0]] / sum(locked.values())
-                weights[triple] = 0.0
-        self.weights.copy_(self.weights.new_tensor(list(weights.values())))
+        # Joint draw: pure terrain / full pyramid / reverse half pyramid, then logical profile.
+        pure = {n: w * (1 - self.pyramid_share) if n in STAIR_PROFILES else w for n, w in weights.items()}
+        full, half = dict.fromkeys(weights, 0.0), dict.fromkeys(weights, 0.0)
+        stair_mass = self.settings["groups"]["stairs"]
+        for triple, pair in PREREQUISITES.items():
+            if all(self.unlocked.values()):
+                levels = {n: weights[n] for n in (*pair, triple)}
+            else:
+                levels = {n: self.settings["locked_stair_weights"][n.split("_")[0]] for n in pair}
+            total = sum(levels.values())
+            for name, w in levels.items():
+                mass = stair_mass * w / total
+                full[name] = mass * (self.pyramid_share - self.reverse_share) / 2
+                if name.endswith("_down"):
+                    half[name] = mass * self.reverse_share
+        self.draw_weights.copy_(self.draw_weights.new_tensor([list(row.values()) for row in (pure, full, half)]))
+
+    @property
+    def weights(self) -> torch.Tensor:
+        return self.draw_weights.sum(0)
 
     @property
     def route_open(self) -> torch.Tensor:
-        return self.traverse & ~self.left_corridor & ~self.crossed
+        return self.traverse & ~self.crossed & ~(self.reverse_descent & self.reached_center)
 
     def step(
         self,
@@ -261,23 +269,26 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         position_w: torch.Tensor,
         forward_m_s: torch.Tensor,
         terminated: torch.Tensor,
+        wheel_contact: torch.Tensor | None = None,
     ) -> None:
-        """Latch a forward crossing in the assigned column, never a later return after leaving it."""
-        route = self.route_open
-        cols = self.column_profiles[terrain.terrain_types]
-        origin = terrain.env_origins[:, :2]
-        x, y = (position_w[:, :2] - origin).unbind(-1)
-        previous_x, previous_y = (previous_w[:, :2] - origin).unbind(-1)
-        outside = (
-            (torch.maximum(y.abs(), previous_y.abs()) > self.y_limit)
-            | (torch.minimum(x, previous_x) < self.x_min[cols])
-            | (torch.maximum(x, previous_x) > self.x_max[cols])
-        )
-        self.left_corridor |= route & outside
-        active = route_active(route & ~outside & ~terminated, forward_m_s)
+        """World +X command gates progress/stuck, not the direction of entry onto a tower platform."""
+        if wheel_contact is None and self.pyramid_share:
+            raise ValueError("pyramid route acceptance requires current wheel_contact (N, 2)")
+        cols = terrain.terrain_types
+        pyramid = cols >= len(MIXED_COLUMN_PROFILES)
+        x, y = (position_w[:, :2] - terrain.env_origins[:, :2]).unbind(-1)
+        route = self.route_open & ~terminated
+        active = route_active(route, forward_m_s)
         self.reward_active.copy_(active)
-        exit_x = self.exit_distances[terrain.terrain_types]
-        self.crossed |= active & (previous_x < exit_x) & (x >= exit_x)
+        supported = route if wheel_contact is None else route & wheel_contact.any(-1)
+        exit_x, end_x, exit_y = self.exit_boxes[cols].unbind(-1)
+        at_exit = supported & (x >= exit_x) & (x <= end_x) & (y.abs() <= exit_y)
+        previous_x = previous_w[:, 0] - terrain.env_origins[:, 0]
+        self.crossed |= at_exit & ~pyramid & active & (previous_x < exit_x)
+        if self.pyramid_share:
+            cx, hx, hy = self.central_platforms[cols].unbind(-1)
+            self.crossed |= at_exit & pyramid & self.reached_center & ~self.reverse_descent
+            self.reached_center |= supported & pyramid & ((x - cx).abs() <= hx) & (y.abs() <= hy)
 
     def reset(
         self, terrain, ids: torch.Tensor, completed: torch.Tensor, terminated: torch.Tensor, *, evaluation: bool
@@ -297,7 +308,8 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
                 self._update_weights()
         if not ids.numel():
             return
-        profiles = torch.multinomial(self.weights, len(ids), replacement=True)
+        draw = torch.multinomial(self.draw_weights.flatten(), len(ids), replacement=True)
+        mode, profiles = draw // len(MIXED_PROFILES), draw % len(MIXED_PROFILES)
         lo, hi = self.rows[profiles].unbind(-1)
         if evaluation:
             rows = hi
@@ -306,17 +318,14 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         is_stair = profiles >= len(MIXED_PROFILES) - len(STAIR_PROFILES)
         with_lip = is_stair & (torch.rand(len(ids), device=ids.device) < 0.5)
         cols = profiles + with_lip * len(STAIR_PROFILES)
-        if self.pyramid_share:
-            # A mixed triple traverses both directions: neither prerequisite may be bypassed.
-            eligible = is_stair & ((profiles < MIXED_PROFILES.index("triple_up")) | all(self.unlocked.values()))
-            pyramid = eligible & (torch.rand(len(ids), device=ids.device) < self.pyramid_share)
-            cols = torch.where(pyramid, cols + 2 * len(STAIR_PROFILES), cols)
+        cols += (mode != 0) * (2 * len(STAIR_PROFILES))
+        self.reverse_descent[ids] = mode == 2
         terrain.terrain_types[ids] = cols
         terrain.terrain_levels[ids] = rows
         terrain.env_origins[ids] = terrain.terrain_origins[rows, cols]
         self.traverse[ids] = self.route_columns[profiles]
         self.assigned[ids] = True
-        self.crossed[ids] = self.left_corridor[ids] = self.reward_active[ids] = False
+        self.crossed[ids] = self.reached_center[ids] = self.reward_active[ids] = False
 
     def state_dict(self) -> dict:
         return dict(passed=self.passed.copy(), counts=self.counts.copy())

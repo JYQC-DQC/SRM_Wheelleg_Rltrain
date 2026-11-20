@@ -10,6 +10,16 @@ from .config import PolicyConfig, RobotConfig, load_policy, load_robot, missing_
 from .tasks import TASKS
 
 
+def command_rate(commands, key):
+    """'step' bypasses the command ramp, not actuator or physical limits. None stays uncalibrated."""
+    v = commands[key]
+    if v == "step":
+        return float("inf")
+    if type(v) not in (float, int) or not isfinite(v) or v <= 0:
+        raise ValueError(f"commands.{key}: expected a finite positive rate or 'step'")
+    return v
+
+
 def _freeze(value):
     if type(value) is dict:
         return MappingProxyType({k: _freeze(v) for k, v in value.items()})
@@ -431,29 +441,20 @@ def _validate_training(cfg: TrainingConfig) -> None:
             raise ValueError(f"robot.training joint limits[{i}]: empty target range after safety margin")
     family = TASKS[cfg.task].policy
     commands = cfg.settings.get("commands") or {}
+    for axis in ("linear_slew_m_s2", "angular_slew_rad_s2"):
+        if commands.get(axis) is not None:
+            command_rate(commands, axis)
     if family == "p1":
         probabilities = commands.get("segment_probabilities")
         if probabilities is not None:
             weights = _values(probabilities, "commands.segment_probabilities", 6)
             if any(x < 0 for x in weights) or (len(weights) == 6 and abs(sum(weights) - 1) > 1e-6):
                 raise ValueError("Segment probabilities must be nonnegative and sum to one")
-        for key in (
-            "combined_wz_limit_rad_s",
-            "heading_kp",
-            "heading_max_wz",
-            "linear_slew_m_s2",
-            "angular_slew_rad_s2",
-        ):
+        for key in ("combined_wz_limit_rad_s", "heading_kp", "heading_max_wz"):
             value = commands.get(key)
             if value is not None and (type(value) not in (float, int) or not isfinite(value) or value <= 0):
                 raise ValueError(f"commands.{key}: expected a finite positive value")
     else:
-        # A nonpositive slew can drive the issued command away from its bounded target.
-        slew_keys = ("angular_slew_rad_s2",) if family == "p2" else ("angular_slew_rad_s2", "linear_slew_m_s2")
-        for key in slew_keys:
-            value = commands.get(key)
-            if value is not None and (type(value) not in (float, int) or not isfinite(value) or value <= 0):
-                raise ValueError(f"commands.{key}: expected a finite positive value")
         weights = cfg.settings["rewards"]
         if weights.get("leg_symmetry") and (weights.get("no_fork") or weights.get("no_fork_square")):
             raise ValueError("leg_symmetry and no_fork must not be enabled together")

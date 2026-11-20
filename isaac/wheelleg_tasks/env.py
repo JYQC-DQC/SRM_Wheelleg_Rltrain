@@ -521,7 +521,7 @@ class WheelLegEnv(DirectRLEnv):
             )
             if self.mixed_curriculum is not None:
                 outside = self.shu.free_map.outside(self.robot.data.root_pos_w)
-                timeout |= outside & ~self.mixed_curriculum.traverse
+                timeout |= outside  # all mixed tasks share the outer atlas boundary
             terminated = self.shu.update(s, timeout)
             self.numerical_bad |= self.shu.event.numerical_failure
             self.iteration_numerical_terminations += self.numerical_bad.sum()
@@ -531,7 +531,9 @@ class WheelLegEnv(DirectRLEnv):
                     self.previous_position,
                     self.robot.data.root_pos_w,
                     self.commands.value[:, 0] * s["yaw"].cos(),
-                    terminated,
+                    terminated | timeout,
+                    wheel_contact=self.contact.data.net_forces_w[:, self.contact_wheels, 2]
+                    > t.shared["airborne"]["contact_force_n"],
                 )
             s["terminated"] = terminated
             self.state = s
@@ -658,6 +660,14 @@ class WheelLegEnv(DirectRLEnv):
             "failed": s["terminated"].detach().clone(),
             "position": self.robot.data.root_pos_w.detach().clone(),
         }
+        if self.mixed_curriculum is not None:
+            mix = self.mixed_curriculum
+            self.extras["stairs"] = {
+                "traverse": mix.traverse.clone(),
+                "reverse_descent": mix.reverse_descent.clone(),
+                "reverse_half_completed": (mix.reverse_descent & mix.reached_center).clone(),
+                "full_crossed": mix.crossed.clone(),
+            }
         if self.jump is not None:
             self.extras["jump"] = {
                 "succeeded": self.jump.landing_pulse.clone(),

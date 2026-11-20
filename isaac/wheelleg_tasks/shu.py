@@ -1,5 +1,7 @@
 """Adapter between the Isaac articulation and the calibrated SHU P1 task kernels."""
 
+from math import pi
+
 import torch
 from isaaclab.utils.math import quat_apply_inverse
 
@@ -54,8 +56,14 @@ class ShuP1:
             columns = mixed_columns(terrain)
             up, down = route["up_height_range_m"], route["down_height_range_m"]
             shared = (max(up[0], down[0]), min(up[1], down[1]))
-            if "pyramid" in terrain and shared[0] > shared[1]:
-                raise ValueError("No common calibrated standing height for the combined stair route")
+            self.common_height_valid = shared[0] <= shared[1]
+            self.down_height_bounds = env.raw_action.new_tensor(down)
+            self.straight_spawn_probability = route["straight_spawn_probability"]
+            self.max_spawn_yaw_offset_rad = route["max_spawn_yaw_offset_rad"]
+            if not 0 <= self.straight_spawn_probability <= 1:
+                raise ValueError("terrain.route.straight_spawn_probability must be in [0, 1]")
+            if not 0 <= self.max_spawn_yaw_offset_rad <= pi:
+                raise ValueError("terrain.route.max_spawn_yaw_offset_rad must be in [0, pi]")
             self.up_columns = torch.tensor(
                 [not pyramid and name.endswith("_up") for name, _, pyramid in columns], device=dev
             )
@@ -149,12 +157,27 @@ class ShuP1:
             # Mixed ground starts: perturb during execution, not by seeding root velocity.
             root[:, 7:13] = 0
             qd.zero_()
+            traverse = mix.traverse[ids]
+            reverse = mix.reverse_descent[ids]
+            columns = env.terrain.terrain_types[ids]
+            bounds = torch.where(reverse[:, None], self.down_height_bounds, self.birth_height_bounds[columns])
+            if not self.common_height_valid and (traverse & (bounds[:, 0] > bounds[:, 1])).any():
+                raise ValueError("No common calibrated standing height for the combined stair route")
             self.commands.reset(
                 ids,
-                route=mix.traverse[ids],
-                upstairs=self.up_columns[env.terrain.terrain_types[ids]],
-                birth_height_bounds=self.birth_height_bounds[env.terrain.terrain_types[ids]],
+                route=traverse,
+                reverse_descent=reverse,
+                upstairs=self.up_columns[columns] & ~reverse,
+                birth_height_bounds=bounds,
             )
+            # Write the route incidence angle into the actual upright root pose (wxyz).
+            reverse_route = reverse[traverse]
+            straight, offset = torch.rand((2, len(reverse_route)), device=root.device, dtype=root.dtype)
+            offset = (2 * offset - 1) * self.max_spawn_yaw_offset_rad
+            offset.masked_fill_(straight < self.straight_spawn_probability, 0.0)
+            half_yaw = (reverse_route.to(root.dtype) * pi + offset) / 2
+            zeros = torch.zeros_like(half_yaw)
+            root[traverse, 3:7] = torch.stack((half_yaw.cos(), zeros, zeros, half_yaw.sin()), dim=-1)
         preset = air = torch.zeros(len(ids), dtype=torch.bool, device=env.device)
         if self.spawn_cfg is not None:
             kinds = sample_spawn_kinds(
@@ -212,6 +235,10 @@ class ShuP1:
                 fixed_ids = ids
         self.reset_rows.zero_()
         if e.commands_fixed and e.fixed_command is not None:
+            # Only free driving uses the external fixed command. Route gates, signed targets,
+            # slew, and the independent route height clock stay authoritative in evaluation.
+            if e.mixed_curriculum is not None:
+                fixed_ids = torch.arange(len(yaw), device=yaw.device)[fixed_ids][~c.route[fixed_ids]]
             target, height = e.fixed_command
             raw = torch.as_tensor(target, device=e.device, dtype=c.value.dtype)
             cap = ev.air_birth[fixed_ids] & (age[fixed_ids] < 300)
@@ -222,8 +249,8 @@ class ShuP1:
             cmd.masked_fill_(recovering[fixed_ids, None], 0)
             c.clamp_free_motion(cmd, fixed_ids)
             c.value[fixed_ids] = cmd
-            c.height[fixed_ids] = torch.where(c.route[fixed_ids, None], c.height_target[fixed_ids], height)
-            c.height_rate[fixed_ids] = torch.where(c.route[fixed_ids], c.height_rate[fixed_ids], 0.0)
+            c.height[fixed_ids] = height
+            c.height_rate[fixed_ids] = 0.0
             c.vx_active[fixed_ids] = cmd[:, 0] != 0
             c.wz_active[fixed_ids] = cmd[:, 2] != 0
             c.heading_active[fixed_ids] = False

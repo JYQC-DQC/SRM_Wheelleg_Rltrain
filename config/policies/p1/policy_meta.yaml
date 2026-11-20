@@ -74,8 +74,8 @@ training:
     vx_range_m_s: [-2.7, 2.7]
     wz_range_rad_s: [-6.283185307179586, 6.283185307179586]  # +/-2*pi rad/s
     height_range_m: null
-    linear_slew_m_s2: 2.0
-    angular_slew_rad_s2: 10.0
+    linear_slew_m_s2: step
+    angular_slew_rad_s2: step
     segment_probabilities:
     - 0.1
     - 0.25
@@ -144,14 +144,14 @@ stages:
       route:
         up_height_range_m: [null, null]    # measured non-wheel clearance above stair crest
         down_height_range_m: [null, null]  # independent lower walking posture; retain landing stroke
-        vx_range_m_s: [0.5, 2.5]  # traverse target speed; reverse descent is not enabled
-        heading_kp: null
-        heading_max_wz_rad_s: null
-        corridor_width_m: null  # Full route width, centered on the tile.
-        clearance_m: null  # Vehicle envelope/safety margin to corridor, obstacle and tile edges.
+        vx_range_m_s: [0.5, 2.5]  # speed magnitude; reverse descent uses the negative sign
+        reverse_descent_share_of_stairs: 0.10
+        straight_spawn_probability: 0.50
+        max_spawn_yaw_offset_rad: 0.4363323129985824  # +/-25 degrees around forward or backward
+        clearance_m: null  # footprint safety margin for certifying platform entry/exit, NOT a map boundary
       # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
       groups: {rough: 0.05, grid: 0.10, slope: 0.10, stairs: 0.45}
-      pyramid: {share_of_stairs: 1.0}  # all stair resets; positive/negative towers each get half
+      pyramid: {share_of_stairs: 1.0}  # 45% full positive, 45% full inverted, 10% reverse half descent
       locked_stair_weights: {single: 0.30, double: 0.70}
       stair_lip: {height_m: 0.05, width_m: 0.15}  # approximate depth along travel
       free_map:

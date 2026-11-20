@@ -106,9 +106,7 @@ def settings():
     return dict(
         rows=3,
         tile_size_m=(12.0, 12.0),
-        route=dict(
-            vx_range_m_s=(0.5, 1.0), heading_kp=2.0, heading_max_wz_rad_s=1.0, corridor_width_m=2.0, clearance_m=0.2
-        ),
+        route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2),
         stair_lip=dict(height_m=0.05, width_m=0.10),
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
         locked_stair_weights=dict(single=0.3, double=0.7),
@@ -212,43 +210,3 @@ def test_double_pyramid_crosses_four_main_risers(terrain_module, down, lip):
     if lip:
         for edge in (3, 3.30, 8.70, 9):
             assert abs(height(edge - 0.001) - height(edge + 0.001)) == pytest.approx(0.23)
-
-
-def test_mixed_pyramid_counts_far_exit_and_does_not_unlock_pure_gates():
-    from wheelleg.shu_terrain import mixed_columns
-
-    cfg = settings()
-    cfg["pyramid"] = {"share_of_stairs": 1.0}
-    # Extend far enough to cross the full geometric profile, not just the first flank.
-    cfg["route"]["corridor_width_m"] = 1.0
-    mix = MixedTerrainRuntime(cfg, 512, "cpu")
-    cols = mixed_columns(cfg)
-    t = SimpleNamespace(
-        terrain_origins=torch.zeros(3, len(cols), 3),
-        terrain_levels=torch.zeros(512, dtype=torch.long),
-        terrain_types=torch.zeros(512, dtype=torch.long),
-        env_origins=torch.zeros(512, 3),
-    )
-    ids = torch.arange(512)
-    no = ids < 0
-    mix.reset(t, ids, no, no, evaluation=True)
-    assert (t.terrain_types[mix.traverse] >= 16).all()
-    assert set(t.terrain_types[mix.traverse].tolist()) == {16, 17, 18, 19, 22, 23, 24, 25}
-    x = mix.exit_distances[t.terrain_types]
-    start = t.env_origins
-    mid = start.clone()
-    mid[:, 0] = x * 0.5
-    mix.step(t, start, mid, torch.ones_like(x), no)
-    assert not mix.crossed.any()
-    end = start.clone()
-    end[:, 0] = x + 0.01
-    mix.step(t, mid, end, torch.ones_like(x), no)
-    assert torch.equal(mix.traverse, mix.crossed)
-    mix.reset(t, ids, ~no, no, evaluation=False)
-    assert not any(mix.passed.values())
-    assert list(mix.counts.values()) == [(0, 0)] * 4
-    mix.unlocked["triple_up"] = True
-    mix._update_weights()
-    assert mix.weights[MIXED_PROFILES.index("triple_up")] == 0
-    mix.reset(t, ids, no, no, evaluation=True)
-    assert (t.terrain_types[mix.traverse] >= 16).all()

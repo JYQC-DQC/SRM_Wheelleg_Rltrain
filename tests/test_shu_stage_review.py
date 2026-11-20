@@ -107,6 +107,7 @@ def fake_env(task):
         _operator_jump_height=None,
         shu=None,
         scanner=None,
+        mixed_curriculum=None,
         robot=NS(
             data=NS(
                 root_pos_w=root,
@@ -431,7 +432,7 @@ def test_pending_templates_are_not_ready_and_p3_has_no_generated_cases():
         conf = cfg(task)
         missing = conf.missing()
         assert conf.settings["reward_clip"] == 1.0
-        assert conf.settings["commands"]["angular_slew_rad_s2"] == 10.0
+        assert conf.settings["commands"]["angular_slew_rad_s2"] == "step"
         assert not any(
             "press_time" in field or "press_distance" in field or "disturbance" in field for field in missing
         )

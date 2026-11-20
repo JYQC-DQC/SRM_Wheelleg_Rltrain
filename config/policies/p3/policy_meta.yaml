@@ -74,8 +74,8 @@ training:
     height_duration_s: [2.0, 6.0]
     vx_range_m_s: [-2.7, 2.7]  # ordinary flat approach; tunnel has a separate positive approach range
     height_range_m: null
-    linear_slew_m_s2: 2.0
-    angular_slew_rad_s2: 10.0
+    linear_slew_m_s2: step
+    angular_slew_rad_s2: step
   reward_parameters:
     vx_tol_max: 0.50
     vx_tol_knee: 0.625

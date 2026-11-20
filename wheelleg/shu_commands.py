@@ -7,6 +7,7 @@ from math import ceil, floor, isfinite, pi
 import torch
 
 from .shu_curriculum import BRAKE_REVERSE, COMBINED, DASH, N_KINDS, STRAIGHT, TURN, FlatCommandCurriculum
+from .training import command_rate
 
 Criterion = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 _DT = 0.01
@@ -72,8 +73,6 @@ class ShuCommands:
                 raise ValueError(f"{key} must admit at least one positive 100 Hz duration")
         for key in (
             "combined_wz_limit_rad_s",
-            "linear_slew_m_s2",
-            "angular_slew_rad_s2",
             "heading_kp",
             "heading_max_wz",
         ):
@@ -114,6 +113,7 @@ class ShuCommands:
         self.heading_active = self.vx_active.clone()
         self.route = self.vx_active.clone()
         self.upstairs = self.route.clone()
+        self.reverse_descent = self.route.clone()
         self.route_height_bounds = self.value.new_tensor(p["height_range_m"]).expand(count, 2).clone()
         self._route_open = self.vx_active.clone()
         self._route_settings = _route_settings
@@ -128,7 +128,10 @@ class ShuCommands:
         self._error_sum = torch.zeros_like(self.value)
         self._magnitude_sum = torch.zeros_like(self.value)
         self._previous = torch.zeros_like(self.value)
-        self._rates = self.value.new_tensor([p["linear_slew_m_s2"], 0.0, p["angular_slew_rad_s2"]]) * _DT
+        self._rates = (
+            self.value.new_tensor([command_rate(p, "linear_slew_m_s2"), 0.0, command_rate(p, "angular_slew_rad_s2")])
+            * _DT
+        )
         self.free_limits = None  # (N, 2) absolute vx/wz caps looked up at the current world position
 
     @classmethod
@@ -172,7 +175,8 @@ class ShuCommands:
             if route_ids.numel():
                 lo, hi = self._route_settings["vx_range_m_s"]
                 self.target[route_ids] = 0
-                self.target[route_ids, 0] = lo + (hi - lo) * torch.rand(len(route_ids), device=ids.device)
+                speed = lo + (hi - lo) * torch.rand(len(route_ids), device=ids.device)
+                self.target[route_ids, 0] = torch.where(self.reverse_descent[route_ids], -speed, speed)
                 self.kind[route_ids] = STRAIGHT
                 self.remaining[route_ids] = self._duration(route_ids, "segment_duration_s")
                 self.steps[route_ids] = 0
@@ -226,6 +230,7 @@ class ShuCommands:
         ids: torch.Tensor,
         *,
         route: torch.Tensor | None = None,
+        reverse_descent: torch.Tensor | None = None,
         upstairs: torch.Tensor | None = None,
         birth_height_bounds: torch.Tensor | None = None,
     ) -> None:
@@ -234,6 +239,7 @@ class ShuCommands:
             if self._route_settings is None:
                 raise ValueError("Route-labelled resets require mixed terrain route settings")
             self.route[ids] = self._route_open[ids] = route
+        self.reverse_descent[ids] = False if reverse_descent is None else self.route[ids] & reverse_descent
         self.upstairs[ids] = False if upstairs is None else self.route[ids] & upstairs
         if birth_height_bounds is not None:
             self.route_height_bounds[ids] = birth_height_bounds
@@ -258,9 +264,12 @@ class ShuCommands:
         moving = (k == STRAIGHT) | (k == DASH) | (k == COMBINED) | ((k == BRAKE_REVERSE) & (self.target[ids, 0] != 0))
         turning = (k == TURN) | (k == COMBINED)
         rise = self._recovering[ids]
-        self.vx_active[ids] = moving & ~rise
-        self.wz_active[ids] = turning & ~rise
-        heading = moving & ~turning & self._driving[ids] & ~rise
+        route = self.route[ids]
+        drive = self._driving[ids]
+        route_open = self._route_open[ids] & drive
+        self.vx_active[ids] = torch.where(route, route_open, moving) & ~rise
+        self.wz_active[ids] = turning & ~rise & ~route
+        heading = moving & ~turning & drive & ~rise & ~route
         self.heading_active[ids] = heading
         self.reference_yaw[ids] = torch.where(heading & latch, yaw, self.reference_yaw[ids])
         error = torch.remainder(self.reference_yaw[ids] - yaw + pi, 2 * pi) - pi
@@ -274,21 +283,9 @@ class ShuCommands:
         cmd[:, 0] = torch.where(air, cmd[:, 0].clamp(-2.5, 2.5), cmd[:, 0])
         cmd[:, 2] = torch.where(air, cmd[:, 2].clamp(-pi / 2, pi / 2), cmd[:, 2])
         self.clamp_free_motion(cmd, ids)
-        self.value[ids] = torch.where(rise[:, None], 0.0, cmd)
-        if self._route_settings is not None:
-            route = self.route[ids]
-            active = route & self._route_open[ids] & self._driving[ids] & ~rise
-            self.vx_active[ids] = torch.where(route, active, self.vx_active[ids])
-            self.wz_active[ids] &= ~route
-            self.heading_active[ids] = torch.where(route, active, self.heading_active[ids])
-            self.reference_yaw[ids] = torch.where(route, 0.0, self.reference_yaw[ids])
-            limit = self._route_settings["heading_max_wz_rad_s"]
-            route_error = torch.remainder(pi - yaw, 2 * pi) - pi
-            route_yaw = (self._route_settings["heading_kp"] * route_error).clamp(-limit, limit)
-            cmd[:, 2] = prev[:, 2] + (route_yaw - prev[:, 2]).clamp(-self._rates[2], self._rates[2])
-            cmd[:, 2] = torch.where(self._first_interval[ids], 0.0, cmd[:, 2])
-            route_cmd = torch.where(active[:, None], cmd, 0.0)
-            self.value[ids] = torch.where(route[:, None], route_cmd, self.value[ids])
+        # Stair routes track signed body vx, never a world yaw (including in rewards).
+        cmd[:, 1:].masked_fill_(route[:, None], 0.0)
+        self.value[ids] = torch.where((rise | (route & ~route_open))[:, None], 0.0, cmd)
 
     def prepare_reset_rows(
         self,
