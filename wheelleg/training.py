@@ -145,7 +145,6 @@ def _asset_name_fields(task):
     }
     if TASKS[task].policy == "p1":
         fields.update(dict.fromkeys(_SHU_CONTACT_BODIES))
-    if task in ("p1-flat", "p1-landing"):
         fields["shu_leg_reset_joint_names"] = 12
     if task == "p3-tunnel":
         fields["collision_body_names"] = None
@@ -187,6 +186,7 @@ class TrainingConfig:
     shared: MappingProxyType
     settings: MappingProxyType
     stage: MappingProxyType
+    flat_recovery_probability: float | None = None  # mixed replay reads policy.stages.flat
 
     def __deepcopy__(self, memo):
         # Isaac configclass deep-copies attributes; this complete tree is immutable.
@@ -214,8 +214,6 @@ class TrainingConfig:
                 self.shared.get("shu_contact") or {},
                 _SHU_CONTACT,
             )
-        if self.task in ("p1-flat", "p1-landing"):
-            asset["shu_leg_reset_joint_names"] = self.asset.get("shu_leg_reset_joint_names")
             shared.update(_required(self.shared, ("hip_pivot_positions_b_m", "wheel_radius_m", "spawn_clearance_m")))
             shared["shu_reset_map"] = _required(self.shared.get("shu_reset_map") or {}, _RESET_KEYS)
             shared["shu_spawn"] = _required(self.shared.get("shu_spawn") or {}, _SHU_SPAWN)
@@ -223,12 +221,11 @@ class TrainingConfig:
             shared.pop("shu_spawn", None)
             shared.pop("shu_reset_map", None)
             asset.pop("shu_leg_reset_joint_names", None)
-            if family != "p1":
-                shared.pop("shu_contact", None)
-                shared.pop("wheel_rim_sign", None)
-                for key in ("guide_body_names", "leg_body_names"):
-                    asset.pop(key, None)
-                asset.setdefault("termination_contact_body_names", None)
+            shared.pop("shu_contact", None)
+            shared.pop("wheel_rim_sign", None)
+            for key in ("guide_body_names", "leg_body_names"):
+                asset.pop(key, None)
+            asset.setdefault("termination_contact_body_names", None)
         asset.update(_required(self.asset, _asset_name_fields(self.task)))
         if self.task == "p2-spin":
             stage.pop("hardware_spin_limit_rad_s", None)  # Deployment sign-off, not a simulation limit.
@@ -324,6 +321,11 @@ class TrainingConfig:
             + null_fields(shared, "robot.training")
             + null_fields(settings, "policy.training")
             + null_fields(stage, f"policy.stages.{TASKS[self.task].stage}")
+            + (
+                null_fields(self.flat_recovery_probability, "policy.stages.flat.recovery_probability")
+                if self.task == "p1-stairs"
+                else []
+            )
         )
 
     def require_ready(self, *, evaluation: bool = False, simulate_jump_button: bool = False) -> None:
@@ -338,7 +340,7 @@ class TrainingConfig:
         usd = Path(self.asset["usd_path"])
         if not usd.is_file():
             raise ValueError(f"robot.asset.usd_path: file does not exist: {usd}")
-        if self.task in ("p1-flat", "p1-landing"):
+        if TASKS[self.task].policy == "p1":
             # Reuse the reset implementation's geometric/closure checks before launching Isaac.
             from .shu_spawn import SpawnConfig
 
@@ -375,6 +377,9 @@ def load_training(task: str, robot_path: str | Path, policy_path: str | Path) ->
             _freeze(r["training"]),
             _freeze(p["training"]),
             _freeze(p["stages"][TASKS[task].stage]),
+            flat_recovery_probability=(
+                (p["stages"].get("flat") or {}).get("recovery_probability") if task == "p1-stairs" else None
+            ),
         )
     except KeyError as error:
         raise ValueError(f"Training configuration missing field {error.args[0]}") from error
@@ -387,7 +392,7 @@ def load_training(task: str, robot_path: str | Path, policy_path: str | Path) ->
         raise ValueError("transition_reset is retired; remove the legacy state-library configuration")
     _validate_asset_names(cfg)
     _validate_training(cfg)
-    if task in ("p1-flat", "p1-landing"):
+    if TASKS[task].policy == "p1":
         _validate_reset_map(cfg)
     _validate_shu(cfg)
     return cfg
@@ -663,14 +668,15 @@ def _validate_shu(cfg: TrainingConfig) -> None:
             bounds = _values(route.get(key), key, 2)
             if any(x <= 0 for x in bounds) or (len(bounds) == 2 and bounds[0] > bounds[1]):
                 raise ValueError(f"{key}: expected positive ordered heights")
+    if cfg.task in ("p1-flat", "p1-stairs"):
+        prob = cfg.stage.get("recovery_probability") if cfg.task == "p1-flat" else cfg.flat_recovery_probability
+        if prob is not None and (type(prob) not in (float, int) or not 0 <= prob <= 1):
+            raise ValueError("flat.recovery_probability must be in [0,1]")
     if cfg.task == "p1-flat":
         for key in ("error_floor", "relative_error"):
             value = cfg.stage.get(key)
             if value is not None and any(x < 0 for x in _values(value, key, 3)):
                 raise ValueError(f"flat.{key}: expected nonnegative errors")
-        prob = cfg.stage.get("recovery_probability")
-        if prob is not None and (type(prob) not in (float, int) or not 0 <= prob <= 1):
-            raise ValueError("flat.recovery_probability must be in [0,1]")
         for key in ("min_segments", "initial_fraction"):
             value = cfg.stage.get(key)
             if value is None:

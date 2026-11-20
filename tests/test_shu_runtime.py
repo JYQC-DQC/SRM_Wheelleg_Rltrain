@@ -202,6 +202,8 @@ def make_runtime(runtime, stage, proof=None):
     )
     e.terrain = SimpleNamespace(env_origins=torch.zeros(N, 3))
     e.terrain.env_origins[:, 0] = torch.arange(N) * 4
+    e.replay_origins = e.terrain.env_origins.clone()
+    e.replay_origins[:, 2] = -32.0
     e.joints, e.springs, e.wheels, e.contact_wheels = ACTIVE, SPRINGS, WHEELS, CONTACT_WHEELS
     e.contact_bad = e.contact_terminal = [1, 2, 3]
     e.legs, e.wheel_channels = [0, 1, 3, 4], [2, 5]

@@ -96,6 +96,7 @@ def test_adapter_uses_current_surface_and_mixed_height_kernel_stays_annealed(run
         sub_terrains=dict.fromkeys(("flat", "rough", "pyramid_up_lip")),
     )
     e.shu.free_map = ShuFreeMap(generator, {}, e.device)
+    e.cfg.evaluation = True  # all flat replay births are ordinary in this driving-only comparison
     e._reset_idx(torch.arange(e.num_envs))
     e.shu.observe_commands(e._measure()["yaw"])
     free = ~e.mixed_curriculum.traverse
@@ -114,7 +115,9 @@ def test_adapter_uses_current_surface_and_mixed_height_kernel_stays_annealed(run
     s["height_error"].fill_(0.05)
     s["ground"].fill_(0.3)
     terms = e.shu.rewards(s)
-    torch.testing.assert_close(terms["vertical_velocity"], torch.where(free, -0.4, -0.25) * e.step_dt)
+    torch.testing.assert_close(
+        terms["vertical_velocity"], torch.where(free & ~e.shu.flat_replay, -0.4, -0.25) * e.step_dt
+    )
     torch.testing.assert_close(terms["track_height"], torch.full_like(s["height_error"], exp(-2.5) * e.step_dt))
 
     # Leave the tile for the flat border without resetting or changing the issued commands.

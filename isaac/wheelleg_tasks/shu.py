@@ -23,7 +23,7 @@ from wheelleg.shu_spawn import (
 )
 from wheelleg.shu_terrain import STAIR_PROFILES, mixed_columns
 
-PYRAMID_SPAWN_JITTER_M = 1.0
+PLATFORM_SPAWN_JITTER_M = 1.0
 
 
 def _exact(finder, names):
@@ -39,7 +39,8 @@ class ShuP1:
         t, n, dev = env.training, env.num_envs, env.device
         self.stage = t.task
         cp = t.settings["commands"]
-        self.flat = self.drop = self.spawn_cfg = None
+        self.flat = self.drop = None
+        self.flat_replay = torch.zeros(n, dtype=torch.bool, device=dev)
         self.free_map = None
         self.proof = proof
         self.log = ShuLandingLog()
@@ -56,6 +57,10 @@ class ShuP1:
             self.commands = ShuCommands.for_mixed(cp, n, dev, route=terrain["route"])
             route = terrain["route"]
             columns = mixed_columns(terrain)
+            self.flat_columns = torch.tensor([name == "flat" for name, _, _ in columns], device=dev)
+            self.slope_columns = torch.tensor(
+                [name in ("slope", "slope_inverted") for name, _, _ in columns], device=dev
+            )
             up, down = route["up_height_range_m"], route["down_height_range_m"]
             self.down_height_bounds = env.raw_action.new_tensor(down)
             self.oblique_birth = torch.zeros(n, dtype=torch.bool, device=dev)
@@ -70,7 +75,7 @@ class ShuP1:
                 clearance_m = route["clearance_m"]
                 for name in STAIR_PROFILES:
                     half_width_m = terrain["profiles"][name]["geometry"]["platform_width_m"] / 2
-                    if half_width_m - clearance_m < PYRAMID_SPAWN_JITTER_M:
+                    if half_width_m - clearance_m < PLATFORM_SPAWN_JITTER_M:
                         raise ValueError(f"{name}: center XY jitter does not fit the platform after route clearance")
             # Center-out motion flips the direction implied by the outside-in pyramid names.
             # Only legacy straight ascent holds height; every pyramid keeps its resampling clock.
@@ -90,25 +95,24 @@ class ShuP1:
                 ]
             )
             self.free_map = ShuFreeMap(env.cfg.terrain.terrain_generator, terrain.get("free_map") or {}, dev)
-        if t.task != "p1-stairs":
-            self.spawn_cfg = SpawnConfig(
-                **dict(t.shared["shu_spawn"]),
-                **{k: t.shared[k] for k in ("hip_pivot_positions_b_m", "wheel_radius_m", "spawn_clearance_m")},
-            )
-            model = t.shared.get("shu_reset_map")
-            if not model or any(v is None for v in model.values()):
-                raise ValueError("missing calibrated robot.training.shu_reset_map; refusing partial spring/leg reset")
-            self.reset_model = CalibratedResetModel(**model)
-            names = self.reset_model.auxiliary_joint_names
-            self.spawn_joints = SpawnJointMap(
-                len(env.robot.joint_names),
-                _exact(env.robot.find_joints, t.asset["shu_leg_reset_joint_names"]),
-                env.joints,
-                env.springs,
-                _exact(env.robot.find_joints, names) if names else [],
-                self.reset_model.canonical_to_asset_sign,
-                self.reset_model.canonical_zero_in_asset_rad,
-            )
+        self.spawn_cfg = SpawnConfig(
+            **dict(t.shared["shu_spawn"]),
+            **{k: t.shared[k] for k in ("hip_pivot_positions_b_m", "wheel_radius_m", "spawn_clearance_m")},
+        )
+        model = t.shared.get("shu_reset_map")
+        if not model or any(v is None for v in model.values()):
+            raise ValueError("missing calibrated robot.training.shu_reset_map; refusing partial spring/leg reset")
+        self.reset_model = CalibratedResetModel(**model)
+        names = self.reset_model.auxiliary_joint_names
+        self.spawn_joints = SpawnJointMap(
+            len(env.robot.joint_names),
+            _exact(env.robot.find_joints, t.asset["shu_leg_reset_joint_names"]),
+            env.joints,
+            env.springs,
+            _exact(env.robot.find_joints, names) if names else [],
+            self.reset_model.canonical_to_asset_sign,
+            self.reset_model.canonical_zero_in_asset_rad,
+        )
         gs = _exact(env.contact.find_bodies, t.asset["guide_body_names"])
         links = _exact(env.contact.find_bodies, t.asset["leg_body_names"])
         self.guide_bodies = _exact(env.robot.find_bodies, t.asset["guide_body_names"])
@@ -161,15 +165,20 @@ class ShuP1:
     def reset(self, ids, root, q, qd):
         env = self.env
         mix = env.mixed_curriculum
+        spawn_rows = slice(None)
+        spawn_stage = self.stage
         if mix is None:
             self.commands.reset(ids)
         else:
-            # Mixed ground starts have no seeded root or joint velocity.
+            columns = env.terrain.terrain_types[ids]
+            replay = self.flat_columns[columns]
+            self.flat_replay[ids] = replay
+            spawn_rows, spawn_stage = replay, "p1-flat"
+            # Non-replay mixed starts have no seeded root or joint velocity.
             root[:, 7:13] = 0
             qd.zero_()
-            traverse = mix.traverse[ids]
+            traverse = mix.traverse[ids] & ~replay
             reverse = mix.reverse_descent[ids]
-            columns = env.terrain.terrain_types[ids]
             bounds = torch.where(reverse[:, None], self.down_height_bounds, self.birth_height_bounds[columns])
             self.commands.reset(
                 ids,
@@ -190,39 +199,46 @@ class ShuP1:
             root[traverse, 3:7] = torch.stack((half_yaw.cos(), zeros, zeros, half_yaw.sin()), dim=-1)
             # Anchor XY to the deck center, independent of the asset's default XY offset.
             # Root Z already includes the signed deck elevation from env_origins.
-            center_birth = traverse & self.pyramid_columns[columns]
+            center_birth = (traverse & self.pyramid_columns[columns]) | self.slope_columns[columns]
             center_xy = env.terrain.env_origins[ids[center_birth], :2]
             jitter = torch.rand_like(center_xy)
-            root[center_birth, :2] = center_xy + (2 * jitter - 1) * PYRAMID_SPAWN_JITTER_M
-        preset = air = torch.zeros(len(ids), dtype=torch.bool, device=env.device)
-        if self.spawn_cfg is not None:
-            kinds = sample_spawn_kinds(
-                self.stage,
-                len(ids),
-                env.device,
-                flat_recovery_probability=env.training.stage["recovery_probability"] if self.flat is not None else None,
-            )
-            if self.stage == "p1-flat" and env.cfg.evaluation:
+            root[center_birth, :2] = center_xy + (2 * jitter - 1) * PLATFORM_SPAWN_JITTER_M
+        preset = torch.zeros(len(ids), dtype=torch.bool, device=env.device)
+        air = torch.zeros_like(preset)
+        spawn_ids = ids[spawn_rows]
+        if spawn_ids.numel():
+            probability = None
+            if self.stage == "p1-flat":
+                probability = env.training.stage["recovery_probability"]
+            elif self.stage == "p1-stairs":
+                probability = env.training.flat_recovery_probability
+            kinds = sample_spawn_kinds(spawn_stage, len(spawn_ids), env.device, flat_recovery_probability=probability)
+            if spawn_stage == "p1-flat" and env.cfg.evaluation:
                 kinds.fill_(ORDINARY)  # no preset cohort in flat eval; still solve the whole articulation
-            preset, air = kinds == RECOVERY, kinds == AIR_BIRTH
-            offsets = root.new_zeros(len(ids))
-            self.band[ids] = -1
+            spawn_air = kinds == AIR_BIRTH
+            preset[spawn_rows], air[spawn_rows] = kinds == RECOVERY, spawn_air
+            offsets = root.new_zeros(len(spawn_ids))
+            self.band[spawn_ids] = -1
             if self.drop is not None:
                 if env.cfg.evaluation:
                     edges = self.drop.edges
-                    offsets[air] = edges[0] + (edges[-1] - edges[0]) * torch.rand_like(offsets[air])
-                    self.band[ids[air]] = torch.bucketize(offsets[air], edges[1:-1])
+                    offsets[spawn_air] = edges[0] + (edges[-1] - edges[0]) * torch.rand_like(offsets[spawn_air])
+                    self.band[spawn_ids[spawn_air]] = torch.bucketize(offsets[spawn_air], edges[1:-1])
                 else:
-                    offsets[air], self.band[ids[air]] = self.drop.sample(int(air.sum()))
+                    offsets[spawn_air], self.band[spawn_ids[spawn_air]] = self.drop.sample(int(spawn_air.sum()))
             spawn = sample_spawn(kinds, offsets, self.spawn_cfg)
-            root.copy_(spawn.root_state)
-            root[:, :3] += env.terrain.env_origins[ids]
             # Do not overwrite a subset of the default q/qd: a different leg pose also changes
             # pin orientation, slider extension and their velocities. Resolve all DOFs atomically.
-            asset_q, asset_qd = self.reset_model.resolve(spawn, self.spawn_joints, env.robot.data.joint_pos_limits[ids])
-            q.copy_(asset_q)
-            qd.copy_(asset_qd)
-            env.spawn_check_mask[ids] = False
+            asset_q, asset_qd = self.reset_model.resolve(
+                spawn, self.spawn_joints, env.robot.data.joint_pos_limits[spawn_ids]
+            )
+            root[spawn_rows] = spawn.root_state
+            root[spawn_rows, :3] += env.terrain.env_origins[spawn_ids]
+            q[spawn_rows], qd[spawn_rows] = asset_q, asset_qd
+            env.spawn_check_mask[spawn_ids] = False
+            if spawn_stage == "p1-flat" and env.commands_fixed and env.fixed_command is not None:
+                # Fixed evaluation commands, including height, are already in force at reset.
+                self.commands.value[spawn_ids], self.commands.height[spawn_ids] = env.fixed_command
         self.event.reset(ids, air, preset, env._sim_step_counter)
         self.second_action[ids] = 0
         self.prev_qd[ids] = qd[:, env.joints]
@@ -238,7 +254,8 @@ class ShuP1:
         route = None if e.mixed_curriculum is None else e.mixed_curriculum.route_open
         fixed_ids = slice(None)
         if self.free_map is not None:
-            c.free_limits = self.free_map.limits_at(e.robot.data.root_pos_w)
+            limits = self.free_map.limits_at(e.robot.data.root_pos_w)
+            c.free_limits = None if limits is None else limits.masked_fill(self.flat_replay[:, None], torch.inf)
         if tick != self.last_command_tick:
             c.prepare(*args, route_open=route)
             self.last_command_tick = tick
@@ -310,13 +327,22 @@ class ShuP1:
             def criterion(kind, error, magnitude):
                 return (error <= self.error_floor + self.relative_error * magnitude).all(-1)
 
+            # The independent flat driver does not consume motion/height clocks with a fixed
+            # command. Freeze those same clocks only for replay rows; the atlas still advances.
+            fixed_replay = self.flat_replay.nonzero().flatten() if e.commands_fixed else None
+            if fixed_replay is not None:
+                clocks = (c.remaining, c.height_remaining, c.steps)
+                before = tuple(clock[fixed_replay] for clock in clocks)
             c.finish(
                 torch.stack((forward, s["angular_velocity"][:, 2], s["base_height"]), -1),
                 ev.physical_failure,
                 (timeout | terminated) & ~ev.physical_failure,
                 criterion if self.flat is not None else None,
             )
-            c.handoff(ev.handoff, s["yaw"])
+            if fixed_replay is not None:
+                for clock, previous in zip(clocks, before, strict=True):
+                    clock[fixed_replay] = previous
+            c.handoff(ev.handoff & ~self.flat_replay if e.commands_fixed else ev.handoff, s["yaw"])
         return terminated
 
     def rewards(self, s):
@@ -349,7 +375,10 @@ class ShuP1:
             previous_previous_action=self.second_action,
         )
         self.params["height_fraction"] = c.fraction
-        terrain_masks = self.free_map.reward_masks_at(root_pos_w) if self.stage == "p1-stairs" else None
+        terrain_masks = None
+        if self.free_map is not None:
+            nonflat, pyramid = self.free_map.reward_masks_at(root_pos_w)
+            terrain_masks = nonflat & ~self.flat_replay, pyramid & ~self.flat_replay
         terms = shu_reward_terms(s, ev.reward_phase, self.params, e.step_dt, terrain_masks=terrain_masks)
         if self.stage == "p1-stairs":
             # Before autoreset, keep the scan-derived reference and error independently of the reward gates.

@@ -34,6 +34,10 @@ from wheelleg.tensor_ops import (
 
 from .shu import ShuP1
 
+# Separate the infinite flat-replay collider from the atlas; not a height command or observation.
+_FLAT_REPLAY_Z = -32.0
+_FLAT_REPLAY_PRIM = "/World/shu_flat_replay"
+
 
 class WheelLegEnv(DirectRLEnv):
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
@@ -105,6 +109,8 @@ class WheelLegEnv(DirectRLEnv):
         if self.mixed_curriculum is not None:
             if any(t.stage[k] != 0 for k in ("progress_weight", "stuck_weight", "impact_weight")):
                 raise ValueError("P1 mixed route and impact diagnostics are not PPO rewards")
+            self.replay_origins = self.terrain._compute_env_origins_grid(n, cfg.scene.env_spacing)
+            self.replay_origins[:, 2] = _FLAT_REPLAY_Z
             columns = mixed_columns(t.stage["terrain"], production=True)
             self.mixed_up_columns = torch.tensor([name == "pyramid_down" for name, _, _ in columns], device=d)
             self.mixed_lip_columns = torch.tensor([lip for _, lip, _ in columns], device=d)
@@ -191,6 +197,11 @@ class WheelLegEnv(DirectRLEnv):
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
+        if self.training.task == "p1-stairs":
+            # Same GroundPlaneCfg and material as TerrainImporter.import_ground_plane for p1-flat.
+            # A sibling prim keeps the atlas RayCaster from selecting this plane as its mesh.
+            plane = sim_utils.GroundPlaneCfg(physics_material=self.cfg.terrain.physics_material, size=(2e6, 2e6))
+            plane.func(_FLAT_REPLAY_PRIM, plane, translation=(0.0, 0.0, _FLAT_REPLAY_Z))
         self.obstacle_contacts = {}
         if self.training.task == "p3-tunnel":
             self._spawn_tunnel()
@@ -200,7 +211,10 @@ class WheelLegEnv(DirectRLEnv):
                 self.scene.sensors[f"obstacle_{name}"] = sensor
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
-            self.scene.filter_collisions(global_prim_paths=["/World/ground"])
+            global_paths = ["/World/ground"]
+            if self.training.task == "p1-stairs":
+                global_paths.append(_FLAT_REPLAY_PRIM)
+            self.scene.filter_collisions(global_prim_paths=global_paths)
         light = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light.func("/World/Light", light)
 
@@ -322,7 +336,10 @@ class WheelLegEnv(DirectRLEnv):
         ids = (self.push_timer <= 0).nonzero().flatten()
         if len(ids):
             velocity = self.robot.data.root_vel_w[ids].clone()
-            velocity[:, :2] += uniform((-amplitude, amplitude), (len(ids), 2), self.device)
+            scale = amplitude
+            if self.mixed_curriculum is not None:
+                scale = torch.where(self.shu.flat_replay[ids, None], r["push_velocity_m_s"], amplitude)
+            velocity[:, :2] += uniform((-1.0, 1.0), (len(ids), 2), self.device) * scale
             self.robot.write_root_velocity_to_sim(velocity, ids)
             force = uniform((-r["external_force_n"], r["external_force_n"]), (len(ids), 1, 3), self.device)
             torque = uniform((-r["external_torque_nm"], r["external_torque_nm"]), (len(ids), 1, 3), self.device)
@@ -331,7 +348,7 @@ class WheelLegEnv(DirectRLEnv):
             self.push_timer[ids] = uniform(r["push_interval_s"], (len(ids),), self.device)
         if self.disturbance_phase == 2:
             self.collision_timer -= self.step_dt
-            collision_ids = (self.collision_timer <= 0).nonzero().flatten()
+            collision_ids = ((self.collision_timer <= 0) & ~self.shu.flat_replay).nonzero().flatten()
             count = len(collision_ids)
             if count:
                 force_range = schedule["collision_force_range_n"]
@@ -479,7 +496,7 @@ class WheelLegEnv(DirectRLEnv):
         ).reshape(-1, 2, 3)
         ground = self.terrain.env_origins[:, 2]
         if self.scanner is not None:
-            ground = self.scanner.data.ray_hits_w[:, :, 2].median(-1).values
+            ground = torch.where(self.shu.flat_replay, ground, self.scanner.data.ray_hits_w[:, :, 2].median(-1).values)
         base_height = data.root_pos_w[:, 2] - ground
         clearance = wheels_w[:, :, 2] - ground[:, None] - t.shared["wheel_radius_m"]
         force = self.contact_peaks[:, self.contact_wheels]
@@ -540,7 +557,7 @@ class WheelLegEnv(DirectRLEnv):
             )
             if self.mixed_curriculum is not None:
                 outside = self.shu.free_map.outside(self.robot.data.root_pos_w)
-                timeout |= outside  # all mixed tasks share the outer atlas boundary
+                timeout |= outside & ~self.shu.flat_replay  # flat retention is not on the atlas
             terminated = self.shu.update(s, timeout)
             self.numerical_bad |= self.shu.event.numerical_failure
             self.iteration_numerical_terminations += self.numerical_bad.sum()
@@ -750,7 +767,11 @@ class WheelLegEnv(DirectRLEnv):
             -1,
         )
         if self.scanner is not None:
-            scan = self.robot.data.root_pos_w[:, 2:3] - self.scanner.data.ray_hits_w[:, :, 2]
+            # A shared mixed critic expects 77 rays; pure flat sees its own plane, never the overhead atlas.
+            ground_z = torch.where(
+                self.shu.flat_replay[:, None], self.terrain.env_origins[:, 2:3], self.scanner.data.ray_hits_w[:, :, 2]
+            )
+            scan = self.robot.data.root_pos_w[:, 2:3] - ground_z
             critic = torch.cat((critic, component("height_scan", scan)), -1)
         self.policy_history.update(actor, self.history_tick != self._sim_step_counter)
         self.history_tick = self._sim_step_counter
@@ -808,6 +829,9 @@ class WheelLegEnv(DirectRLEnv):
                 final_xy=self.robot.data.root_pos_w[:, :2],
                 tracking_fraction=self.stair_tracking_sum / self.max_episode_length_s,
             )
+            flat_ids = env_ids[self.terrain.terrain_types[env_ids] == 0]
+            # The mixed generator's terrain_origins stay untouched; env_origins is the per-episode copy.
+            self.terrain.env_origins[flat_ids] = self.replay_origins[flat_ids]
             self.stair_tracking_sum[env_ids] = 0
         super()._reset_idx(env_ids)
         n = len(env_ids)

@@ -67,8 +67,8 @@ def test_shu_stage_scope(tmp_path):
             "robot.asset.termination_contact_body_names",
             "robot.training.wheel_rim_sign[0]",
         } <= missing
-        assert ("robot.training.shu_spawn.min_root_height_m" in missing) == (task != "p1-stairs")
-        assert ("robot.asset.shu_leg_reset_joint_names[0]" in missing) == (task != "p1-stairs")
+        assert "robot.training.shu_spawn.min_root_height_m" in missing
+        assert "robot.asset.shu_leg_reset_joint_names[0]" in missing
         assert ("policy.stages.flat.min_segments" in missing) == (task == "p1-flat")
         assert ("policy.stages.landing.height_edges_m[0]" in missing) == (task == "p1-landing")
         for key in ("air_wheel_height_bias_m", "air_wheel_height_max_m"):
@@ -116,18 +116,47 @@ def test_reject_invalid_stage_calibration(tmp_path, task, key, bad):
         load_training(task, ROBOT, write(tmp_path / "p.yaml", p))
 
 
-def test_mixed_uses_contact_not_spawn(tmp_path):
+def test_mixed_requires_flat_spawn_calibration(tmp_path):
     r = read(ROBOT)
-    r["asset"]["shu_leg_reset_joint_names"] = ["invalid count for closed-chain resets"]
-    r["training"]["shu_spawn"] = None
+    r["asset"].pop("shu_leg_reset_joint_names")
+    for key in ("shu_spawn", "shu_reset_map"):
+        r["training"].pop(key)
     robot = write(tmp_path / "r.yaml", r)
     cfg = load_training("p1-stairs", robot, policy("p1"))
-    missing = cfg.missing()
-    assert "robot.training.shu_contact.support_force_n" in missing
+    missing = set(cfg.missing())
+    assert {
+        "robot.training.shu_contact.support_force_n",
+        "robot.asset.shu_leg_reset_joint_names",
+        "robot.training.shu_spawn.min_root_height_m",
+        "robot.training.shu_reset_map.mode",
+    } <= missing
     assert any(k.startswith("policy.stages.stairs.terrain.") for k in missing)
-    assert not any("shu_spawn" in k or "shu_leg_reset" in k for k in missing)
+
+    r["asset"]["shu_leg_reset_joint_names"] = ["invalid count for closed-chain resets"]
     with pytest.raises(ValueError, match="shu_leg_reset_joint_names"):
-        load_training("p1-landing", robot, policy("p1"))
+        load_training("p1-stairs", write(robot, r), policy("p1"))
+    r["asset"].pop("shu_leg_reset_joint_names")
+    r["training"]["shu_reset_map"] = {"mode": "invalid"}
+    with pytest.raises(ValueError, match="shu_reset_map.mode"):
+        load_training("p1-stairs", write(robot, r), policy("p1"))
+
+
+def test_mixed_inherits_only_flat_recovery_probability(tmp_path):
+    p = read(policy("p1"))
+    path = tmp_path / "p1.yaml"
+    p["stages"]["stairs"]["recovery_probability"] = 0.9  # not the flat replay source
+    p["stages"]["flat"].update(recovery_probability=0.27, initial_fraction=None, min_segments=None)
+    cfg = load_training("p1-stairs", ROBOT, write(path, p))
+    assert cfg.flat_recovery_probability == 0.27
+    assert not any(k.startswith("policy.stages.flat.") for k in cfg.missing())
+
+    del p["stages"]["flat"]["recovery_probability"]
+    cfg = load_training("p1-stairs", ROBOT, write(path, p))
+    assert "policy.stages.flat.recovery_probability" in cfg.missing()
+    for bad in (-0.1, 1.1, True):
+        p["stages"]["flat"]["recovery_probability"] = bad
+        with pytest.raises(ValueError, match="flat.recovery_probability"):
+            load_training("p1-stairs", ROBOT, write(path, p))
 
 
 def test_p2_partial_calibration_is_not_hardware_signoff(tmp_path):
@@ -197,7 +226,7 @@ def test_reset_map_only_in_spawn_stages(tmp_path, task):
     }
     cfg = load_training(task, write(tmp_path / "r.yaml", r), policy(TASKS[task].policy))
     m = cfg.missing()
-    spawn = task in ("p1-flat", "p1-landing")
+    spawn = TASKS[task].policy == "p1"
     assert ("robot.training.shu_spawn.ik_branch" in m) == spawn
     assert ("robot.training.shu_reset_map.mode" in m) == spawn
     assert ("robot.training.shu_reset_map.fixed_pin_xz_m[0][1]" in m) == spawn

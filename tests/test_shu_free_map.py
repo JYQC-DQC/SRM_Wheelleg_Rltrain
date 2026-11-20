@@ -168,3 +168,77 @@ def test_free_outer_edge_adds_timeout_and_physical_failure_wins(runtime, at_hori
     assert terminated[:5].tolist() == [False, False, True, False, True]
     assert timeout[:5].tolist() == [at_horizon, True, False, True, False]
     assert e.shu.event.physical_failure[2]
+
+
+def test_flat_replay_never_inherits_atlas_height_or_edge(runtime):
+    e = mixed_runtime(runtime)
+    e.shu.flat_replay[:2] = torch.tensor([True, False])
+    e.terrain.env_origins[0, 2] = -32
+    e.robot.data.root_pos_w[:2, 2] = torch.tensor([-31.75, 0.25])
+    e.scanner = NS(data=NS(ray_hits_w=torch.zeros(e.num_envs, 77, 3)))
+    # Off the scanned atlas there is no ray hit. The lower layer is still level ground.
+    e.scanner.data.ray_hits_w[0, :, 2] = torch.inf
+    e.robot.data.root_pos_w[:2, 0] = 80  # both outside the atlas; only the upper-layer round is cut
+    torch.testing.assert_close(e._measure()["base_height"][:2], torch.tensor([0.25, 0.25]))
+    e.shu.observe_commands(e._measure()["yaw"])
+    _, timeout = e._get_dones()
+    assert timeout[:2].tolist() == [False, True]
+    obs = e._get_observations()
+    torch.testing.assert_close(obs["critic"][0, -77:], torch.full((77,), 0.25))
+
+
+def test_mixed_push_keeps_flat_amplitude_and_blocks_extra_collisions(runtime):
+    e = mixed_runtime(runtime)
+    n = e.num_envs
+    e.disturbance_phase = 2
+    e.training_iteration_offset, e.common_step_counter = 3000, 0
+    e.training.settings.update(
+        rollout_steps=48,
+        disturbance=dict(
+            phase2_start_iteration=0,
+            ramp_iterations=3000,
+            final_push_velocity_m_s=1.25,
+            collision_interval_s=(8, 15),
+            collision_duration_s=0.1,
+            collision_force_range_n=(100, 300),
+            lateral_probability=0.8,
+        ),
+    )
+    e.training.shared["randomization"] = dict(
+        push_velocity_m_s=0.25,
+        external_force_n=10.0,
+        external_torque_nm=1.0,
+        external_wrench_duration_s=10.0,
+        push_interval_s=(5.0, 10.0),
+    )
+    for name in ("push_timer", "collision_timer", "push_remaining", "collision_remaining"):
+        setattr(e, name, torch.zeros(n))
+    for name in ("push_force", "push_torque", "collision_force"):
+        setattr(e, name, torch.zeros(n, 1, 3))
+    e.robot.data.root_vel_w = torch.zeros(n, 6)
+    e.robot.write_root_velocity_to_sim = Mock()
+    replay = torch.arange(n) % 2 == 0
+    e.shu.flat_replay.copy_(replay)
+    torch.manual_seed(5)
+    runtime[0]._push(e)
+    v, _ = e.robot.write_root_velocity_to_sim.call_args.args
+    assert v[replay, :2].abs().max() <= 0.25 < v[~replay, :2].abs().max() <= 1.25
+    assert not e.collision_remaining[replay].any()
+    assert (e.collision_remaining[~replay] > 0).all()
+    assert (e.push_remaining == 10).all()
+
+
+def test_both_slope_signs_use_the_same_free_command_cap():
+    generator = NS(
+        size=(12, 12),
+        num_rows=10,
+        num_cols=3,
+        border_width=5,
+        curriculum=True,
+        sub_terrains=dict.fromkeys(("slope", "flat", "slope_inverted")),
+    )
+    m = ShuFreeMap(generator, {"command_limits": {"slope": {"vx_abs_max_m_s": 2, "wz_abs_max_rad_s": torch.pi}}}, "cpu")
+    points = torch.tensor([[0, -12], [0, 0], [0, 12]])
+    torch.testing.assert_close(
+        m.limits_at(points), torch.tensor([[2, torch.pi], [torch.inf, torch.inf], [2, torch.pi]])
+    )
