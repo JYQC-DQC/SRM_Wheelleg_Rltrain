@@ -247,3 +247,8 @@ def test_mixed_pyramid_counts_far_exit_and_does_not_unlock_pure_gates():
     mix.reset(t, ids, ~no, no, evaluation=False)
     assert not any(mix.passed.values())
     assert list(mix.counts.values()) == [(0, 0)] * 4
+    mix.unlocked["triple_up"] = True
+    mix._update_weights()
+    assert mix.weights[MIXED_PROFILES.index("triple_up")] == 0
+    mix.reset(t, ids, no, no, evaluation=True)
+    assert (t.terrain_types[mix.traverse] >= 16).all()

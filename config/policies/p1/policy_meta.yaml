@@ -151,7 +151,7 @@ stages:
         clearance_m: null  # Vehicle envelope/safety margin to corridor, obstacle and tile edges.
       # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
       groups: {rough: 0.05, grid: 0.10, slope: 0.10, stairs: 0.45}
-      pyramid: {share_of_stairs: null}  # mix within eligible stair births; confirm before training
+      pyramid: {share_of_stairs: 1.0}  # all stair resets; positive/negative towers each get half
       locked_stair_weights: {single: 0.30, double: 0.70}
       stair_lip: {height_m: 0.05, width_m: 0.15}  # approximate depth along travel
       free_map:

@@ -240,6 +240,14 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         weights = self.proportions(
             self.settings["groups"], self.settings["stair_weights"], self.settings.get("locked_stair_weights")
         )
+        if self.pyramid_share == 1.0 and not all(self.unlocked.values()):
+            # A tower traverses BOTH directions. Never fall back to a pure triple on a one-sided unlock.
+            for triple, pair in PREREQUISITES.items():
+                mass = sum(weights[n] for n in (*pair, triple))
+                locked = self.settings["locked_stair_weights"]
+                for name in pair:
+                    weights[name] = mass * locked[name.split("_")[0]] / sum(locked.values())
+                weights[triple] = 0.0
         self.weights.copy_(self.weights.new_tensor(list(weights.values())))
 
     @property
