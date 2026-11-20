@@ -286,6 +286,7 @@ class ShuCommands:
             route_error = torch.remainder(pi - yaw, 2 * pi) - pi
             route_yaw = (self._route_settings["heading_kp"] * route_error).clamp(-limit, limit)
             cmd[:, 2] = prev[:, 2] + (route_yaw - prev[:, 2]).clamp(-self._rates[2], self._rates[2])
+            cmd[:, 2] = torch.where(self._first_interval[ids], 0.0, cmd[:, 2])
             route_cmd = torch.where(active[:, None], cmd, 0.0)
             self.value[ids] = torch.where(route[:, None], route_cmd, self.value[ids])
 
@@ -352,8 +353,8 @@ class ShuCommands:
         # Air starts at a moving request, independent of sampled root speed. Apply the birth
         # cap in _issue; after the first interval, ordinary slew and segment resampling resume.
         self._previous.copy_(torch.where((air_birth & self._first_interval)[:, None], self.target, self.value))
-        self._first_interval.zero_()
         self._issue(torch.arange(len(yaw), device=yaw.device), yaw, latch)
+        self._first_interval.zero_()
         # Freeze the evidence for the interval. A post-physics handoff cannot rewrite its sampled commands.
         self._issued[:, 0], self._issued[:, 1], self._issued[:, 2] = (
             self.value[:, 0],

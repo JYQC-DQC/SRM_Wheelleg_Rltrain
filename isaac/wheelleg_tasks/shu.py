@@ -57,7 +57,7 @@ class ShuP1:
             if "pyramid" in terrain and shared[0] > shared[1]:
                 raise ValueError("No common calibrated standing height for the combined stair route")
             self.up_columns = torch.tensor(
-                [pyramid or name.endswith("_up") for name, _, pyramid in columns], device=dev
+                [not pyramid and name.endswith("_up") for name, _, pyramid in columns], device=dev
             )
             self.birth_height_bounds = env.raw_action.new_tensor(
                 [
@@ -146,6 +146,9 @@ class ShuP1:
         if mix is None:
             self.commands.reset(ids)
         else:
+            # Mixed ground starts: perturb during execution, not by seeding root velocity.
+            root[:, 7:13] = 0
+            qd.zero_()
             self.commands.reset(
                 ids,
                 route=mix.traverse[ids],
@@ -215,6 +218,7 @@ class ShuP1:
             cmd = raw.expand(len(cap), 3).clone()
             cmd[:, 0] = torch.where(cap, raw[0].clamp(-2.5, 2.5), raw[0])
             cmd[:, 2] = torch.where(cap, raw[2].clamp(-torch.pi / 2, torch.pi / 2), raw[2])
+            cmd[:, 1] = 0  # reserved command ABI, including fixed evaluation commands
             cmd.masked_fill_(recovering[fixed_ids, None], 0)
             c.clamp_free_motion(cmd, fixed_ids)
             c.value[fixed_ids] = cmd

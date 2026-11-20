@@ -144,7 +144,7 @@ stages:
       route:
         up_height_range_m: [null, null]    # measured non-wheel clearance above stair crest
         down_height_range_m: [null, null]  # independent lower walking posture; retain landing stroke
-        vx_range_m_s: null  # Positive forward-speed range for traverse only.
+        vx_range_m_s: [0.5, 2.5]  # traverse target speed; reverse descent is not enabled
         heading_kp: null
         heading_max_wz_rad_s: null
         corridor_width_m: null  # Full route width, centered on the tile.

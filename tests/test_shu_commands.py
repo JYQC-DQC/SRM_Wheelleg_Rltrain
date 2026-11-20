@@ -385,3 +385,29 @@ def test_up_height_holds_down_height_resamples_within_bounds_even_across_motion_
             assert c.height_rate[1] != 0
         c.finish(observed(c), no, no)
     assert c.height[2] != born[2]
+
+
+def test_pyramid_spawn_no_turn_then_heading_and_common_height_clock():
+    c = ShuCommands.for_mixed(
+        settings(height_duration_s=(0.02, 0.02)),
+        2,
+        "cpu",
+        route=dict(vx_range_m_s=(0.5, 2.5), heading_kp=3.0, heading_max_wz_rad_s=1.0),
+    )
+    ids = torch.arange(2)
+    yes = ids >= 0
+    no = ~yes
+    c.reset(ids, route=yes, upstairs=no, birth_height_bounds=torch.tensor([[0.21, 0.24]] * 2))
+    assert ((c.target[:, 0] >= 0.5) & (c.target[:, 0] <= 2.5)).all()
+    birth = c.height.clone()
+    for step in range(3):
+        c.prepare(torch.tensor([0.2, -0.2]), yes, no, no, c.steps, route_open=yes)
+        assert (c.value[:, 1] == 0).all() and not c.wz_active.any()
+        assert ((c.height >= 0.21) & (c.height <= 0.24)).all()
+        if step == 0:
+            assert (c.value[:, 2] == 0).all()
+        else:
+            assert c.value[0, 2] < 0 < c.value[1, 2]
+        if step == 2:
+            assert not torch.equal(c.height, birth)
+        c.finish(observed(c), no, no)
