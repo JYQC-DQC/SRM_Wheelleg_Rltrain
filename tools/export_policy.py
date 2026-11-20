@@ -12,7 +12,14 @@ from wheelleg.checkpoints import load_policy_module
 from wheelleg.config import load_policy, load_robot, missing_parameters
 
 
-def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout: Path, output: Path) -> dict:
+def export_policy(
+    checkpoint: Path, policy_path: Path, robot_path: Path, rollout: Path, output: Path, *, include_bundle: bool = True
+) -> dict:
+    bundle_path = checkpoint.parent / "params/actor_bundle.yaml"
+    if include_bundle and bundle_path.exists():
+        from tools.export_actor_bundle import export_bundle
+
+        return export_bundle(checkpoint, bundle_path, rollout, output)
     import onnxruntime as ort
 
     from tools.gen_c_config import generate_header
@@ -96,8 +103,9 @@ def export_policy(checkpoint: Path, policy_path: Path, robot_path: Path, rollout
         cubeai_generated=False,
         source_rollout=str(rollout.resolve()),
     )
-    run = json.loads((checkpoint.parent / "params/run.json").read_text(encoding="utf-8"))
-    manifest.update(training_git_commit=run["git_commit"], task=run["task"])
+    run_path = checkpoint.parent / "params/run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8")) if run_path.exists() else {}
+    manifest.update(training_git_commit=run.get("git_commit"), task=run.get("task"))
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest
 

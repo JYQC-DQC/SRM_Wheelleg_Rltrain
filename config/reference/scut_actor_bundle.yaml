@@ -1,0 +1,21 @@
+version: 1
+mode_contract_revision: 1
+default_actor: landing
+trainable_actor: jump
+actors:
+  landing:
+    checkpoint: ../../sim2sim/checkpoints/landing_m3800_tune_20261113_143050_4096_plus5000_save200_cmd40_h028_model_5800/model_5800.pt
+    policy: ../../sim2sim/checkpoints/landing_m3800_tune_20261113_143050_4096_plus5000_save200_cmd40_h028_model_5800/params/policy_meta.yaml
+    robot: ../../sim2sim/checkpoints/landing_m3800_tune_20261113_143050_4096_plus5000_save200_cmd40_h028_model_5800/params/robot.yaml
+  jump:
+    checkpoint: ../../sim2sim/checkpoints/jump_b99532e_model3400/model_3400.pt
+    policy: ../../sim2sim/checkpoints/jump_b99532e_model3400/params/policy_meta.yaml
+    robot: ../../sim2sim/checkpoints/jump_b99532e_model3400/params/robot.yaml
+handoff:
+  duration_s: 2.0
+  tilt_rad: 0.25
+  vertical_speed_m_s: 0.20
+  angular_xy_rad_s: 1.0
+  vx_error_m_s: 0.5
+  yaw_error_rad_s: 0.5
+  failure_cost: -4.0

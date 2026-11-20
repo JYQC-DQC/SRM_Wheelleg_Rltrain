@@ -1,0 +1,413 @@
+# SCUT simulation trial settings. Capability remains unmeasured.
+# simulation_height_limit_m is a design target bound, not achieved jump height.
+name: scut_p3_staged_jump
+obs_version: 2
+hidden_dims:
+- 256
+- 128
+- 64
+activation: elu
+observation_scales:
+  command:
+  - 1.0
+  - 1.0
+  - 1.0
+  height: 5.0
+  angular_velocity: 0.5
+  gravity: 1.0
+  joint_position: 1.0
+  joint_velocity: 0.1
+action_scales:
+- 0.5
+- 0.5
+- 10.0
+- 0.5
+- 0.5
+- 10.0
+action_clip: null
+kp:
+- 60
+- 60
+- 0
+- 60
+- 60
+- 0
+kd:
+- 2
+- 2
+- 0.2
+- 2
+- 2
+- 0.2
+torque_limit_nm:
+- 40
+- 40
+- 5
+- 40
+- 40
+- 5
+policy_family: p3
+training:
+  seed: 42
+  num_envs: 4096
+  rollout_steps: 48
+  max_iterations: 20000
+  save_interval: 200
+  moving_jump_promote_rate: 0.6
+  episode_length_s: 20.0
+  init_noise_std: 1.0
+  reward_clip: 2.5
+  ppo:
+    value_loss_coef: 2.0
+    use_clipped_value_loss: true
+    clip_param: 0.2
+    entropy_coef: 0.005
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    learning_rate: 0.0001
+    schedule: adaptive
+    gamma: 0.995
+    lam: 0.95
+    desired_kl: 0.01
+    max_grad_norm: 1.0
+  commands:
+    segment_duration_s:
+    - 3.0
+    - 15.0
+    height_duration_s:
+    - 2.0
+    - 6.0
+    vx_range_m_s: [0.6, 3.0]
+    wz_range_rad_s:
+    - 0.0
+    - 0.0
+    height_range_m:
+    - 0.22
+    - 0.3
+    linear_slew_m_s2: 2.0
+    angular_slew_rad_s2: 10.0
+    height_slew_m_s: 0.2
+    segment_probabilities:
+    - 0.1
+    - 0.25
+    - 0.15
+    - 0.25
+    - 0.1
+    - 0.15
+    dash_range_m_s:
+    - 0.0
+    - 0.0
+  reward_parameters:
+    linear_sigma: 0.5
+    angular_sigma: 0.25
+    height_sigma: 0.001
+    roll_sigma: 0.01
+    pitch_sigma: 0.02
+    pitch_velocity_amplitude: 2.0
+    pitch_velocity_sigma: 3.0
+    pitch_velocity_offset: 2.0
+    fork_deadzone_m: 0.05
+    stand_deadzone: 0.1
+    contact_force_n: 3.0
+    spin_velocity_sigma: 0.25
+    spin_heading_sigma: 0.025
+    air_wheel_torque_sigma: 1.5
+    fork_square_scale: 5.0
+    leg_length_symmetry_scale: 10.0
+  rewards:
+    track_lin_vel: 1.0
+    lin_vel_error: -1.0
+    track_ang_vel: 1.0
+    ang_vel_error: -1.0
+    track_height: 1.0
+    height_error: -1.0
+    flat_roll: 1.0
+    flat_pitch: 1.0
+    roll_penalty: -2.0
+    pitch_penalty: -2.0
+    vertical_velocity: -0.5
+    angular_xy: -0.05
+    no_fork: -1.0
+    no_fork_square: -1.0
+    undesired_contact: -2.0
+    stand_still: -1.0
+    joint_torque: -0.0001
+    wheel_power: -0.0001
+    action_rate: -0.01
+    termination: -4.0
+    jump_apex: 2.0
+    jump_height_progress: 0.5  # Flat only; maximum total per attempt before guidance decay.
+    jump_landing: 3.0
+    jump_flight: 0.0
+    jump_crouch: 0.5
+    jump_takeoff: 2.5
+    jump_push_symmetry: 0.05
+    jump_tuck: 1.7
+    jump_prepare: 0.5
+    jump_impact: 0.0
+    jump_asymmetric_landing: -0.25
+    uncommanded_flight: -1.0
+    leg_symmetry: 0.0
+  evaluation:
+    observation_delay_steps: 5
+    action_delay_steps: 4
+    duration_s: 10.0
+    settling_s: 1.0
+    episodes_per_case: 16
+    seed: 123
+    height_m: 0.22
+    vx_values_m_s:
+    - 0.0
+    wz_values_rad_s:
+    - 0.0
+    combined_commands:
+    - - 0.0
+      - 0.0
+    jump_velocity_m_s: 0.6
+  disturbance:
+    baseline_evaluation_passed: false
+    ramp_iterations: 3000
+    final_push_velocity_m_s: 1.25
+    collision_interval_s:
+    - 8.0
+    - 15.0
+    collision_duration_s: 0.1
+    collision_force_range_n:
+    - 100.0
+    - 300.0
+    lateral_probability: 0.8
+    phase2_start_iteration: 3000
+  air_rewards:
+    joint_limit: -10.0
+    wheel_center: 0.0
+    wheel_center_sigma: 0.02
+    wheel_torque: 0.0
+    wheel_torque_sigma: 1.5
+    wheel_speed_alignment: 0.0
+  command_curriculum:
+    min_completed_episodes: 4096
+    initial_fraction: 1.0
+    increment: 0.05
+    success_fraction: 0.8
+    velocity_error_threshold_m_s: null
+    yaw_error_threshold_rad_s: null
+  transition_reset:
+    probability: 0.0
+    states_npz: null
+mode_semantics:
+- normal
+- stair
+- slope
+- recover
+- jump
+- height_target
+- state_time
+stages:
+  jump:
+    moving_probability: 0.5
+    flat_episode_mix:
+      fractions: [0.0, 0.0, 0.5, 0.5]  # Frozen Landing handles ordinary control; every episode requests a jump.
+      ground_vx_range_m_s: [0.2, 2.0]
+      ground_top_speed_probability: 0.25
+      stop_trial_probability: 0.5
+      stop_after_s: [3.0, 5.0]
+      ground_reward_overrides:
+        lin_vel_error: -8.0
+        track_height_wide: 0.5
+        pitch_penalty: -3.0
+        vertical_velocity: -4.0
+        angular_xy: -0.2
+        stand_still: -2.0
+        leg_joint_vel: -0.005
+        leg_joint_acc: -0.000002
+        action_smoothness_leg: -0.05
+        action_smoothness_wheel: -0.01
+      ground_reward_parameters:
+        height_wide_sigma: 0.025
+        height_gate_full_error_m: 0.05
+        height_gate_zero_error_m: 0.10
+      heading_cost_per_s: 0.4
+      heading_scale_rad: 0.2617993878  # Half the bounded cost at 15 degrees.
+    promotion_checks:
+      warmup_s: 2.0
+      window_s: 5.0
+      stationary_tail_s: 2.0
+      min_episodes_per_group: 100
+      ground_pass_rate: 0.90
+      consecutive_windows: 2
+      stationary_max_drift_m: 0.10
+      stationary_max_tail_speed_m_s: 0.03
+      straight_min_vx_m_s: 1.8
+      straight_max_heading_rad: 0.1396263402  # 8 degrees.
+      straight_max_mean_wz_rad_s: 0.15
+      jump_max_takeoff_wz_rad_s: 0.5
+      jump_max_touch_heading_rad: 0.2617993878  # 15 degrees.
+    runup_tracking:
+      squared_error_cost: 2.0  # Per second per squared m/s; replaces both ordinary forward terms on support before press.
+    height_is_minimum: true  # Both wheels must clear the target; overshoot is diagnostic only.
+    body_wheel_jump:
+      tuck_bilateral_share: 0.8  # Blend simultaneous weakest-leg and mean progress from last support.
+      ppo_update:
+        max_learning_rate: 0.001
+        max_growth_factor: 1.2
+        entropy_coef: 0.001
+        num_learning_epochs: 3
+      apex_band_m: 0.005  # Select one frame in the top five millimetre bins.
+      body_margin_m: 0.03  # Wheel target H; chassis collision bottom must clear H + margin.
+      body_rise_fraction: 0.5  # Require genuine elevation relative to the pose at the press.
+      leg_deadband_rad: 0.26179939  # 15 degrees off gravity is free.
+      leg_pose_scale_rad: 0.52359878  # 30 degrees past the deadband gives exp(-1) quality.
+      max_leg_angle_rad: 0.78539816  # Beyond 45 degrees this peak cannot pass the curriculum.
+      settle_response_scale_s: 1.4  # Decay scale for total time including the 0.8 s hold, not a deadline.
+      air_leg_guard:
+        entry_length_m: 0.14  # Airborne scoring boundary, NOT a measured hardware stop.
+        depth_scale_m: 0.02
+        entry_cost: 0.12  # Once per attempt, even with repeated boundary crossings.
+        depth_cost: 2.4  # Quadratic up to one depth scale, then a bounded monotone tail.
+        hold_cost_per_s: 1.0
+        retract_tolerance_m: 0.005
+        retract_cost_per_m: 5.0  # 10 cm mean qualifying excursion costs one full +0.5 height-progress award.
+        retract_multipliers: [1.0, 1.75, 2.5]
+        retract_fourth_cost: 0.5  # Once per leg on excursion four; average over both legs.
+        retract_base_threshold_m: 0.01
+        retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
+    clearance_jump:
+      motion_tracking:
+        linear_cost_per_s: 0.45
+        yaw_cost_per_s: 0.8
+        flight_scale: 0.5
+        linear_progress_bonus: 0.15
+        yaw_progress_bonus: 0.20
+      takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
+      takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
+      tuck_end_vz_m_s: 0.25  # Descent must be confirmed AND the body must have dropped from its measured apex.
+      prepare_drop_fraction: 0.30  # Of observed body rise since confirmed liftoff; no upper cap.
+      prepare_drop_min_m: 0.005
+      stable_vz_m_s: 0.20
+      stable_roll_pitch_rate_rad_s: 1.0
+      recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
+      fast_touchdown_vz_m_s: 2.8  # Only charge unusually fast downward base speed at first contact.
+      reward_overrides:
+        jump_liftoff_progress: 0.15  # Per L1 attempt, capped at the takeoff clearance threshold.
+        jump_tuck: 0.0
+        jump_tuck_progress: 0.5  # Maximum per attempt, independent of flight duration.
+        jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
+        jump_air_leg_smoothness: -0.08  # Bounded per-second cost during confirmed flight.
+        jump_landing: 1.75
+        jump_takeoff_response: 0.20  # Maximum one-shot bonus; only for a full jump success.
+        jump_settle_response: 0.35  # Clean landing only, independent of height; about +0.25 at 0.8 s.
+        jump_landing_recovery: -1.2
+        jump_rebound: -0.4
+        jump_fast_touchdown: -0.15  # Maximum cost per jump, not a measured impact limit.
+    landing_settle_timeout_s: 5.0  # From first touch, including the full continuous stability window.
+    moving_takeoff_min_fraction: 0.65  # Pass/fail threshold, not the full-credit speed for height progress.
+    event_duration_s: 1.2
+    takeoff_confirmation_s: 0.03
+    takeoff_clearance_m: 0.02
+    takeoff_upward_velocity_m_s: 0.1
+    height_overshoot_tolerance_m: 0.03
+    failure_cost: -4.0
+    first_trigger_range_s:
+    - 2.0
+    - 5.0
+    between_events_s:
+    - 3.0
+    - 5.0
+    jump_count_probabilities: [0.0, 1.0, 0.0]  # Schedule exactly one press per flat training episode.
+    height_range_m: [0.04, 0.45]
+    height_levels_m: [0.04, 0.0925, 0.145, 0.1975, 0.25, 0.30, 0.35, 0.40, 0.45]
+    highest_level_probability: 0.60  # Remaining samples are uniform over the unlocked lower levels.
+    feasible_height_m: null
+    push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
+    tuck_leg_length_m: 0.17
+    landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.
+    landing_stable_s: 0.8
+    max_touchdown_difference_s: 0.05
+    apex_sigma: 0.0025
+    landing_tilt_rad: 0.25
+    guidance_final_scale: 0.3
+    guidance_decay_iterations: 2000
+    guidance_success_threshold: 0.6
+    disturbance_phase: 2
+    curriculum_min_events: 500
+    height_tolerance_m: 0.01
+    simulation_height_limit_m: 0.45
+  tunnel:
+    event_duration_s: 1.2
+    takeoff_confirmation_s: 0.03
+    takeoff_clearance_m: 0.02
+    takeoff_upward_velocity_m_s: 0.1
+    height_overshoot_tolerance_m: 0.03
+    failure_cost: -4.0
+    first_trigger_range_s:
+    - 2.0
+    - 5.0
+    between_events_s:
+    - 3.0
+    - 5.0
+    jump_count_probabilities:
+    - 0.0
+    - 1.0
+    - 0.0
+    height_range_m:
+    - 0.04
+    - 0.25
+    feasible_height_m: null
+    crouch_duration_s: 0.25
+    crouch_leg_length_m: 0.18
+    push_leg_length_m: 0.28  # Reward saturates here; not a joint or extension limit.
+    tuck_leg_length_m: 0.15
+    landing_leg_length_m: 0.28  # Reward saturates here; longer extension is allowed.
+    landing_prepare_time_s: 0.1
+    landing_stable_s: 1.0
+    max_touchdown_difference_s: 0.05
+    apex_sigma: 0.0025
+    landing_tilt_rad: 0.25
+    guidance_final_scale: 0.3
+    guidance_decay_iterations: 2000
+    guidance_success_threshold: 0.7
+    tunnel:
+      vx_range_m_s: [1.5, 2.5]
+      beam_height_m: 0.27
+      beam_length_m: 0.35
+      beam_offset_from_entrance_m: 1.35
+      no_jump_beam_pose:
+      - 0.0
+      - 0.0
+      - -1.0
+      - 1.0
+      - 0.0
+      - 0.0
+      - 0.0
+      lane_width_m: 0.8
+      lane_length_m: 2.9
+      approach_distance_m: 2.5
+      # Simulation operator window, not a deployment trigger or calibrated distance.
+      press_distance_range_m: [0.9, 1.3]
+      height_curriculum_m: [0.27]
+      clearance_margin_m: 0.03
+      landing_margin_m: 0.05
+      initial_yaw_range_rad:
+      - 0.0
+      - 0.0
+      crossing_weight: 5.0
+      progress_weight: 0.5
+      time_weight: -0.5
+      lateral_weight: -2.0
+      heading_weight: -1.0
+      support_reward_scale: 0.05
+      approach_timeout_s: 6.0
+      obstacle_contact_weight: 0.0
+      top_contact_weight: 0.0
+      approach_jitter_m:
+      - 0.0
+      - 0.0
+      height_jitter_m:
+      - 0.0
+      - 0.0
+    disturbance_phase: 2
+    curriculum_min_events: 100
+    curriculum_demote_rate: 0.2
+    height_tolerance_m: 0.01
+    simulation_height_limit_m: 0.4
+guide_version: '2.2'

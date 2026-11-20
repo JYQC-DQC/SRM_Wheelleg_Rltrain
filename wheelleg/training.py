@@ -1003,10 +1003,10 @@ def _validate_training(cfg: TrainingConfig) -> None:
             fractions = mix["fractions"]
             if (
                 len(fractions) != 4
-                or any(not isfinite(x) or x <= 0 for x in fractions)
+                or any(not isfinite(x) or x < 0 for x in fractions)
                 or abs(sum(fractions) - 1) > 1e-6
             ):
-                raise ValueError("flat_episode_mix.fractions must contain four positive values summing to one")
+                raise ValueError("flat_episode_mix.fractions must contain four nonnegative values summing to one")
             for key in ("ground_vx_range_m_s", "stop_after_s"):
                 lo, hi = mix[key]
                 if not (isfinite(lo) and isfinite(hi) and 0 < lo <= hi):

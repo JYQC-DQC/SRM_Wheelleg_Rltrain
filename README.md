@@ -1,6 +1,7 @@
 # SRM 轮腿 PPO
 
 mode 七维固定合同与用户修改授权要求见 [接口合同](docs/INTERFACE.md)，适用于所有策略、训练、回放和部署。
+冻结基础 Actor、专项 PPO 与后续多 Actor 调度见 [多 Actor 说明](docs/MULTI_ACTOR.md)。
 
 已实现配置/观测/Actor，以及 P1 行走、P2 小陀螺、P3 跳跃的七阶段训练代码、Isaac/PPO 入口、评测与 ONNX 导出。
 已同步 2026-11-12 的推进指南 v2.2；平地起立训练的经验见 [docs/LESSONS.md](docs/LESSONS.md)。真实参数和 USD 仍缺失，尚未进行 Isaac/GPU 运行，不能开始正式训练。

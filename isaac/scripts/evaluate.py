@@ -24,6 +24,7 @@ def main() -> None:
     parser.add_argument("--robot", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, nargs="+", required=True)
+    parser.add_argument("--actor-bundle", type=Path, help="Default: checkpoint params/actor_bundle.yaml")
     parser.add_argument("--evaluation-policy", type=Path, help="Read only training.evaluation from this policy YAML")
     parser.add_argument("--suite", choices=("auto", "legacy"), default="auto")
     parser.add_argument("--output", type=Path, required=True)
@@ -76,7 +77,18 @@ def main() -> None:
         )
         env_cfg = make_env_cfg(cfg, count, args.device, evaluation=True)
         env_cfg.seed = settings["seed"]
-        env = WheelLegEnv(env_cfg, render_mode="rgb_array" if args.video else None)
+        bundle_path = args.actor_bundle or args.checkpoint[0].parent / "params/actor_bundle.yaml"
+        bundle = None
+        if args.actor_bundle and not bundle_path.exists():
+            parser.error("Actor bundle does not exist")
+        if bundle_path.exists():
+            from isaac.wheelleg_tasks.multi_actor import MultiActorEnv
+            from wheelleg.multi_actor import read_bundle
+
+            bundle = read_bundle(bundle_path, args.checkpoint[0])
+            env = MultiActorEnv(env_cfg, bundle, render_mode="rgb_array" if args.video else None)
+        else:
+            env = WheelLegEnv(env_cfg, render_mode="rgb_array" if args.video else None)
         raw = env
         args.output.mkdir(parents=True, exist_ok=False)
         if args.video:
@@ -90,6 +102,10 @@ def main() -> None:
             # Reset may mutate rollout inference tensors; keep all cases in the same inference scope.
             with torch.inference_mode():
                 actor = load_policy_module(args.checkpoint[0], cfg.policy).to(args.device)
+                if bundle is not None:
+                    from wheelleg.multi_actor import ActorBank, BundlePolicy
+
+                    actor = BundlePolicy(ActorBank(bundle, args.device))
                 report, observations, histories = [], [], []
                 handover = {key: [] for key in ("root_state", "joint_position", "joint_velocity")}
                 jump_traces = {}
@@ -173,7 +189,10 @@ def main() -> None:
                                 settle_times = torch.where(
                                     alive & info["jump_stable"], info["jump_since_first_touch_s"], settle_times
                                 )
-                                succeeded |= alive & info["jump_success"]
+                                if bundle is None:
+                                    succeeded |= alive & info["jump_success"]
+                                else:
+                                    succeeded |= alive & info["handoff_complete"] & ~info["handoff_failed"]
                                 for key, mask in jump_flags.items():
                                     mask |= alive & info[f"jump_{key}"]
                                 dx = info["position"][:, :1] - start_position[:, :1]

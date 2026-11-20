@@ -21,9 +21,12 @@ def main() -> None:
         help="Explicitly bypass only the baseline-evaluation gate and record the override in run.json",
     )
     parser.add_argument("--run-name")
+    parser.add_argument("--actor-bundle", type=Path, help="Frozen base and trainable specialist manifest")
     parser.add_argument("--num-envs", type=int)
     parser.add_argument("--iterations", type=int)
-    parser.add_argument("--initial-jump-level", type=int, help="One-based starting level for both fresh flat-jump curricula")
+    parser.add_argument(
+        "--initial-jump-level", type=int, help="One-based starting level for both fresh flat-jump curricula"
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--resume", type=Path, help="Restore this task's policy, critic, optimizer and iteration")
     group.add_argument("--initialize-from", type=Path, help="Transfer actor weights to a new stage/policy")
@@ -52,7 +55,9 @@ def main() -> None:
     path = args.policy or Path(f"config/policies/{TASKS[args.task].policy}/policy_meta.yaml")
     cfg = load_training(args.task, args.robot, path)
     if args.initial_jump_level is not None and (
-        args.resume or args.task != "p3-jump" or "moving_probability" not in cfg.stage
+        args.resume
+        or args.task != "p3-jump"
+        or "moving_probability" not in cfg.stage
         or not 1 <= args.initial_jump_level <= len(cfg.stage.get("height_levels_m", ()))
     ):
         parser.error("--initial-jump-level needs fresh staged flat-jump curricula and a valid level")
@@ -75,6 +80,10 @@ def main() -> None:
 
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
+    if args.actor_bundle is None and args.resume:
+        saved_bundle = args.resume.parent / "params/actor_bundle.yaml"
+        if saved_bundle.exists():
+            args.actor_bundle = saved_bundle
     from wheelleg.checkpoints import initialize_actor, require_target_runtime
 
     require_target_runtime()
@@ -108,6 +117,28 @@ def main() -> None:
         guide_version="2.2",
         guide_sha256=hashlib.sha256(Path("docs/轮腿RL_推进指南_v2.md").read_bytes()).hexdigest(),
     )
+    bundle = None
+    if args.actor_bundle:
+        import yaml
+
+        from wheelleg.multi_actor import read_bundle
+
+        if args.task != "p3-jump":
+            parser.error("Specialist training currently supports p3-jump")
+        bundle = read_bundle(args.actor_bundle)
+        from copy import deepcopy
+
+        portable = deepcopy(bundle)
+        for name, spec in bundle["actors"].items():
+            destination = params / "actors" / name
+            destination.mkdir(parents=True)
+            for key, filename in (("checkpoint", "model.pt"), ("policy", "policy_meta.yaml"), ("robot", "robot.yaml")):
+                shutil.copy2(spec[key], destination / filename)
+                portable["actors"][name][key] = str(Path("actors") / name / filename)
+        (params / "actor_bundle.yaml").write_text(yaml.safe_dump(portable, sort_keys=False), encoding="utf-8")
+        manifest["actor_bundle"] = str((params / "actor_bundle.yaml").resolve())
+        if not args.resume and not args.initialize_from:
+            manifest["initialize_from"] = bundle["actors"][bundle["trainable_actor"]]["checkpoint"]
     (params / "run.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
     app = AppLauncher(args).app
@@ -118,9 +149,13 @@ def main() -> None:
         from isaac.wheelleg_tasks.env_cfg import make_env_cfg
         from isaac.wheelleg_tasks.runner import WheelLegRunner
 
-        env = WheelLegEnv(
-            make_env_cfg(cfg, num_envs, args.device, allow_unvalidated_baseline=args.allow_unvalidated_baseline)
-        )
+        env_cfg = make_env_cfg(cfg, num_envs, args.device, allow_unvalidated_baseline=args.allow_unvalidated_baseline)
+        if bundle is None:
+            env = WheelLegEnv(env_cfg)
+        else:
+            from isaac.wheelleg_tasks.multi_actor import MultiActorEnv
+
+            env = MultiActorEnv(env_cfg, bundle)
         try:
             if args.initial_jump_level is not None:
                 for curriculum in env.flat_jump_curricula:
@@ -157,6 +192,8 @@ def main() -> None:
                 initialize_actor(runner, args.initialize_from, inherit_action_std=args.inherit_action_std)
                 if args.inherit_action_std:
                     print(f"INHERITED_ACTION_STD {runner.alg.policy.std.detach().tolist()}")
+            elif bundle is not None:
+                initialize_actor(runner, Path(bundle["actors"][bundle["trainable_actor"]]["checkpoint"]))
             # Mixed jump episodes use physical-age triggers and one full attempt.
             # A randomized initial timeout can cut them off before takeoff.
             runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=TASKS[args.task].policy != "p3")

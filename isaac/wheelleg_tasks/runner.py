@@ -22,6 +22,18 @@ class WheelLegRunner(OnPolicyRunner):
             "clip": mutable(cfg.shared["observation_clip"]),
             "critic_torque_scale": cfg.shared["critic_torque_scale"],
         }
+        if hasattr(self.env.unwrapped, "actor_bundle"):
+            bundle = self.env.unwrapped.actor_bundle
+            contract["actor_bundle"] = {
+                "version": bundle["version"],
+                "default_actor": bundle["default_actor"],
+                "trainable_actor": bundle["trainable_actor"],
+                "handoff": bundle["handoff"],
+                "handoff_critic_features": 2,
+                "frozen": {
+                    name: spec["sha256"] for name, spec in bundle["actors"].items() if name != bundle["trainable_actor"]
+                },
+            }
         if cfg.policy.history_frames:  # absent when disabled, so existing checkpoints keep resuming
             contract["history_frames"] = cfg.policy.history_frames
         if cfg.task == "p1-landing":  # critic gains the landing event state
@@ -61,6 +73,20 @@ class WheelLegRunner(OnPolicyRunner):
 
     def _construct_algorithm(self, obs):
         algorithm = self._make_wheelleg_algorithm(obs)
+        if hasattr(self.env.unwrapped, "actor_bank"):
+            from isaac.wheelleg_tasks.specialist_ppo import SpecialistPPO
+
+            if self.env.unwrapped.training.policy.history_frames:
+                raise ValueError("Specialist training currently requires a single-frame policy")
+            settings = {key: value for key, value in self.alg_cfg.items() if key != "class_name"}
+            algorithm = SpecialistPPO(
+                algorithm.policy,
+                self.env.unwrapped.actor_bank,
+                device=self.device,
+                **settings,
+                multi_gpu_cfg=self.multi_gpu_cfg,
+            )
+            algorithm.init_storage("rl", self.env.num_envs, self.num_steps_per_env, obs, [self.env.num_actions])
         update = self.env.unwrapped.training.stage.get("body_wheel_jump", {}).get("ppo_update")
         if update is not None:
             install_adaptive_lr_limit(algorithm, update["max_learning_rate"], update["max_growth_factor"])
@@ -83,6 +109,20 @@ class WheelLegRunner(OnPolicyRunner):
         super().log(locs, width, pad)
         env = self.env.unwrapped
         iteration = locs["it"]
+        if hasattr(env, "actor_bundle"):
+            self.writer.add_scalar(
+                "MultiActor/specialist_step_fraction",
+                self.alg.specialist_actions.item() / max(self.alg.total_actions, 1),
+                iteration,
+            )
+            total, failed = env.iteration_handoff_counts.tolist()
+            self.writer.add_scalar("MultiActor/handoff_count", total, iteration)
+            self.writer.add_scalar("MultiActor/handoff_failures", failed, iteration)
+            if total:
+                self.writer.add_scalar("MultiActor/handoff_success_rate", 1 - failed / total, iteration)
+            env.iteration_handoff_counts = torch.zeros_like(env.iteration_handoff_counts)
+            self.alg.specialist_actions = torch.zeros_like(self.alg.specialist_actions)
+            self.alg.total_actions = 0
         if env.training.stage.get("body_wheel_jump", {}).get("ppo_update") is not None:
             self.writer.add_scalar("Loss/max_minibatch_learning_rate", self.alg.iteration_peak_lr, iteration)
             self.alg.iteration_peak_lr = 0.0

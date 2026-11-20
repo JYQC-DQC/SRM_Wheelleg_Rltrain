@@ -397,23 +397,8 @@ class WheelLegEnv(DirectRLEnv):
             self.delayed_sensor = self.obs_delay.compute(sensor)
             self.sensor_counter = tick
 
-    def _pre_physics_step(self, actions: torch.Tensor) -> None:
+    def _advance_jump_request(self) -> None:
         t = self.training
-        maximum = torch.nan_to_num(actions.abs(), nan=float("inf"), posinf=float("inf")).amax()
-        self.iteration_raw_action_max = torch.maximum(self.iteration_raw_action_max, maximum)
-        self.previous_previous_action.copy_(self.previous_action)
-        self.previous_action.copy_(self.raw_action)
-        self.bad_action = ~torch.isfinite(actions).all(-1)
-        self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
-        self.contact_peaks.zero_()
-        if self.stair_course is not None:
-            self.stair_course.begin_step()
-        if self.first_landing is not None:
-            self.first_landing.begin_step()
-        if self.landing_reward is not None:
-            self.landing_reward.begin_step()
-        self.obstacle_hit.zero_()
-        self.obstacle_top_hit.zero_()
         age = self.episode_length_buf * self.step_dt
         if self.jump is not None:
             was_active = self.jump.active.clone()
@@ -456,6 +441,26 @@ class WheelLegEnv(DirectRLEnv):
                 self.guidance_scale = torch.where(self.commands.target[:, 0] > 0, moving_guidance, self.guidance_scale)
             if self.fixed_jump_height is not None:
                 self.jump.height[self.jump.active & ~was_active] = self.fixed_jump_height
+
+    def _pre_physics_step(self, actions: torch.Tensor) -> None:
+        t = self.training
+        maximum = torch.nan_to_num(actions.abs(), nan=float("inf"), posinf=float("inf")).amax()
+        self.iteration_raw_action_max = torch.maximum(self.iteration_raw_action_max, maximum)
+        self.previous_previous_action.copy_(self.previous_action)
+        self.previous_action.copy_(self.raw_action)
+        self.bad_action = ~torch.isfinite(actions).all(-1)
+        self.raw_action.copy_(torch.where(self.bad_action[:, None], 0.0, actions))
+        self.contact_peaks.zero_()
+        if self.stair_course is not None:
+            self.stair_course.begin_step()
+        if self.first_landing is not None:
+            self.first_landing.begin_step()
+        if self.landing_reward is not None:
+            self.landing_reward.begin_step()
+        self.obstacle_hit.zero_()
+        self.obstacle_top_hit.zero_()
+        self._advance_jump_request()
+        age = self.episode_length_buf * self.step_dt
         frozen = self.jump.active if self.jump is not None else torch.zeros_like(self.airborne)
         if self.landing_reward is not None:
             # Hold the birth command through the whole landing window (also after an early success): a new
@@ -998,7 +1003,10 @@ class WheelLegEnv(DirectRLEnv):
             mixed = t.task == "p3-tunnel" and "obstacle_fraction" in t.stage["tunnel"]
             # Success and failure are true episode terminals. Only an ordinary
             # time limit bootstraps the critic through the timeout channel.
-            terminated |= self.jump.failure_pulse | (self.jump.landing_pulse & (self.jump.remaining == 0))
+            event_success = self.jump.landing_pulse & (self.jump.remaining == 0)
+            if getattr(self, "actor_bundle", None) is not None:
+                event_success = torch.zeros_like(event_success)
+            terminated |= self.jump.failure_pulse | event_success
             timeout &= ~terminated
             if not self.cfg.evaluation and not mixed:
                 finished = self.jump.finished.nonzero().flatten()

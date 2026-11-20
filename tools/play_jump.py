@@ -142,6 +142,9 @@ class JumpSim(WheelLegSim):
         self.ids = torch.tensor([0])
         self.estopped = False
         self.jump_result = "ready"
+        self.handoff_cfg = actor.bank.bundle["handoff"] if hasattr(actor, "bank") else None
+        self.handoff_remaining = 0.0
+        self.handoff_bad = False
         super().__init__(
             cfg, actor, model, cfg.evaluation["observation_delay_steps"], cfg.evaluation["action_delay_steps"], False
         )
@@ -173,6 +176,8 @@ class JumpSim(WheelLegSim):
         self.jump.remaining.zero_()  # An event starts only on a manual press.
         self.estopped = False
         self.jump_result = "ready"
+        self.handoff_remaining = 0.0
+        self.handoff_bad = False
         self.takeoff_speed_ok = True
         self.peak_rise_m = 0.0
 
@@ -189,7 +194,7 @@ class JumpSim(WheelLegSim):
         return mode
 
     def press_jump(self, height_m: float) -> bool:
-        if self.estopped or bool(self.jump.active[0]):
+        if self.estopped or bool(self.jump.active[0]) or self.handoff_remaining > 0:
             return False
         self.jump.reset(self.ids)
         self.traversal.reset(self.ids)
@@ -301,6 +306,22 @@ class JumpSim(WheelLegSim):
             self.time += 1 / self.cfg.policy_hz
             return self._measure(command, height, peaks, np.zeros(6), 0.0, False)
         info = super().step(command, height)
+        if self.handoff_remaining > 0:
+            cfg = self.handoff_cfg
+            self.handoff_bad |= (
+                info["terminated"]
+                or not info["wheel_contact"].all()
+                or max(abs(info["roll"]), abs(info["pitch"])) >= cfg["tilt_rad"]
+                or abs(info["vz"]) >= cfg["vertical_speed_m_s"]
+                or info["angular_xy"] >= cfg["angular_xy_rad_s"]
+                or abs(info["heading_vx"] - command[0]) >= cfg["vx_error_m_s"]
+                or abs(info["wz"] - command[2]) >= cfg["yaw_error_rad_s"]
+            )
+            self.handoff_remaining = max(0, self.handoff_remaining - 1 / self.cfg.policy_hz)
+            self.jump_result = "Landing handoff observation"
+            if self.handoff_remaining <= 1e-8:
+                self.jump_result = "failed: Landing handoff" if self.handoff_bad else "success: Landing handoff stable"
+                info["terminated"] |= self.handoff_bad
         if not bool(self.jump.active[0]):
             info["jump_result"] = self.jump_result
             return info
@@ -401,9 +422,15 @@ class JumpSim(WheelLegSim):
             else:
                 reason = f"not stable within {self.stage['landing_settle_timeout_s']:g} s of wheel contact"
             self.jump_result = f"failed: {reason}"
+            if self.handoff_cfg is not None:
+                info["terminated"] = True
         elif bool(self.jump.landing_pulse[0]):
             target_ok = bool(self.jump.target_reached[0])
             self.jump_result = "success" if target_ok and self.takeoff_speed_ok else "landed: target not met"
+            if self.handoff_cfg is not None:
+                self.handoff_remaining = self.handoff_cfg["duration_s"]
+                self.handoff_bad = not (target_ok and self.takeoff_speed_ok)
+                self.jump_result = "Landing handoff observation"
             if site is not None and site["kind"] == "tunnel" and self.jump_result == "success":
                 self.jump_result = "cleared tunnel and landed beyond"
         elif bool(self.jump.active[0]):
@@ -634,10 +661,10 @@ def run_viewer(player: JumpPlayer, panel: bool) -> None:
         if left or right:
             action = mujoco.mjtMouse.mjMOUSE_MOVE_V if right else mujoco.mjtMouse.mjMOUSE_ROTATE_V
             height = max(glfw.get_window_size(win)[1], 1)
-            mujoco.mjv_moveCamera(sim.model, action, dx / height, dy / height, camera)
+            mujoco.mjv_moveCamera(sim.model, action, dx / height, dy / height, scene, camera)
 
     def scroll(win, xoffset, yoffset):
-        mujoco.mjv_moveCamera(sim.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * yoffset, camera)
+        mujoco.mjv_moveCamera(sim.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * yoffset, scene, camera)
 
     glfw.set_key_callback(window, key_callback)
     glfw.set_cursor_pos_callback(window, cursor)
@@ -688,6 +715,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, default=ROOT / "sim2sim/checkpoints/jump_latest")
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--actor-bundle", type=Path, help="Default: params/actor_bundle.yaml if present")
     parser.add_argument("--source", type=Path, default=ROOT / "runs/scut_experience/scene.xml")
     parser.add_argument("--site", type=int, default=1, choices=range(1, 13), help="F-key site number")
     parser.add_argument("--height", type=float, help="jump target in metres")
@@ -709,7 +737,15 @@ def main() -> None:
     flat, arena = output / "robot_flat.xml", output / "arena.xml"
     build(args.source.resolve(), run / "params/robot.yaml", flat, settings["wheel_friction"])
     sites = build_arena(flat, arena, settings["course"], cfg.shared["ground_material"]["dynamic_friction"])
-    actor = NumpyActor(checkpoint, cfg.policy["hidden_dims"])
+    bundle_path = args.actor_bundle or run / "params/actor_bundle.yaml"
+    if bundle_path.exists():
+        from wheelleg.multi_actor import NumpyBundlePolicy
+
+        actor = NumpyBundlePolicy(checkpoint, bundle_path)
+    else:
+        if args.actor_bundle is not None:
+            parser.error("Actor bundle does not exist")
+        actor = NumpyActor(checkpoint, cfg.policy["hidden_dims"])
     sim = JumpSim(cfg, actor, arena)
     player = JumpPlayer(sim, sites, settings["controls"])
     player.teleport(args.site - 1)
