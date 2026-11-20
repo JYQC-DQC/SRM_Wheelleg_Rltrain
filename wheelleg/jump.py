@@ -98,6 +98,12 @@ class JumpEvent:
         self.takeoff_time = torch.zeros_like(self.elapsed)
         self.takeoff_latency_s = torch.zeros_like(self.elapsed)
         self.takeoff_peak_vz = torch.zeros_like(self.elapsed)
+        self.liftoff_feedback = "jump_liftoff_progress" in (self.clearance_training or {}).get("reward_overrides", {})
+        if self.liftoff_feedback:
+            self.both_wheels_free = self.active.clone()
+            self.liftoff_supported = self.active.clone()
+            self.best_liftoff_clearance = torch.zeros_like(self.elapsed)
+            self.liftoff_progress = torch.zeros_like(self.elapsed)
         self.quality_sum = torch.zeros(count, 2, device=device)
         self.quality_time = torch.zeros_like(self.elapsed)
         self.quality_active = self.active.clone()
@@ -106,6 +112,8 @@ class JumpEvent:
         self.quality_paid = self.active.clone()
 
     def reset(self, ids: torch.Tensor, *, enabled: torch.Tensor | None = None) -> None:
+        if self.liftoff_feedback:
+            self._reset_liftoff_feedback(ids)
         if self.tuck_share is not None:
             self.support_length[ids] = 0
             self.previous_tuck[ids] = 0
@@ -187,6 +195,8 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.liftoff_feedback:
+            self._reset_liftoff_feedback(ids)
         if self.tuck_share is not None:
             self.previous_tuck[ids] = 0
             self.best_tuck[ids] = 0
@@ -241,6 +251,10 @@ class JumpEvent:
         self.start_z[ids] = z[ids]
         self.apex_z[ids] = z[ids]
 
+    def _reset_liftoff_feedback(self, ids: torch.Tensor) -> None:
+        self.both_wheels_free[ids] = self.liftoff_supported[ids] = False
+        self.best_liftoff_clearance[ids] = self.liftoff_progress[ids] = 0
+
     def update(
         self,
         dt: float,
@@ -269,6 +283,21 @@ class JumpEvent:
         if self.clearance_training is None:
             can_takeoff &= self.elapsed >= self.settings["crouch_duration_s"]
         clearance = torch.zeros_like(z) if wheel_clearance is None else wheel_clearance.amin(-1)
+        if self.liftoff_feedback:
+            before_liftoff = can_takeoff & ~self.took_off
+            self.both_wheels_free |= before_liftoff & no_contact
+            self.liftoff_supported |= before_liftoff & ~no_contact
+            target = self.settings["takeoff_clearance_m"]
+            lowest_level = self.settings["height_levels_m"][0]
+            # Require a supported start; repeated hops share the same clearance maximum.
+            eligible = before_liftoff & self.liftoff_supported & no_contact & (vz > 0)
+            eligible &= ~self.invalid & ~obstacle_contact & ((self.height - lowest_level).abs() < 1e-6)
+            if failed is not None:
+                eligible &= ~failed
+            fraction = (clearance / target).clamp(0, 1)
+            progress = (fraction - self.best_liftoff_clearance).clamp_min(0)
+            self.liftoff_progress.copy_(torch.where(eligible, progress, 0))
+            self.best_liftoff_clearance += self.liftoff_progress
         candidate = can_takeoff & no_contact & (clearance >= self.settings.get("takeoff_clearance_m", 0.02))
         self.takeoff_time = torch.where(candidate, self.takeoff_time + dt, 0.0)
         self.takeoff_peak_vz = torch.where(candidate, torch.maximum(self.takeoff_peak_vz, vz), 0.0)

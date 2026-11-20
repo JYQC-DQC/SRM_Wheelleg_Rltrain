@@ -1093,6 +1093,12 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError("clearance_jump requires staged flat jumping with a minimum-height target")
             if not 0 < cfg.stage["tuck_leg_length_m"] < cfg.stage["push_leg_length_m"]:
                 raise ValueError("clearance_jump requires 0 < tuck_leg_length_m < push_leg_length_m")
+            if "jump_liftoff_progress" in clearance["reward_overrides"]:
+                weight = clearance["reward_overrides"]["jump_liftoff_progress"]
+                if not isfinite(weight) or not 0 < weight < abs(cfg.stage["failure_cost"]):
+                    raise ValueError("jump_liftoff_progress must be positive and smaller than the failure cost")
+                if not cfg.stage.get("height_levels_m") or cfg.stage["takeoff_clearance_m"] <= 0:
+                    raise ValueError("jump_liftoff_progress requires height levels and positive takeoff clearance")
             for key in (
                 "takeoff_velocity_hint_m_s",
                 "tuck_end_vz_m_s",

@@ -205,6 +205,10 @@ def jump_height_progress(s, p):
     return s["jump"].height_progress * s["guidance_scale"]
 
 
+def jump_liftoff_progress(s, p):
+    return s["jump"].liftoff_progress
+
+
 def jump_takeoff_response(s, p):
     event = s["jump"]
     speed_ok = s["jump_vx_qualified"]
@@ -373,6 +377,7 @@ TERMS = {
         leg_symmetry,
         jump_apex,
         jump_height_progress,
+        jump_liftoff_progress,
         jump_takeoff_response,
         jump_settle_response,
         jump_landing,
@@ -399,6 +404,7 @@ EVENT_TERMS = frozenset(
         "termination",
         "jump_apex",
         "jump_height_progress",  # Increment of normalized apex, not a rate per second.
+        "jump_liftoff_progress",
         "jump_tuck_progress",
         "jump_linear_progress_bonus",
         "jump_yaw_progress_bonus",

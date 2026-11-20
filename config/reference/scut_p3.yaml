@@ -288,6 +288,7 @@ stages:
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
       fast_touchdown_vz_m_s: 2.8  # Only charge unusually fast downward base speed at first contact.
       reward_overrides:
+        jump_liftoff_progress: 0.15  # Per L1 attempt, capped at the takeoff clearance threshold.
         jump_tuck: 0.0
         jump_tuck_progress: 0.5  # Maximum per attempt, independent of flight duration.
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.

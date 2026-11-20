@@ -614,6 +614,34 @@ def clearance_step(
     return event.references(torch.tensor([vz]), torch.tensor([min(wheel)]), 9.81)
 
 
+@pytest.mark.parametrize("height", [0.04, 0.0925])
+def test_liftoff_feedback_rewards_only_new_double_clearance_on_level_one(clearance_jump, height):
+    from wheelleg.rewards import compute_rewards
+
+    event = clearance_jump
+    event.height.fill_(height)
+    frames = [
+        ((0.015, 0.015), (False, False), 0.5, 0.0),  # No supported frame yet.
+        ((0.0, 0.010), (True, True), 0.5, 0.0),
+        ((0.010, 0.030), (True, False), 0.5, 0.0),
+        ((0.010, 0.030), (False, False), 0.5, 0.075),
+        ((0.0, 0.0), (True, True), 0.5, 0.0),
+        ((0.010, 0.030), (False, False), 0.5, 0.0),
+        ((0.018, 0.030), (False, False), -0.1, 0.0),
+        ((0.040, 0.030), (False, False), 0.5, 0.075),
+        ((0.045, 0.045), (False, False), 0.5, 0.0),
+        ((0.045, 0.045), (False, False), 0.5, 0.0),
+    ]
+    for clearance, contact, vz, expected in frames:
+        clearance_step(event, clearance, vz=vz, contact=contact)
+        terms = compute_rewards({"jump": event}, {}, {"jump_liftoff_progress": 0.15}, 0.01, 2.5)
+        assert terms["jump_liftoff_progress"].item() == pytest.approx(expected if height == 0.04 else 0.0)
+    assert event.both_wheels_free.item() and event.took_off.item()
+    event.reset(torch.arange(1))
+    assert not event.both_wheels_free.item()
+    assert event.best_liftoff_clearance.item() == 0
+
+
 def test_air_fold_only_credits_safe_apex_and_stops_on_first_touch(clearance_jump):
     e = clearance_jump
     for _ in range(3):

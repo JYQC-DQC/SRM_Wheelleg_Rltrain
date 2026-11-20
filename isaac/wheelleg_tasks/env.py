@@ -165,6 +165,11 @@ class WheelLegEnv(DirectRLEnv):
             else None
         )
         self.jump = JumpEvent(t.stage, n, d) if self.family == "p3" else None
+        self.iteration_liftoff_counts = (
+            torch.zeros((2, 4), dtype=torch.long, device=d)
+            if self.jump is not None and self.jump.liftoff_feedback
+            else None
+        )
         self.jump_tracking = t.stage.get("clearance_jump", {}).get("motion_tracking")
         self.flat_ground_rewards = None
         if self.commands.flat_episode_mix is not None and "ground_reward_overrides" in self.commands.flat_episode_mix:
@@ -1745,6 +1750,19 @@ class WheelLegEnv(DirectRLEnv):
         self.command_abs_sum[env_ids] = 0
         self.command_sample_count[env_ids] = 0
         if self.jump is not None and not self.cfg.evaluation:
+            if self.iteration_liftoff_counts is not None:
+                jump = self.jump
+                pressed = jump.elapsed[env_ids] > 0
+                moving = self.commands.target[env_ids, 0] > 0
+                for group, selected in enumerate((pressed & ~moving, pressed & moving)):
+                    self.iteration_liftoff_counts[group] += torch.stack(
+                        (
+                            selected.sum(),
+                            (selected & jump.both_wheels_free[env_ids]).sum(),
+                            (selected & jump.took_off[env_ids]).sum(),
+                            (selected & jump.took_off[env_ids] & jump.landing_paid[env_ids]).sum(),
+                        )
+                    )
             if self.jump_tracking is not None:
                 launches = env_ids[self.jump.took_off[env_ids]]
                 touches = env_ids[self.jump.first_touch[env_ids]]

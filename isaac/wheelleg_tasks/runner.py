@@ -149,6 +149,18 @@ class WheelLegRunner(OnPolicyRunner):
             self.writer.add_scalar(f"Jump/{name}/window_count", attempts, iteration)
             for i, rate in enumerate(curriculum.latest_rate, 1):
                 self.writer.add_scalar(f"Jump/{name}/level{i}/last_window_success_rate", rate, iteration)
+        if env.iteration_liftoff_counts is not None:
+            for name, counts in zip(("stationary", "moving"), env.iteration_liftoff_counts.tolist()):
+                attempts, both_free, confirmed, landed = counts
+                prefix = f"Liftoff/{name}"
+                self.writer.add_scalar(f"{prefix}/attempts", attempts, iteration)
+                self.writer.add_scalar(f"{prefix}/confirmed_count", confirmed, iteration)
+                if attempts:
+                    self.writer.add_scalar(f"{prefix}/both_wheels_free_rate", both_free / attempts, iteration)
+                    self.writer.add_scalar(f"{prefix}/confirmed_rate", confirmed / attempts, iteration)
+                if confirmed:
+                    self.writer.add_scalar(f"{prefix}/settled_given_confirmed_rate", landed / confirmed, iteration)
+            env.iteration_liftoff_counts = torch.zeros_like(env.iteration_liftoff_counts)
         if env.training.task == "p3-tunnel" and "obstacle_fraction" in env.training.stage["tunnel"]:
             curriculum = env.jump_curriculum
             level = curriculum.maximum_level
