@@ -158,9 +158,9 @@ stages:
           slope: {vx_abs_max_m_s: 2.0, wz_abs_max_rad_s: 3.141592653589793}
       profiles:
         flat:
-          row_range: null
+          row_range: [0, 9]  # atlas placeholder; flat births use the separate flat plane
           command_mode: free
-          geometry: {spawn_x_m: null, ground_thickness_m: null}
+          geometry: {spawn_x_m: 6.0, ground_thickness_m: 0.05}
         rough:
           row_range: [0, 9]  # identical noise distribution at every row; not a height curriculum
           command_mode: free
@@ -184,7 +184,7 @@ stages:
         slope:
           row_range: [0, 9]
           command_mode: free
-          geometry: {spawn_x_m: null, ground_thickness_m: null, slope_angle_range_rad: [0.0, 0.4363323129985824]}
+          geometry: {platform_width_m: 3.0, slope_angle_range_rad: [0.0, 0.4363323129985824]}
         pyramid_up:
           row_range: [0, 9]
           command_mode: traverse

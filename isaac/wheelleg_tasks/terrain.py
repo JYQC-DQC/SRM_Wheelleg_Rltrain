@@ -14,16 +14,28 @@ from wheelleg.shu_terrain import (
 )
 
 
-def _slope_mesh(difficulty: float, size, angle_range) -> list:
+def _slope_mesh(
+    difficulty: float, size, angle_range, *, platform_width_m: float, inverted: bool
+) -> tuple[trimesh.Trimesh, np.ndarray]:
     sx, sy = size
+    cx, cy = sx / 2, sy / 2
+    if not 0 < platform_width_m < min(sx, sy):
+        raise ValueError("slope: platform_width_m must be positive and leave room for four faces")
+    half_platform_m = platform_width_m / 2
+    run_m = min(cx, cy) - half_platform_m
     angle = angle_range[0] + difficulty * (angle_range[1] - angle_range[0])
-    xs = np.array([0.0, sx / 4, sx / 2, 3 * sx / 4, sx])
-    zs = np.array([0.0, 0.0, np.tan(angle) * sx / 4, 0.0, 0.0])
-    vertices = np.array([(x, y, z) for x, z in zip(xs, zs, strict=True) for y in (0.0, sy)])
-    faces = []
-    for i in range(4):
-        faces.extend(((2 * i, 2 * i + 2, 2 * i + 1), (2 * i + 1, 2 * i + 2, 2 * i + 3)))
-    return [trimesh.Trimesh(vertices=vertices, faces=np.array(faces), process=False)]
+    # Use the shorter run so even on a rectangular tile no face exceeds the selected angle.
+    center_z = (-1 if inverted else 1) * run_m * np.tan(angle)
+    vertices = [(0, 0, 0), (sx, 0, 0), (sx, sy, 0), (0, sy, 0)]
+    vertices.extend(
+        (cx + dx * half_platform_m, cy + dy * half_platform_m, center_z)
+        for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    )
+    faces = [(4, 5, 6), (4, 6, 7)]
+    for a in range(4):
+        b = (a + 1) % 4
+        faces.extend(((a, b, b + 4), (a, b + 4, a + 4)))
+    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False), np.array((cx, cy, center_z))
 
 
 def _closed_stair_mesh(edges, tops, bottom, width) -> trimesh.Trimesh:
@@ -86,6 +98,15 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     """One tile with explicit geometry, independent of command mode or unlock state."""
     sx, sy = cfg.size
     p, kind = cfg.parameters, cfg.profile
+    if kind in ("slope", "slope_inverted"):
+        mesh, origin = _slope_mesh(
+            difficulty,
+            cfg.size,
+            p["slope_angle_range_rad"],
+            platform_width_m=p["platform_width_m"],
+            inverted=kind == "slope_inverted",
+        )
+        return [mesh], origin
     if kind not in MIXED_PROFILES and kind not in LEGACY_PROFILES:
         raise ValueError(f"Unknown SHU mixed terrain profile: {kind}")
     if kind == "rough":
@@ -175,9 +196,6 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
                 section_x.append(right)
             meshes.append(_closed_stair_mesh(section_x, section_z, -ground, sy))
         spawn_z = levels[0]
-    elif kind == "slope":
-        meshes = _slope_mesh(difficulty, cfg.size, p["slope_angle_range_rad"])
-        spawn_z = 0.0
     else:
         box(0, sx, 0, sy, 0)
         spawn_z = 0.0
@@ -187,11 +205,13 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
 class MixedTerrainGenerator(TerrainGenerator):
     def _generate_curriculum_terrains(self):
         # Isaac Lab 2.3.2 samples once per (column, row). Reuse that draw for
-        # the paired lip column so only its geometry, not its difficulty, changes.
+        # paired stair and slope columns so only geometry changes within a row.
         lower, upper = self.cfg.difficulty_range
         difficulties = {}
         for col, (name, cfg) in enumerate(self.cfg.sub_terrains.items()):
             profile = getattr(cfg, "profile", name)  # native rough config has no SHU profile field
+            if profile == "slope_inverted":
+                profile = "slope"
             for row in range(self.cfg.num_rows):
                 key = (profile, row)
                 if key not in difficulties:

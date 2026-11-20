@@ -131,7 +131,10 @@ def make_env_cfg(
                 else MixedTerrainCfg(
                     proportion=1.0,
                     profile=name,
-                    parameters={**mutable(s["profiles"][name]["geometry"]), "seed": t.settings["seed"]},
+                    parameters={
+                        **mutable(s["profiles"]["slope" if name == "slope_inverted" else name]["geometry"]),
+                        "seed": t.settings["seed"],
+                    },
                     stair_lip=lip if raised else None,
                 )
                 for name, raised, _ in columns

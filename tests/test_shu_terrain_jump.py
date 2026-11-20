@@ -72,7 +72,7 @@ def test_pyramid_runtime_progresses_rows_and_restores_state():
     torch.testing.assert_close(restored.stair_rows.levels, mix.stair_rows.levels)
     restored.reset(terrain, ids, no, no, evaluation=False)
     assert torch.equal(terrain.env_origins, origins[terrain.terrain_levels, terrain.terrain_types])
-    assert torch.equal(restored.traverse, terrain.terrain_types >= 4)
+    assert torch.equal(restored.traverse, restored.route_columns[restored.column_profiles[terrain.terrain_types]])
     assert route_active(torch.tensor([False, True, True]), torch.tensor([1.0, 0.0, 1.0])).tolist() == [
         False,
         False,

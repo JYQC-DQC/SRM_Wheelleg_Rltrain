@@ -81,7 +81,7 @@ def test_lip_is_closed_mirrored_and_keeps_the_outer_riser_height(terrain_module,
     assert down_origin[2] == pytest.approx(count * (riser_height - lip_height))
 
 
-def test_generator_pairs_difficulties_and_slope_mesh_reaches_25_degrees(terrain_module):
+def test_generator_pairs_stair_difficulties(terrain_module):
     pairs = {}
     gen = terrain_module.MixedTerrainGenerator()
     gen.cfg = SimpleNamespace(
@@ -101,12 +101,60 @@ def test_generator_pairs_difficulties_and_slope_mesh_reaches_25_degrees(terrain_
             else:
                 assert row / 10 <= pairs[col, row] < (row + 1) / 10
 
-    angles = np.deg2rad([0, 25])
-    slope_col = MIXED_PROFILES.index("slope")
-    (mesh,) = terrain_module._slope_mesh(pairs[slope_col, 9], (12, 12), angles)
-    actual_angle = np.arctan2(np.abs(mesh.face_normals[:, 0]), mesh.face_normals[:, 2]).max()
-    assert pairs[slope_col, 0] == 0.0
-    assert np.rad2deg(actual_angle) == pytest.approx(25.0)
+
+@pytest.mark.parametrize(("name", "sign"), [("slope", 1), ("slope_inverted", -1)])
+@pytest.mark.parametrize("angle_deg", [0, 25])
+def test_four_sided_slope_geometry_and_spawn(terrain_module, name, sign, angle_deg):
+    parameters = dict(platform_width_m=3.0, slope_angle_range_rad=np.deg2rad([0, 25]))
+    cfg = SimpleNamespace(profile=name, size=(12, 12), parameters=parameters)
+    (mesh,), origin = terrain_module.mixed_terrain(angle_deg / 25, cfg)
+    center_z = sign * 4.5 * np.tan(np.deg2rad(angle_deg))
+    assert origin == pytest.approx((6, 6, center_z))
+    np.testing.assert_allclose(mesh.bounds, ((0, 0, min(0, center_z)), (12, 12, max(0, center_z))))
+    assert (mesh.face_normals[:, 2] > 0).all()
+    assert mesh.area_faces.sum() == pytest.approx(9 + (144 - 9) / np.cos(np.deg2rad(angle_deg)))
+
+    if angle_deg == 0:
+        np.testing.assert_allclose(mesh.vertices[:, 2], 0)
+        return
+    normals = mesh.face_normals
+    flat = np.isclose(normals[:, 2], 1)
+    deck_xy = mesh.triangles[flat, :, :2].reshape(-1, 2)
+    np.testing.assert_allclose(deck_xy.min(axis=0), (4.5, 4.5))
+    np.testing.assert_allclose(deck_xy.max(axis=0), (7.5, 7.5))
+    np.testing.assert_allclose(mesh.triangles[flat, :, 2], origin[2])
+    assert mesh.area_faces[flat].sum() == pytest.approx(9)
+    pitch = np.arctan2(np.linalg.norm(normals[~flat, :2], axis=1), normals[~flat, 2])
+    np.testing.assert_allclose(np.rad2deg(pitch), 25)
+    directions = np.unique(np.round(normals[~flat, :2] / np.sin(pitch)[:, None]), axis=0)
+    np.testing.assert_array_equal(directions, [(-1, 0), (0, -1), (0, 1), (1, 0)])
+    perimeter = (np.isclose(mesh.vertices[:, :2], 0) | np.isclose(mesh.vertices[:, :2], 12)).any(axis=1)
+    np.testing.assert_allclose(mesh.vertices[perimeter, 2], 0)
+
+
+def test_generator_pairs_slope_difficulties_and_locks_endpoints(terrain_module):
+    profiles = ("slope", "slope_inverted")
+    parameters = dict(platform_width_m=3.0, slope_angle_range_rad=np.deg2rad([0, 25]))
+    gen = terrain_module.MixedTerrainGenerator()
+    gen.cfg = SimpleNamespace(
+        difficulty_range=(0, 1),
+        num_rows=10,
+        sub_terrains={name: SimpleNamespace(profile=name, size=(12, 12), parameters=parameters) for name in profiles},
+    )
+    gen.np_rng = np.random.default_rng(5)
+    gen._get_terrain_mesh = lambda difficulty, cfg: (difficulty, terrain_module.mixed_terrain(difficulty, cfg)[1])
+    draws, heights = np.empty((10, 2)), np.empty((10, 2))
+
+    def store(difficulty, origin, row, col, cfg):
+        draws[row, col] = difficulty
+        heights[row, col] = origin[2]
+
+    gen._add_sub_terrain = store
+    gen._generate_curriculum_terrains()
+    np.testing.assert_array_equal(draws[:, 0], draws[:, 1])
+    np.testing.assert_array_equal(draws[[0, -1]], ((0, 0), (1, 1)))
+    assert (np.diff(draws[:, 0]) > 0).all()
+    np.testing.assert_allclose(heights, np.tan(np.deg2rad(25 * draws)) * (4.5, -4.5))
 
 
 def settings():
@@ -147,6 +195,7 @@ def test_lip_coin_is_independent_of_curriculum_and_eval_does_not_advance_rows():
         ("pyramid_down", False, True),
         ("pyramid_up", True, True),
         ("pyramid_down", True, True),
+        ("slope_inverted", False, False),
     ]
     mix = MixedTerrainRuntime(cfg, count, "cpu")
     rows, cols = 3, len(columns)
@@ -168,7 +217,9 @@ def test_lip_coin_is_independent_of_curriculum_and_eval_does_not_advance_rows():
         torch.testing.assert_close(
             terrain.env_origins, terrain.terrain_origins[terrain.terrain_levels, terrain.terrain_types]
         )
-        torch.testing.assert_close(mix.traverse, terrain.terrain_types >= 4)
+        torch.testing.assert_close(mix.traverse, (terrain.terrain_types >= 4) & (terrain.terrain_types <= 7))
+        assert ((histogram[3] + histogram[8]) / count).item() == pytest.approx(0.10, abs=0.012)
+        assert (histogram[8] / (histogram[3] + histogram[8])).item() == pytest.approx(0.50, abs=0.06)
 
     mix.reset(terrain, ids, no, no, evaluation=False)
     check_draws()

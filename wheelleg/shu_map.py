@@ -31,7 +31,7 @@ class ShuFreeMap:
         caps = []
         fields = ("vx_abs_max_m_s", "wz_abs_max_rad_s")
         for name in terrains:
-            profile = limits.get(name) or {}
+            profile = limits.get("slope" if name == "slope_inverted" else name) or {}
             if profile.keys() - set(fields):
                 raise ValueError(f"terrain.free_map.command_limits.{name} accepts only {fields}")
             values = [profile.get(field) for field in fields]

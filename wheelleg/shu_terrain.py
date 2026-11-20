@@ -11,7 +11,7 @@ FLAT_PROPORTION = 0.30
 FREE_PROFILES = ("flat", "rough", "grid", "slope")
 STAIR_PROFILES = ("pyramid_up", "pyramid_down")
 MIXED_PROFILES = FREE_PROFILES + STAIR_PROFILES
-MIXED_COLUMN_PROFILES = MIXED_PROFILES + STAIR_PROFILES
+MIXED_COLUMN_PROFILES = MIXED_PROFILES + STAIR_PROFILES + ("slope_inverted",)
 
 # Straight-stair compatibility for synthetic fixtures only.
 LEGACY_STEP_COUNTS = {"single": 1, "double": 2, "triple": 3}
@@ -26,9 +26,11 @@ def mixed_columns(settings, *, production=False):
     profiles, stairs = (LEGACY_PROFILES, LEGACY_STAIR_PROFILES) if legacy else (MIXED_PROFILES, STAIR_PROFILES)
     if configured != set(profiles):
         raise ValueError(f"terrain.profiles must contain exactly {', '.join(profiles)}")
-    return [(name, False, not legacy and name in stairs) for name in profiles] + [
-        (name, True, not legacy) for name in stairs
-    ]
+    return (
+        [(name, False, not legacy and name in stairs) for name in profiles]
+        + [(name, True, not legacy) for name in stairs]
+        + ([] if legacy else [("slope_inverted", False, False)])
+    )
 
 
 class PyramidLayout(NamedTuple):
@@ -111,7 +113,10 @@ class MixedTerrainRuntime:
         self.natural_pyramids = columns[len(FREE_PROFILES)][2]
         self.profile_names = MIXED_PROFILES if self.natural_pyramids else LEGACY_PROFILES
         stair_profiles = self.profile_names[len(FREE_PROFILES) :]
-        self.column_profiles = torch.tensor([self.profile_names.index(name) for name, _, _ in columns], device=device)
+        self.column_profiles = torch.tensor(
+            [self.profile_names.index("slope" if name == "slope_inverted" else name) for name, _, _ in columns],
+            device=device,
+        )
         self.rows = torch.tensor([profiles[name]["row_range"] for name in self.profile_names], device=device)
         if self.rows.shape != (len(self.profile_names), 2) or self.rows.dtype != torch.long:
             raise ValueError("Mixed terrain needs two integer row_range endpoints per profile")
@@ -143,7 +148,7 @@ class MixedTerrainRuntime:
         self.clearance = clearance
         obstacles, exits = [], []
         for name, lip, pyramid in columns:
-            p = profiles[name]
+            p = profiles["slope" if name == "slope_inverted" else name]
             depth = lip_width if lip else 0.0
             down = name.endswith("_down")
             if pyramid:
@@ -177,6 +182,8 @@ class MixedTerrainRuntime:
             exits.append((distance, sx - clearance - spawn, sy / 2 - clearance))
         self.obstacle_half_widths = torch.tensor(obstacles, device=device)
         self.exit_boxes = torch.tensor(exits, device=device)
+        if self.natural_pyramids:
+            self.inverted_slope_col = columns.index(("slope_inverted", False, False))
         self.traverse = torch.zeros(count, dtype=torch.bool, device=device)
         self.assigned = torch.zeros_like(self.traverse)
         self.crossed = torch.zeros_like(self.traverse)
@@ -305,6 +312,9 @@ class MixedTerrainRuntime:
             rows = torch.where(is_stair, self.stair_rows.levels[ids], free_row)
         with_lip = is_stair & (torch.rand(len(ids), device=ids.device) < 0.5)
         cols = profiles + with_lip * (n_profiles - len(FREE_PROFILES))
+        if self.natural_pyramids:
+            slope = profiles == self.profile_names.index("slope")
+            cols = torch.where(slope & (torch.rand(len(ids), device=ids.device) < 0.5), self.inverted_slope_col, cols)
         self.reverse_descent[ids] = mode == 2
         terrain.terrain_types[ids] = cols
         terrain.terrain_levels[ids] = rows
