@@ -173,17 +173,14 @@ stages:
             vertical_scale: 0.005
             slope_threshold: 0.5
         grid:
-          row_range: null
+          row_range: [0, 9]  # only bar height follows the row difficulty
           command_mode: free
-          geometry:
-            spawn_x_m: null
-            ground_thickness_m: null
-            surface_x_range_m: null
-            grid_y_range_m: null
-            grid_bar_x_m: null
-            grid_bar_y_m: null
-            grid_width_m: null
-            grid_height_range_m: null
+          geometry:  # SCUT rough_rotation_stair/2026-07-30_09-16-27: tiny_step_rot
+            grid_bar_count_range: [2, 4]  # independent per axis; round, then make even
+            grid_width_range_m: [0.05, 0.20]
+            grid_height_range_m: [0.01, 0.03]
+            grid_bar_length_ratio: 0.95
+            ground_thickness_m: 0.05
         slope:
           row_range: [0, 9]
           command_mode: free

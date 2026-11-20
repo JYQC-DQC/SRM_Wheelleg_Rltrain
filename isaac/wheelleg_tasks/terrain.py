@@ -105,6 +105,42 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         height = p["step_height_range_m"][0] + difficulty * np.ptp(p["step_height_range_m"])
         mesh, deck_z = _pyramid_mesh(cfg.size, layout, height, down, ground, cfg.stair_lip)
         return [mesh], np.array((sx / 2, sy / 2, deck_z))
+    if kind == "grid":
+        # SCUT agent_world/terrains/height_field.py: mesh_grid_bars_terrain (frozen tiny_step_rot).
+        # Count and width use separate random draws, not the row difficulty used for height.
+        horizontal_draw, vertical_draw, width_draw = map(float, np.random.uniform(0.0, 1.0, size=3))
+        count_min, count_max = p["grid_bar_count_range"]
+        width_min, width_max = p["grid_width_range_m"]
+        width = width_min + width_draw * (width_max - width_min)
+        height_min, height_max = p["grid_height_range_m"]
+        height = height_min + difficulty * (height_max - height_min)
+
+        def bar_spans(axis_size, draw):
+            count = int(np.rint(count_min + draw * (count_max - count_min)))
+            # Prefer the larger valid even count: in [2, 4], 3 becomes 4, not 2.
+            if count % 2:
+                count += 1 if count < count_max else -1
+            gap = (axis_size - count * width) / (count + 1)
+            centers = gap + width / 2 + np.arange(count, dtype=np.float32) * (width + gap)
+            return [(float(center) - width / 2, float(center) + width / 2) for center in centers]
+
+        horizontal = bar_spans(sy, horizontal_draw)
+        vertical = bar_spans(sx, vertical_draw)
+        margin = (1.0 - p["grid_bar_length_ratio"]) / 2
+        x0, x1 = sx * margin, sx - sx * margin
+        y0, y1 = sy * margin, sy - sy * margin
+        box(0, sx, 0, sy, 0)
+        # Only the full-length vertical bar owns each intersection; split horizontal boxes around it.
+        cuts = [(max(x0, left), min(x1, right)) for left, right in vertical if right > x0 and left < x1]
+        starts = [x0, *(right for _, right in cuts)]
+        ends = [*(left for left, _ in cuts), x1]
+        for low, high in horizontal:
+            for left, right in zip(starts, ends, strict=True):
+                if right - left > 1.0e-6:
+                    box(left, right, low, high, height, 0.0)
+        for left, right in vertical:
+            box(left, right, y0, y1, height, 0.0)
+        return meshes, np.array((sx / 2, sy / 2, height))
     spawn_x = p["spawn_x_m"]
     if kind.endswith(("_up", "_down")):
         count = LEGACY_STEP_COUNTS[kind.split("_")[0]]
@@ -145,21 +181,6 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     else:
         box(0, sx, 0, sy, 0)
         spawn_z = 0.0
-        if kind == "grid":
-            x0, x1 = p["surface_x_range_m"]
-            y0, y1 = p["grid_y_range_m"]
-            half = p["grid_width_m"] / 2
-            height = p["grid_height_range_m"][0] + difficulty * np.ptp(p["grid_height_range_m"])
-            # Build each crossing once; coincident vertical/horizontal top faces hurt collision queries.
-            intervals = [(x - half, x + half) for x in p["grid_bar_x_m"]]
-            for left, right in intervals:
-                box(left, right, y0, y1, height, 0.0)
-            starts = [x0, *(right for _, right in intervals)]
-            ends = [*(left for left, _ in intervals), x1]
-            for y in p["grid_bar_y_m"]:
-                for left, right in zip(starts, ends, strict=True):
-                    if right > left:
-                        box(left, right, y - half, y + half, height, 0.0)
     return meshes, np.array((spawn_x, sy / 2, spawn_z))
 
 
