@@ -55,12 +55,12 @@ def test_route_shares_are_of_all_stairs_not_just_inverted_towers(pyramid_share):
         assert mode[stair].float().mean().item() == pytest.approx(share, abs=0.015)
         assert lip[mode].float().mean().item() == pytest.approx(0.5, abs=0.05)
         double = torch.tensor([name.startswith("double") for name, _, _ in columns])[t.terrain_types]
-        assert double[mode].float().mean().item() == pytest.approx(0.7, abs=0.05)
+        assert double[mode].float().mean().item() == pytest.approx(0.6, abs=0.05)
 
-    mix.stair_rows.top_cleared[ids[n // 2 :]] = True
+    mix.stair_rows.levels[ids[n // 2 :]] = mix.stair_rows.rows - 1
     mix.reset(t, ids, no, no, evaluation=False)
     triple = mix.column_profiles[t.terrain_types] >= MIXED_PROFILES.index("triple_up")
-    assert not triple[: n // 2].any() and triple[n // 2 :].any()
+    assert triple[: n // 2].any() and triple[n // 2 :].any()
     assert set(t.terrain_types[mix.reverse_descent].tolist()) == {
         i for i, (name, _, p) in enumerate(columns) if p and name.endswith("_down")
     }

@@ -109,7 +109,6 @@ def settings():
         route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2),
         stair_lip=dict(height_m=0.05, width_m=0.10),
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
-        locked_stair_weights=dict(single=0.3, double=0.7),
         stair_weights={name: 0.6 if name.startswith("double") else 0.2 for name in STAIR_PROFILES},
         profiles={
             name: dict(
@@ -152,13 +151,12 @@ def test_lip_coin_is_independent_of_curriculum_and_eval_does_not_advance_rows():
         torch.testing.assert_close(mix.traverse, terrain.terrain_types >= 4)
 
     mix.reset(terrain, ids, no, no, evaluation=False)
-    check_draws(range(4, 8))
+    check_draws(range(4, 10))
     torch.testing.assert_close(terrain.terrain_levels[mix.traverse], mix.stair_rows.levels[mix.traverse])
     before = mix.stair_rows.levels.clone()
     mix.reset(terrain, ids, ~no, no, evaluation=True)
     check_draws(range(4, 10))
     torch.testing.assert_close(mix.stair_rows.levels, before)
-    assert not mix.stair_rows.top_cleared.any()
     assert (terrain.terrain_levels == 2).all()
 
 
@@ -170,7 +168,7 @@ def test_unconfirmed_lip_depth_is_not_replaced_with_a_default():
 
 
 @pytest.mark.parametrize("down", [False, True])
-@pytest.mark.parametrize("lip", [None, (0.05, 0.15)])
+@pytest.mark.parametrize("lip", [None, (0.05, 0.10)])
 def test_double_pyramid_crosses_four_main_risers(terrain_module, down, lip):
     mesh = terrain_module._pyramid_mesh((12, 12), 3, 0.30, 2, 0.23, down, 0.10, lip)
     assert mesh.is_watertight and mesh.is_winding_consistent and mesh.volume > 0

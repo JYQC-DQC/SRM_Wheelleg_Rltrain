@@ -47,14 +47,18 @@ def test_shipped_p1_mix_samples_both_variants_in_each_tower_task_and_step_count(
     stair = profile >= 0
     assert torch.equal(stair, pyramid.bool())
     assert stair.float().mean().item() == pytest.approx(0.45, abs=0.02)
-    up = (profile == STAIR_PROFILES.index("single_up")) | (profile == STAIR_PROFILES.index("double_up"))
+    up = (
+        (profile == STAIR_PROFILES.index("single_up"))
+        | (profile == STAIR_PROFILES.index("double_up"))
+        | (profile == STAIR_PROFILES.index("triple_up"))
+    )
     for task, share, direction in (
         (up, 0.45, "up"),
         (stair & ~up & ~mix.reverse_descent, 0.45, "down"),
         (mix.reverse_descent, 0.10, "down"),
     ):
         assert task.sum().item() / stair.sum().item() == pytest.approx(share, abs=0.02)
-        for steps, fraction in (("single", 0.30), ("double", 0.70)):
+        for steps, fraction in (("single", 0.20), ("double", 0.60), ("triple", 0.20)):
             subset = task & (profile == STAIR_PROFILES.index(f"{steps}_{direction}"))
             assert subset.sum().item() / task.sum().item() == pytest.approx(fraction, abs=0.06)
             assert lip[subset].float().mean().item() == pytest.approx(0.50, abs=0.10)
@@ -63,7 +67,7 @@ def test_shipped_p1_mix_samples_both_variants_in_each_tower_task_and_step_count(
 def test_shipped_p1_tower_grid_keeps_every_raised_ring(terrain_module, p1_terrain):  # noqa: F811 (shared fixture)
     sx, sy = p1_terrain["tile_size_m"]
     lift, depth = stair_lip_dimensions(p1_terrain)
-    assert (lift, depth) == pytest.approx((0.05, 0.15))
+    assert (lift, depth) == pytest.approx((0.05, 0.10))
     generator = terrain_module.MixedTerrainGenerator()
     generator.cfg = SimpleNamespace(
         difficulty_range=(0, 1),

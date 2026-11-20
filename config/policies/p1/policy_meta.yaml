@@ -152,8 +152,7 @@ stages:
       # Absolute shares of all resets. Flat is fixed at 0.30; these must sum to 0.70.
       groups: {rough: 0.05, grid: 0.10, slope: 0.10, stairs: 0.45}
       pyramid: {share_of_stairs: 1.0}  # 45% full positive, 45% full inverted, 10% reverse half descent
-      locked_stair_weights: {single: 0.30, double: 0.70}
-      stair_lip: {height_m: 0.05, width_m: 0.15}  # approximate depth along travel
+      stair_lip: {height_m: 0.05, width_m: 0.10}  # depth along travel
       free_map:
         edge_margin_m: 0.5
         command_limits:

@@ -19,7 +19,6 @@ def mixed_settings():
         route=dict(vx_range_m_s=(0.5, 1.0), clearance_m=0.2),
         tile_size_m=(8.0, 8.0),
         groups=dict(rough=0.1, grid=0.1, slope=0.1, stairs=0.4),
-        locked_stair_weights=dict(single=0.3, double=0.7),
         stair_lip=dict(height_m=0.05, width_m=0.1),
         stair_weights=dict.fromkeys(MIXED_PROFILES[4:], 1.0),
         profiles={
@@ -52,7 +51,7 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     ids = torch.arange(count)
     no = torch.zeros(count, dtype=torch.bool)
     mix.reset(terrain, ids, no, no, evaluation=False)
-    assert not any(MIXED_COLUMN_PROFILES[c].startswith("triple") for c in terrain.terrain_types.unique().tolist())
+    assert any(MIXED_COLUMN_PROFILES[c].startswith("triple") for c in terrain.terrain_types.unique().tolist())
     assert (terrain.terrain_types == 0).float().mean().item() == pytest.approx(0.30, abs=0.04)
     mix.stair_rows.levels[:5] = torch.tensor([0, 1, 2, 2, 1])
     mix.traverse[:5] = torch.tensor([True, True, True, False, True])
@@ -62,11 +61,9 @@ def test_mix_runtime_unlock_changes_real_sampling_and_restores_state():
     final[[0, 2, 3], 0] += 5
     mix.reset(terrain, ids[:5], ran, no, evaluation=False, final_xy=final, tracking_fraction=torch.zeros(count))
     assert mix.stair_rows.levels[[0, 1, 3, 4]].tolist() == [1, 0, 2, 1]
-    assert mix.stair_rows.top_cleared[:5].tolist() == [False, False, True, False, False]
     restored = MixedTerrainRuntime(cfg, count, "cpu")
     restored.load_state_dict(mix.state_dict())
     torch.testing.assert_close(restored.stair_rows.levels, mix.stair_rows.levels)
-    torch.testing.assert_close(restored.stair_rows.top_cleared, mix.stair_rows.top_cleared)
     restored.reset(terrain, ids, no, no, evaluation=False)
     assert torch.equal(terrain.env_origins, origins[terrain.terrain_levels, terrain.terrain_types])
     assert torch.equal(restored.traverse, terrain.terrain_types >= 4)

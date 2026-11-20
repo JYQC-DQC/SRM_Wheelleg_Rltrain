@@ -159,9 +159,9 @@ class MixedTerrainRuntime:
         self.reached_center = torch.zeros_like(self.traverse)
         self.reverse_descent = torch.zeros_like(self.traverse)
         self.reward_active = torch.zeros_like(self.traverse)
-        self.draw_weights = torch.stack([self._distribution(opened, device) for opened in (False, True)])
+        self.draw_weights = self._distribution(device)
 
-    def _distribution(self, opened, device):
+    def _distribution(self, device):
         groups = self.settings["groups"]
         if (
             set(groups) != {"rough", "grid", "slope", "stairs"}
@@ -172,11 +172,8 @@ class MixedTerrainRuntime:
         draw = torch.zeros(3, len(MIXED_PROFILES), device=device)
         draw[0, :4] = draw.new_tensor([FLAT_PROPORTION, groups["rough"], groups["grid"], groups["slope"]])
         for triple, pair in STAIR_FAMILIES.items():
-            names = (*pair, triple) if opened else pair
-            values = [
-                self.settings["stair_weights"][n] if opened else self.settings["locked_stair_weights"][n.split("_")[0]]
-                for n in names
-            ]
+            names = (*pair, triple)
+            values = [self.settings["stair_weights"][name] for name in names]
             if any(v is None or not isfinite(v) or v <= 0 for v in values):
                 raise ValueError("stair weights must be positive and finite")
             for name, w in zip(names, values, strict=True):
@@ -245,10 +242,8 @@ class MixedTerrainRuntime:
                     tracking_fraction[done],
                     self.reverse_descent[done] & self.reached_center[done] & ~terminated[done],
                 )
-        opened = self.stair_rows.top_cleared[ids].long()
-        if evaluation:
-            opened = torch.ones_like(opened)
-        draw = torch.multinomial(self.draw_weights[opened], 1).squeeze(-1)
+        # Tower geometry is independent of row promotion/replay.
+        draw = torch.multinomial(self.draw_weights, len(ids), replacement=True)
         mode, profiles = draw // len(MIXED_PROFILES), draw % len(MIXED_PROFILES)
         lo, hi = self.rows[profiles].unbind(-1)
         if evaluation:

@@ -23,7 +23,6 @@ class StairRowCurriculum:
         self._half_tile = tile_length / 2
         self._generator = generator
         self.levels = torch.randint(min(6, rows), (num_envs,), device=device, generator=generator)
-        self.top_cleared = torch.zeros_like(self.levels, dtype=torch.bool)
 
     def update(
         self,
@@ -40,23 +39,21 @@ class StairRowCurriculum:
         up = (displacement > self._half_tile) | reverse_center_goal
         down = (tracking_fraction < 0.4) & ~up
         levels = (self.levels[env_ids] + up.long() - down.long()).clamp_min_(0)
-        # Entering the highest row is not a clear; promotion from it unlocks later sampling.
+        # Entering the highest row is not a clear; promotion from it triggers replay only.
         replay = (levels >= self.rows).nonzero(as_tuple=True)[0]
         levels[replay] = torch.randint(self.rows, replay.shape, device=levels.device, generator=self._generator)
-        self.top_cleared[env_ids[replay]] = True
         self.levels[env_ids] = levels
         return levels
 
     def state_dict(self) -> dict[str, torch.Tensor]:
-        return {"levels": self.levels.clone(), "top_cleared": self.top_cleared.clone()}
+        return {"levels": self.levels.clone()}
 
     def load_state_dict(self, state: dict[str, torch.Tensor]) -> None:
-        levels, top_cleared = state["levels"], state["top_cleared"]
-        if levels.shape != self.levels.shape or top_cleared.shape != self.top_cleared.shape:
+        levels = state["levels"]  # Older checkpoints may also include an unused tower-unlock flag.
+        if levels.shape != self.levels.shape:
             raise ValueError("stair-row checkpoint must match the number of environments")
-        if levels.dtype != torch.long or top_cleared.dtype != torch.bool:
-            raise ValueError("stair-row checkpoint requires long levels and bool top_cleared")
+        if levels.dtype != torch.long:
+            raise ValueError("stair-row checkpoint requires integer levels")
         if ((levels < 0) | (levels >= self.rows)).any():
             raise ValueError("stair-row checkpoint levels are outside the configured rows")
         self.levels.copy_(levels)
-        self.top_cleared.copy_(top_cleared)
