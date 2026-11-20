@@ -15,6 +15,23 @@ STAIR_PROFILES = MIXED_PROFILES[4:]
 MIXED_COLUMN_PROFILES = MIXED_PROFILES + STAIR_PROFILES
 
 
+def mixed_columns(settings):
+    # (logical approach profile, raised edge, full concentric pyramid).
+    cols = [(name, i >= len(MIXED_PROFILES), False) for i, name in enumerate(MIXED_COLUMN_PROFILES)]
+    if "pyramid" in settings:
+        cols.extend((name, lip, True) for lip in (False, True) for name in STAIR_PROFILES)
+    return cols
+
+
+def pyramid_extent(size, first_edge, tread, count, lip_width):
+    sx, sy = size
+    half_x = sx / 2 - first_edge
+    half_y = min(half_x, sy / 2 - first_edge)
+    if first_edge <= lip_width or min(half_x, half_y) - (count - 1) * tread <= lip_width:
+        raise ValueError("pyramid must leave room for outer flat, treads, lip and central platform")
+    return half_x, half_y
+
+
 def stair_lip_dimensions(settings: dict) -> tuple[float, float]:
     lip = settings.get("stair_lip")
     if lip is None:
@@ -130,9 +147,11 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         super().__init__(settings["gates"])
         self.settings = settings
         profiles = settings["profiles"]
-        self.column_profiles = torch.tensor(
-            [MIXED_PROFILES.index(name) for name in MIXED_COLUMN_PROFILES], device=device
-        )
+        columns = mixed_columns(settings)
+        self.pyramid_share = settings.get("pyramid", {}).get("share_of_stairs", 0.0)
+        if self.pyramid_share is None or not 0 <= self.pyramid_share <= 1:
+            raise ValueError("terrain.pyramid.share_of_stairs must be confirmed in [0,1]")
+        self.column_profiles = torch.tensor([MIXED_PROFILES.index(name) for name, _, _ in columns], device=device)
         self.rows = torch.tensor([profiles[name]["row_range"] for name in MIXED_PROFILES], device=device)
         if self.rows.shape != (len(MIXED_PROFILES), 2) or self.rows.dtype != torch.long:
             raise ValueError("Mixed terrain needs two integer row_range endpoints per profile")
@@ -191,7 +210,21 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
             exits.append(distance)
             starts.append(clearance - spawn)
             ends.append(sx - clearance - spawn)
-        self.exit_distances = torch.tensor(exits, device=device)
+        physical_exits = [exits[MIXED_PROFILES.index(name)] for name, _, _ in columns]
+        for i, (name, lip, pyramid) in enumerate(columns):
+            if not pyramid:
+                continue
+            g = profiles[name]["geometry"]
+            count_steps = {"single": 1, "double": 2, "triple": 3}[name.split("_")[0]]
+            hx, hy = pyramid_extent((sx, sy), g["first_edge_x_m"], g["step_width_m"], count_steps, lip_width)
+            if width / 2 > hy - (count_steps - 1) * g["step_width_m"] - lip_width:
+                raise ValueError(f"{name}: corridor must cross all pyramid tiers without bypassing the center")
+            first = sx / 2 - hx
+            # Same margin to the far edge as at entry. An inverted lip projects onto the outer deck.
+            if not clearance <= g["spawn_x_m"] < first - clearance - lip_width:
+                raise ValueError(f"{name}: pyramid spawn and exit need a clear outer platform")
+            physical_exits[i] = sx - 2 * g["spawn_x_m"]
+        self.exit_distances = torch.tensor(physical_exits, device=device)
         self.x_min = torch.tensor(starts, device=device)
         self.x_max = torch.tensor(ends, device=device)
         self.y_limit = width / 2 - clearance
@@ -235,7 +268,7 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         self.left_corridor |= route & outside
         active = route_active(route & ~outside & ~terminated, forward_m_s)
         self.reward_active.copy_(active)
-        exit_x = self.exit_distances[cols]
+        exit_x = self.exit_distances[terrain.terrain_types]
         self.crossed |= active & (previous_x < exit_x) & (x >= exit_x)
 
     def reset(
@@ -248,7 +281,9 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
             success = self.crossed[finished] & ~terminated[finished]
             before = tuple(self.unlocked.values())
             for name in self.gates:
-                match = cols == MIXED_PROFILES.index(name)
+                match = (cols == MIXED_PROFILES.index(name)) & (
+                    terrain.terrain_types[finished] < len(MIXED_COLUMN_PROFILES)
+                )
                 self.record(name, rows[match], success[match])
             if tuple(self.unlocked.values()) != before:
                 self._update_weights()
@@ -263,6 +298,11 @@ class MixedTerrainRuntime(MixedTerrainCurriculum):
         is_stair = profiles >= len(MIXED_PROFILES) - len(STAIR_PROFILES)
         with_lip = is_stair & (torch.rand(len(ids), device=ids.device) < 0.5)
         cols = profiles + with_lip * len(STAIR_PROFILES)
+        if self.pyramid_share:
+            # A mixed triple traverses both directions: neither prerequisite may be bypassed.
+            eligible = is_stair & ((profiles < MIXED_PROFILES.index("triple_up")) | all(self.unlocked.values()))
+            pyramid = eligible & (torch.rand(len(ids), device=ids.device) < self.pyramid_share)
+            cols = torch.where(pyramid, cols + 2 * len(STAIR_PROFILES), cols)
         terrain.terrain_types[ids] = cols
         terrain.terrain_levels[ids] = rows
         terrain.env_origins[ids] = terrain.terrain_origins[rows, cols]

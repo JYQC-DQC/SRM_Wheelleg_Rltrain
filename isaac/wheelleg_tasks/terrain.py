@@ -5,7 +5,7 @@ import trimesh
 from isaaclab.terrains import SubTerrainBaseCfg, TerrainGenerator
 from isaaclab.utils import configclass
 
-from wheelleg.shu_terrain import MIXED_PROFILES
+from wheelleg.shu_terrain import MIXED_PROFILES, pyramid_extent
 
 
 def _slope_mesh(difficulty: float, size, angle_range) -> list:
@@ -41,6 +41,41 @@ def _closed_stair_mesh(edges, tops, bottom, width) -> trimesh.Trimesh:
     return mesh
 
 
+def _pyramid_mesh(size, start, tread, count, height, down, ground, lip):
+    """Watertight rectangular rings, including an optional raised rim on each high tread."""
+    sx, sy = size
+    lift, depth = lip or (0.0, 0.0)
+    hx, hy = pyramid_extent(size, start, tread, count, depth)
+    if height <= lift or (lip and not 0 < depth < tread):
+        raise ValueError("pyramid lip must fit below the riser and within the tread")
+    # Inverted tiles start and end flush with their neighbours, center below ground.
+    rings = [(sx / 2, sy / 2, 0.0)]
+    z = 0.0
+    for i in range(count):
+        x, y = hx - i * tread, hy - i * tread
+        if down and lip:
+            rings.extend(((x + depth, y + depth, z), (x + depth, y + depth, z + lift)))
+        crest = z + (lift if down else height)
+        new_z = z + (-1 if down else 1) * (height - lift)
+        rings.extend(((x, y, crest if down else z), (x, y, new_z if down else crest)))
+        if lip and not down:
+            rings.extend(((x - depth, y - depth, crest), (x - depth, y - depth, new_z)))
+        z = new_z
+    bottom = min(0.0, z) - ground
+    rings.insert(0, (sx / 2, sy / 2, bottom))
+    vertices = [
+        (sx / 2 + dx * x, sy / 2 + dy * y, z) for x, y, z in rings for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    ]
+    faces = [(0, 2, 1), (0, 3, 2)]
+    for i in range(len(rings) - 1):
+        for j in range(4):
+            a, b = 4 * i + j, 4 * i + (j + 1) % 4
+            faces.extend(((a, b, b + 4), (a, b + 4, a + 4)))
+    t = len(vertices) - 4
+    faces.extend(((t, t + 1, t + 2), (t, t + 2, t + 3)))
+    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+
+
 def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
     """One tile with explicit geometry, independent of command mode or unlock state."""
     sx, sy = cfg.size
@@ -64,6 +99,11 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         if not 0 <= spawn_x < start or not 0 < start <= edges[-2] < sx or width <= 0:
             raise ValueError(f"{kind}: need a clear approach, ordered risers and an exit within the tile")
         height = p["step_height_range_m"][0] + difficulty * np.ptp(p["step_height_range_m"])
+        if getattr(cfg, "pyramid", False):
+            if spawn_x >= start - (cfg.stair_lip[1] if down and cfg.stair_lip else 0):
+                raise ValueError("pyramid spawn must precede the first edge")
+            mesh = _pyramid_mesh(cfg.size, start, width, count, height, down, ground, cfg.stair_lip)
+            return [mesh], np.array((spawn_x, sy / 2, 0.0))
         if cfg.stair_lip is None:
             levels = [height * (count - i if down else i) for i in range(count + 1)]
             for left, right, z in zip(edges[:-1], edges[1:], levels, strict=True):
@@ -156,4 +196,5 @@ class MixedTerrainCfg(SubTerrainBaseCfg):
     function = mixed_terrain
     profile: str = MISSING
     parameters: dict = MISSING
+    pyramid: bool = False
     stair_lip: tuple[float, float] | None = None

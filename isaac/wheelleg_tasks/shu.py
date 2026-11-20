@@ -19,7 +19,7 @@ from wheelleg.shu_spawn import (
     sample_spawn,
     sample_spawn_kinds,
 )
-from wheelleg.shu_terrain import MIXED_COLUMN_PROFILES
+from wheelleg.shu_terrain import mixed_columns
 
 
 def _exact(finder, names):
@@ -51,15 +51,24 @@ class ShuP1:
             terrain = t.stage["terrain"]
             self.commands = ShuCommands.for_mixed(cp, n, dev, route=terrain["route"])
             route = terrain["route"]
-            self.up_columns = torch.tensor([name.endswith("_up") for name in MIXED_COLUMN_PROFILES], device=dev)
+            columns = mixed_columns(terrain)
+            up, down = route["up_height_range_m"], route["down_height_range_m"]
+            shared = (max(up[0], down[0]), min(up[1], down[1]))
+            if "pyramid" in terrain and shared[0] > shared[1]:
+                raise ValueError("No common calibrated standing height for the combined stair route")
+            self.up_columns = torch.tensor(
+                [pyramid or name.endswith("_up") for name, _, pyramid in columns], device=dev
+            )
             self.birth_height_bounds = env.raw_action.new_tensor(
                 [
-                    route["up_height_range_m"]
+                    shared
+                    if pyramid
+                    else route["up_height_range_m"]
                     if name.endswith("_up")
                     else route["down_height_range_m"]
                     if name.endswith("_down")
                     else cp["height_range_m"]
-                    for name in MIXED_COLUMN_PROFILES
+                    for name, _, pyramid in columns
                 ]
             )
             self.free_map = ShuFreeMap(env.cfg.terrain.terrain_generator, terrain.get("free_map") or {}, dev)

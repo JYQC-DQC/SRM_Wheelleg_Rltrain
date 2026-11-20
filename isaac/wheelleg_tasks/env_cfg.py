@@ -12,7 +12,7 @@ from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
 from wheelleg.observation import POLICY_OBS_DIM
-from wheelleg.shu_terrain import MIXED_COLUMN_PROFILES, MIXED_PROFILES, stair_lip_dimensions
+from wheelleg.shu_terrain import mixed_columns, stair_lip_dimensions
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
@@ -117,16 +117,17 @@ def make_env_cfg(
             size=tuple(s["tile_size_m"]),
             border_width=s["border_width_m"],
             num_rows=s["rows"],
-            num_cols=len(MIXED_COLUMN_PROFILES),
+            num_cols=len(mixed_columns(s)),
             curriculum=True,
             sub_terrains={
-                (name if col < len(MIXED_PROFILES) else f"{name}_lip"): MixedTerrainCfg(
+                (name + ("_pyramid" if pyramid else "") + ("_lip" if raised else "")): MixedTerrainCfg(
                     proportion=1.0,
                     profile=name,
                     parameters={**mutable(s["profiles"][name]["geometry"]), "seed": t.settings["seed"]},
-                    stair_lip=None if col < len(MIXED_PROFILES) else lip,
+                    stair_lip=lip if raised else None,
+                    pyramid=pyramid,
                 )
-                for col, name in enumerate(MIXED_COLUMN_PROFILES)
+                for name, raised, pyramid in mixed_columns(s)
             },
         )
         scanner = RayCasterCfg(

@@ -185,3 +185,65 @@ def test_unconfirmed_lip_depth_is_not_replaced_with_a_default():
     cfg["stair_lip"]["width_m"] = None
     with pytest.raises(ValueError, match=r"terrain\.stair_lip.*width_m"):
         MixedTerrainRuntime(cfg, 1, "cpu")
+
+
+@pytest.mark.parametrize("down", [False, True])
+@pytest.mark.parametrize("lip", [None, (0.05, 0.15)])
+def test_double_pyramid_crosses_four_main_risers(terrain_module, down, lip):
+    mesh = terrain_module._pyramid_mesh((12, 12), 3, 0.30, 2, 0.23, down, 0.10, lip)
+    assert mesh.is_watertight and mesh.is_winding_consistent and mesh.volume > 0
+    # Probe horizontal faces on the central traverse, slightly off triangulation diagonals.
+    top = mesh.face_normals[:, 2] > 0.999
+
+    def height(x):
+        for tri in mesh.triangles[top]:
+            a, b, c = tri[:, :2]
+            uv = np.linalg.solve(np.stack((b - a, c - a), axis=1), np.array([x, 6.015]) - a)
+            if min(uv) >= 0 and sum(uv) <= 1:
+                return tri[0, 2]
+        raise AssertionError(x)
+
+    h = 0.18 if lip else 0.23
+    sign = -1 if down else 1
+    pos = 3.08 if down else 3.20  # outside lip on first tread
+    assert [height(x) for x in (1, pos, 6, 12 - pos, 11)] == pytest.approx([0, sign * h, sign * 2 * h, sign * h, 0])
+    assert height(6) == pytest.approx(sign * 2 * h)
+    assert height(1) == height(11) == 0
+    if lip:
+        for edge in (3, 3.30, 8.70, 9):
+            assert abs(height(edge - 0.001) - height(edge + 0.001)) == pytest.approx(0.23)
+
+
+def test_mixed_pyramid_counts_far_exit_and_does_not_unlock_pure_gates():
+    from wheelleg.shu_terrain import mixed_columns
+
+    cfg = settings()
+    cfg["pyramid"] = {"share_of_stairs": 1.0}
+    # Extend far enough to cross the full geometric profile, not just the first flank.
+    cfg["route"]["corridor_width_m"] = 1.0
+    mix = MixedTerrainRuntime(cfg, 512, "cpu")
+    cols = mixed_columns(cfg)
+    t = SimpleNamespace(
+        terrain_origins=torch.zeros(3, len(cols), 3),
+        terrain_levels=torch.zeros(512, dtype=torch.long),
+        terrain_types=torch.zeros(512, dtype=torch.long),
+        env_origins=torch.zeros(512, 3),
+    )
+    ids = torch.arange(512)
+    no = ids < 0
+    mix.reset(t, ids, no, no, evaluation=True)
+    assert (t.terrain_types[mix.traverse] >= 16).all()
+    assert set(t.terrain_types[mix.traverse].tolist()) == {16, 17, 18, 19, 22, 23, 24, 25}
+    x = mix.exit_distances[t.terrain_types]
+    start = t.env_origins
+    mid = start.clone()
+    mid[:, 0] = x * 0.5
+    mix.step(t, start, mid, torch.ones_like(x), no)
+    assert not mix.crossed.any()
+    end = start.clone()
+    end[:, 0] = x + 0.01
+    mix.step(t, mid, end, torch.ones_like(x), no)
+    assert torch.equal(mix.traverse, mix.crossed)
+    mix.reset(t, ids, ~no, no, evaluation=False)
+    assert not any(mix.passed.values())
+    assert list(mix.counts.values()) == [(0, 0)] * 4
