@@ -299,6 +299,7 @@ class WheelLegRunner(OnPolicyRunner):
         map_location=None,
         restart_command_curriculum: bool = False,
         handoff_vertical_speed: float | None = None,
+        handoff_duration: float | None = None,
     ) -> dict:
         """restart_command_curriculum: the caller restarts the command curriculum, so its saved state is not needed,
         and a landing air-height curriculum missing from an older checkpoint starts at its first level."""
@@ -310,6 +311,7 @@ class WheelLegRunner(OnPolicyRunner):
             infos.get("observation_contract"),
             self.observation_contract(),
             handoff_vertical_speed,
+            handoff_duration,
         ):
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"

@@ -12,6 +12,7 @@ from wheelleg.training import load_training, runner_config
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SRM P1/P2/P3 with Isaac Lab 2.3.2 / rsl_rl 3.1.2")
+    parser.add_argument("--handoff-duration", type=float, help="Post-handoff observation seconds; 0 ends at settle")
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--robot", type=Path, default=Path("config/robot.yaml"))
     parser.add_argument("--policy", type=Path)
@@ -61,6 +62,8 @@ def main() -> None:
         not math.isfinite(args.handoff_vertical_speed) or args.handoff_vertical_speed <= 0
     ):
         parser.error("--handoff-vertical-speed must be finite and positive")
+    if args.handoff_duration is not None and (not math.isfinite(args.handoff_duration) or args.handoff_duration < 0):
+        parser.error("--handoff-duration must be finite and nonnegative")
     if args.inherit_action_std and not args.initialize_from:
         parser.error("--inherit-action-std needs --initialize-from")
     if args.command_fraction is not None and (not args.resume or not 0 < args.command_fraction <= 1):
@@ -109,6 +112,8 @@ def main() -> None:
             args.actor_bundle = saved_bundle
     if args.handoff_vertical_speed is not None and args.actor_bundle is None:
         parser.error("--handoff-vertical-speed requires an actor bundle")
+    if args.handoff_duration is not None and args.actor_bundle is None:
+        parser.error("--handoff-duration requires an actor bundle")
     from wheelleg.checkpoints import initialize_actor, require_target_runtime
 
     require_target_runtime()
@@ -137,6 +142,7 @@ def main() -> None:
         initial_jump_level=args.initial_jump_level,
         restart_jump_level=args.restart_jump_level,
         handoff_vertical_speed_override=args.handoff_vertical_speed,
+        handoff_duration_override=args.handoff_duration,
         allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
@@ -156,6 +162,11 @@ def main() -> None:
         from wheelleg.jump_outcomes import HANDOFF_COST_TIMING
 
         manifest["handoff_failure_cost_timing"] = HANDOFF_COST_TIMING
+        if args.handoff_duration is not None:
+            manifest["previous_handoff_duration_s"] = bundle["handoff"]["duration_s"]
+            bundle["handoff"]["duration_s"] = args.handoff_duration
+            if args.handoff_duration == 0:
+                bundle["handoff"]["failure_cost"] = 0.0
         if args.handoff_vertical_speed is not None:
             manifest["previous_handoff_vertical_speed_m_s"] = bundle["handoff"]["vertical_speed_m_s"]
             bundle["handoff"]["vertical_speed_m_s"] = args.handoff_vertical_speed
@@ -206,6 +217,7 @@ def main() -> None:
                     load_optimizer=True,
                     restart_command_curriculum=args.command_fraction is not None,
                     handoff_vertical_speed=args.handoff_vertical_speed,
+                    handoff_duration=args.handoff_duration,
                 )
                 if bundle is not None:
                     manifest["previous_handoff_failure_cost_timing"] = restored.get(
@@ -216,14 +228,14 @@ def main() -> None:
                     print(f"HANDOFF_FAILURE_COST_TIMING {previous_timing} -> {HANDOFF_COST_TIMING}")
                 runner.current_learning_iteration += 1
                 env.training_iteration_offset = runner.current_learning_iteration
-                if args.handoff_vertical_speed is not None:
+                if args.handoff_vertical_speed is not None or args.handoff_duration is not None:
                     # The old window used a different acceptance limit; retain levels and learned guidance.
                     for curriculum in env.flat_jump_curricula:
                         curriculum.attempts.zero_()
                         curriculum.successes.zero_()
                         curriculum.latest_rate.zero_()
                     env.reset()
-                    print(f"HANDOFF_VERTICAL_SPEED_RESET {args.handoff_vertical_speed} m/s")
+                    print(f"HANDOFF_ACCEPTANCE_RESET {bundle['handoff']}")
                 if args.restart_jump_level is not None:
                     for curriculum in env.flat_jump_curricula:
                         curriculum.restart(args.restart_jump_level)

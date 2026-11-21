@@ -427,7 +427,7 @@ class JumpSim(WheelLegSim):
         elif bool(self.jump.landing_pulse[0]):
             target_ok = bool(self.jump.target_reached[0])
             self.jump_result = "success" if target_ok and self.takeoff_speed_ok else "landed: target not met"
-            if self.handoff_cfg is not None:
+            if self.handoff_cfg is not None and self.handoff_cfg["duration_s"] > 0:
                 self.handoff_remaining = self.handoff_cfg["duration_s"]
                 self.handoff_bad = not (target_ok and self.takeoff_speed_ok)
                 self.jump_result = "Landing handoff observation"
@@ -719,6 +719,7 @@ def main() -> None:
     parser.add_argument(
         "--handoff-vertical-speed", type=float, help="Override only the handoff vertical-speed limit (m/s)"
     )
+    parser.add_argument("--handoff-duration", type=float, help="Post-handoff observation seconds; 0 disables it")
     parser.add_argument("--source", type=Path, default=ROOT / "runs/scut_experience/scene.xml")
     parser.add_argument("--site", type=int, default=1, choices=range(1, 13), help="F-key site number")
     parser.add_argument("--height", type=float, help="jump target in metres")
@@ -727,6 +728,8 @@ def main() -> None:
     parser.add_argument("--no-panel", action="store_true")
     parser.add_argument("--headless", type=float, metavar="SECONDS", help="CPU smoke run without a window")
     args = parser.parse_args()
+    if args.handoff_duration is not None and (not math.isfinite(args.handoff_duration) or args.handoff_duration < 0):
+        parser.error("--handoff-duration must be finite and nonnegative")
     if args.handoff_vertical_speed is not None and (
         not math.isfinite(args.handoff_vertical_speed) or args.handoff_vertical_speed <= 0
     ):
@@ -749,11 +752,15 @@ def main() -> None:
         from wheelleg.multi_actor import NumpyBundlePolicy
 
         actor = NumpyBundlePolicy(checkpoint, bundle_path, args.handoff_vertical_speed)
+        if args.handoff_duration is not None:
+            actor.bank.bundle["handoff"]["duration_s"] = args.handoff_duration
+            if args.handoff_duration == 0:
+                actor.bank.bundle["handoff"]["failure_cost"] = 0.0
     else:
         if args.actor_bundle is not None:
             parser.error("Actor bundle does not exist")
-        if args.handoff_vertical_speed is not None:
-            parser.error("--handoff-vertical-speed requires an actor bundle")
+        if args.handoff_vertical_speed is not None or args.handoff_duration is not None:
+            parser.error("Handoff overrides require an actor bundle")
         actor = NumpyActor(checkpoint, cfg.policy["hidden_dims"])
     sim = JumpSim(cfg, actor, arena)
     player = JumpPlayer(sim, sites, settings["controls"])

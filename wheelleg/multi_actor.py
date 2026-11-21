@@ -13,17 +13,26 @@ from .config import load_policy, load_robot
 from .observation import MODE_CONTRACT_REVISION
 
 
-def resume_contract_matches(saved: dict | None, current: dict, handoff_vertical_speed: float | None = None) -> bool:
+def resume_contract_matches(
+    saved: dict | None,
+    current: dict,
+    handoff_vertical_speed: float | None = None,
+    handoff_duration: float | None = None,
+) -> bool:
     if saved is None:
         return False
-    if handoff_vertical_speed is None:
+    if handoff_vertical_speed is None and handoff_duration is None:
         return saved == current
     if "actor_bundle" not in saved or "actor_bundle" not in current:
         return False
-    if current["actor_bundle"]["handoff"]["vertical_speed_m_s"] != handoff_vertical_speed:
-        return False
     migrated = deepcopy(saved)
-    migrated["actor_bundle"]["handoff"]["vertical_speed_m_s"] = handoff_vertical_speed
+    for key, value in (("vertical_speed_m_s", handoff_vertical_speed), ("duration_s", handoff_duration)):
+        if value is not None:
+            if current["actor_bundle"]["handoff"][key] != value:
+                return False
+            migrated["actor_bundle"]["handoff"][key] = value
+    if handoff_duration == 0:
+        migrated["actor_bundle"]["handoff"]["failure_cost"] = 0.0
     return migrated == current
 
 
@@ -53,11 +62,13 @@ def read_bundle(path: Path, specialist_checkpoint: Path | None = None) -> dict:
             raise ValueError(f"Actor checkpoint changed: {name}")
         spec["sha256"] = digest
     handoff = data["handoff"]
-    for key in ("duration_s", "tilt_rad", "vertical_speed_m_s", "angular_xy_rad_s", "vx_error_m_s", "yaw_error_rad_s"):
+    if not 0 <= float(handoff["duration_s"]) < float("inf"):
+        raise ValueError("Invalid handoff duration_s")
+    for key in ("tilt_rad", "vertical_speed_m_s", "angular_xy_rad_s", "vx_error_m_s", "yaw_error_rad_s"):
         if not 0 < float(handoff[key]) < float("inf"):
             raise ValueError(f"Invalid handoff {key}")
-    if handoff["failure_cost"] >= 0:
-        raise ValueError("Handoff failure_cost must be negative")
+    if not -float("inf") < float(handoff["failure_cost"]) <= 0:
+        raise ValueError("Handoff failure_cost must be finite and nonpositive")
     return data
 
 

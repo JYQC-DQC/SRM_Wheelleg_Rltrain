@@ -27,7 +27,7 @@ class MultiActorEnv(WheelLegEnv):
         if self.training.task != "p3-jump":
             raise ValueError("Specialist training currently supports p3-jump")
         self.actor_bundle = bundle
-        # Frozen base performance is checked at handoff; no non-jump cohorts are needed for promotion.
+        # Base is frozen; optional post-handoff acceptance is controlled by duration_s.
         self.ground_promotion = None
         self.actor_bank = ActorBank(bundle, str(self.device), training=True)
         from wheelleg.config import load_policy
@@ -59,7 +59,11 @@ class MultiActorEnv(WheelLegEnv):
         result = super()._get_observations()
         if hasattr(self, "actor_bundle"):
             state = torch.stack(
-                (self.handoff_left / self.actor_bundle["handoff"]["duration_s"], self.handoff_bad.float()), dim=-1
+                (
+                    self.handoff_left / max(self.actor_bundle["handoff"]["duration_s"], self.step_dt),
+                    self.handoff_bad.float(),
+                ),
+                dim=-1,
             )
             result["critic"] = torch.cat((result["critic"], state), dim=-1)
         result["actor_train_mask"] = actor_mask(result["policy"]).float().unsqueeze(-1)
@@ -89,6 +93,8 @@ class MultiActorEnv(WheelLegEnv):
         self.handoff_pulse.zero_()
         self.handoff_failed.zero_()
         cfg, state = self.actor_bundle["handoff"], self.state
+        if cfg["duration_s"] == 0:
+            return self._finish_without_handoff_observation(terminated, timeout)
         reasons = torch.stack(
             (
                 (state["roll"].abs() >= cfg["tilt_rad"]) | (state["pitch"].abs() >= cfg["tilt_rad"]),
@@ -145,6 +151,28 @@ class MultiActorEnv(WheelLegEnv):
                 ids, torch.ones_like(ids, dtype=torch.bool), torch.zeros_like(ids, dtype=torch.bool), iteration
             )
         terminated |= finished
+        timeout &= ~terminated
+        return terminated, timeout
+
+    def _finish_without_handoff_observation(self, terminated, timeout):
+        # A completed settle is a true terminal, not a timeout bootstrapped into a new episode.
+        completed = self.jump.landing_pulse & ~terminated & ~timeout
+        heading_ok = self._jump_direction_ok() if self.promotion_checks is not None else torch.ones_like(completed)
+        self.outcome_checks[completed] = torch.stack(
+            (self.jump.target_reached, self.jump_vx_qualified, heading_ok), dim=-1
+        )[completed]
+        self.handoff_pulse.copy_(completed)
+        self.handoff_failed.copy_(completed & ~self.outcome_checks.all(-1))
+        # No post-handoff observation or its failure cost. Original jump rewards remain unchanged.
+        self.handoff_cost_pulse.zero_()
+        self.iteration_handoff_counts += torch.stack((completed.sum(), self.handoff_failed.sum()))
+        aborted = (self.jump.finished & (self.jump.elapsed > 0) | terminated | timeout) & ~completed
+        ids = (completed | aborted).nonzero().flatten()
+        iteration = self.training_iteration_offset + self.common_step_counter / self.training.settings["rollout_steps"]
+        self._record_final_outcome(ids, aborted[ids], torch.zeros_like(aborted[ids]), iteration)
+        self.handoff_left.zero_()
+        self.handoff_bad.zero_()
+        terminated |= completed
         timeout &= ~terminated
         return terminated, timeout
 

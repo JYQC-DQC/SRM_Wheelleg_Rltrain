@@ -40,6 +40,70 @@ def test_explicit_handoff_limit_migration_does_not_bypass_other_contract_changes
     assert not resume_contract_matches(saved, bad, 0.3)
 
 
+def test_zero_handoff_resume_removes_cost_but_keeps_frozen_actor_contract():
+    from copy import deepcopy
+
+    from wheelleg.multi_actor import resume_contract_matches
+
+    saved = {"actor_bundle": {"frozen": "hash", "handoff": {"duration_s": 2.0, "failure_cost": -4.0}}}
+    current = deepcopy(saved)
+    current["actor_bundle"]["handoff"].update(duration_s=0.0, failure_cost=0.0)
+    assert not resume_contract_matches(saved, current)
+    assert resume_contract_matches(saved, current, handoff_duration=0)
+    current["actor_bundle"]["frozen"] = "different"
+    assert not resume_contract_matches(saved, current, handoff_duration=0)
+
+
+def test_no_observation_finishes_at_settle_without_cost_or_duplicate_counts():
+    import ast
+    from types import SimpleNamespace
+
+    from wheelleg.jump_outcomes import JumpOutcomeTracker
+
+    # Run the actual environment terminal path without importing Isaac Sim.
+    source = Path("isaac/wheelleg_tasks/multi_actor.py").read_text(encoding="utf-8")
+    node = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef))
+
+    class Base:
+        def _get_dones(self):
+            return torch.zeros(6, dtype=torch.bool), torch.tensor([False] * 5 + [True])
+
+        def _record_jump_curriculum(self, ids, success, iteration):
+            self.recorded_success = success
+
+    scope = dict(torch=torch, WheelLegEnv=Base, JumpOutcomeTracker=JumpOutcomeTracker, HANDOFF_COST_TIMING="test")
+    exec(compile(ast.Module(body=[node], type_ignores=[]), "multi_actor.py", "exec"), scope)
+    env = scope["MultiActorEnv"].__new__(scope["MultiActorEnv"])
+    env.actor_bundle = {"handoff": {"duration_s": 0.0}}
+    env.state = {}  # No post-handoff state is read or used for acceptance.
+    env.handoff_left = torch.zeros(6)
+    for name in ("handoff_bad", "handoff_grade", "handoff_pulse", "handoff_failed", "handoff_cost_pulse"):
+        setattr(env, name, torch.zeros(6, dtype=torch.bool))
+    env.jump = SimpleNamespace(
+        landing_pulse=torch.tensor([True, True, True, False, False, False]),
+        target_reached=torch.tensor([True, False, True, False, False, False]),
+        finished=torch.tensor([True, True, True, True, False, False]),
+        elapsed=torch.ones(6),
+    )
+    env.jump_vx_qualified = torch.tensor([True, True, False, True, True, True])
+    env.promotion_checks = None
+    env.outcome_checks = torch.ones((6, 3), dtype=torch.bool)
+    env.outcome_tracker = JumpOutcomeTracker(6, "cpu")
+    env.commands = SimpleNamespace(target=torch.ones((6, 3)))
+    env.iteration_handoff_counts = torch.zeros(2, dtype=torch.long)
+    env.training_iteration_offset, env.common_step_counter = 0, 48
+    env.training = SimpleNamespace(settings={"rollout_steps": 48})
+    env.cfg = SimpleNamespace(evaluation=False)
+    terminated, timeout = env._get_dones()
+    assert terminated.tolist() == [True, True, True, False, False, False]
+    assert timeout.tolist() == [False] * 5 + [True]
+    assert env.recorded_success.tolist() == [True, False, False, False, False]
+    assert env.outcome_tracker.counts[1].tolist() == [5, 1, 2, 1, 1, 0, 0]
+    assert not env.handoff_cost_pulse.any() and not env.handoff_left.any()
+    env._get_dones()
+    assert env.outcome_tracker.counts[:, 0].sum() == 5
+
+
 def test_specialist_mix_and_exact_sixty_percent_promotion():
     data = yaml.safe_load(
         (Path(__file__).resolve().parents[1] / "config/reference/scut_p3_multi_actor.yaml").read_text(encoding="utf-8")
