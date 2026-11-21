@@ -1,11 +1,13 @@
 """CPU regressions for the P1 free atlas, with synthetic command caps."""
 
+from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
 
 import pytest
 import test_shu_runtime as transport
 import torch
+import yaml
 from test_shu_commands import settings
 
 from wheelleg.shu_commands import ShuCommands
@@ -187,45 +189,44 @@ def test_flat_replay_never_inherits_atlas_height_or_edge(runtime):
     torch.testing.assert_close(obs["critic"][0, -77:], torch.full((77,), 0.25))
 
 
-def test_mixed_push_keeps_flat_amplitude_and_blocks_extra_collisions(runtime):
+@pytest.mark.parametrize("iteration", [0, 6000])
+def test_mixed_map_baseline_uses_separate_clocks_flat_replay_keeps_coupled_event(runtime, iteration):
     e = mixed_runtime(runtime)
     n = e.num_envs
-    e.disturbance_phase = 2
-    e.training_iteration_offset, e.common_step_counter = 3000, 0
-    e.training.settings.update(
-        rollout_steps=48,
-        disturbance=dict(
-            phase2_start_iteration=0,
-            ramp_iterations=3000,
-            final_push_velocity_m_s=1.25,
-            collision_interval_s=(8, 15),
-            collision_duration_s=0.1,
-            collision_force_range_n=(100, 300),
-            lateral_probability=0.8,
-        ),
-    )
-    e.training.shared["randomization"] = dict(
-        push_velocity_m_s=0.25,
-        external_force_n=10.0,
-        external_torque_nm=1.0,
-        external_wrench_duration_s=10.0,
-        push_interval_s=(5.0, 10.0),
-    )
-    for name in ("push_timer", "collision_timer", "push_remaining", "collision_remaining"):
+    config = Path(__file__).resolve().parents[1] / "config"
+    p1 = yaml.safe_load((config / "policies/p1/policy_meta.yaml").read_text(encoding="utf-8"))
+    e.disturbance_phase = p1["stages"]["stairs"]["disturbance_phase"]
+    assert e.disturbance_phase == 1
+    e.training_iteration_offset, e.common_step_counter = iteration, 0
+    e.training.settings.update(rollout_steps=48, disturbance=p1["training"]["disturbance"])
+    e.training.shared["randomization"] = yaml.safe_load((config / "robot.yaml").read_text(encoding="utf-8"))[
+        "training"
+    ]["randomization"]
+    for name in ("push_timer", "map_wrench_timer", "collision_timer", "push_remaining", "collision_remaining"):
         setattr(e, name, torch.zeros(n))
     for name in ("push_force", "push_torque", "collision_force"):
         setattr(e, name, torch.zeros(n, 1, 3))
     e.robot.data.root_vel_w = torch.zeros(n, 6)
     e.robot.write_root_velocity_to_sim = Mock()
-    replay = torch.arange(n) % 2 == 0
-    e.shu.flat_replay.copy_(replay)
+    # 0=flat push + wrench, 1=map push only, 2=map wrench only, 3=both, 4=flat neither
+    e.shu.flat_replay.zero_()
+    e.shu.flat_replay[[0, 4]] = True
+    e.push_timer.fill_(2)
+    e.push_timer[[0, 1, 3]] = 0
+    e.map_wrench_timer.fill_(3)
+    e.map_wrench_timer[[2, 3, 4]] = 0
     torch.manual_seed(5)
     runtime[0]._push(e)
-    v, _ = e.robot.write_root_velocity_to_sim.call_args.args
-    assert v[replay, :2].abs().max() <= 0.25 < v[~replay, :2].abs().max() <= 1.25
-    assert not e.collision_remaining[replay].any()
-    assert (e.collision_remaining[~replay] > 0).all()
-    assert (e.push_remaining == 10).all()
+    v, ids = e.robot.write_root_velocity_to_sim.call_args.args
+    assert ids.tolist() == [0, 1, 3] and v[:, :2].abs().max() <= 0.25
+    assert not v[:, 2:].any() and not e.collision_remaining.any()
+    wrench_ids = [0, 2, 3]
+    assert e.push_remaining.nonzero().flatten().tolist() == wrench_ids
+    assert (e.push_remaining[wrench_ids] == 10).all()
+    assert e.push_force.abs().max() <= 10 and e.push_torque.abs().max() <= 1
+    for timer in (e.push_timer[ids], e.map_wrench_timer[[2, 3]]):
+        assert ((5 <= timer) & (timer <= 10)).all()
+    assert e.push_timer[3] != e.map_wrench_timer[3]
 
 
 def test_both_slope_signs_use_the_same_free_command_cap():

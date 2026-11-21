@@ -154,6 +154,7 @@ class WheelLegEnv(DirectRLEnv):
         self.delayed_sensor = torch.zeros(n, 18, device=d)
         self.sensor_counter = -1
         self.push_timer = torch.zeros(n, device=d)
+        self.map_wrench_timer = torch.zeros_like(self.push_timer) if self.mixed_curriculum is not None else None
         self.push_remaining = torch.zeros(n, device=d)
         self.push_force = torch.zeros(n, 1, 3, device=d)
         self.push_torque = torch.zeros_like(self.push_force)
@@ -341,10 +342,23 @@ class WheelLegEnv(DirectRLEnv):
                 scale = torch.where(self.shu.flat_replay[ids, None], r["push_velocity_m_s"], amplitude)
             velocity[:, :2] += uniform((-1.0, 1.0), (len(ids), 2), self.device) * scale
             self.robot.write_root_velocity_to_sim(velocity, ids)
-            force = uniform((-r["external_force_n"], r["external_force_n"]), (len(ids), 1, 3), self.device)
-            torque = uniform((-r["external_torque_nm"], r["external_torque_nm"]), (len(ids), 1, 3), self.device)
-            self.push_force[ids], self.push_torque[ids] = force, torque
-            self.push_remaining[ids] = r["external_wrench_duration_s"]
+        wrench_ids = ids
+        if self.map_wrench_timer is not None:
+            # Only atlas episodes have independent clocks. Flat retention inherits the
+            # simultaneous push + wrench event from standalone flat, even across resets.
+            self.map_wrench_timer -= self.step_dt
+            due = ~self.shu.flat_replay & (self.map_wrench_timer <= 0)
+            map_ids = due.nonzero().flatten()
+            self.map_wrench_timer[map_ids] = uniform(r["push_interval_s"], (len(map_ids),), self.device)
+            wrench_ids = torch.cat((ids[self.shu.flat_replay[ids]], map_ids))
+        if len(wrench_ids):
+            shape = (len(wrench_ids), 1, 3)
+            self.push_force[wrench_ids] = uniform((-r["external_force_n"], r["external_force_n"]), shape, self.device)
+            self.push_torque[wrench_ids] = uniform(
+                (-r["external_torque_nm"], r["external_torque_nm"]), shape, self.device
+            )
+            self.push_remaining[wrench_ids] = r["external_wrench_duration_s"]
+        if len(ids):
             self.push_timer[ids] = uniform(r["push_interval_s"], (len(ids),), self.device)
         if self.disturbance_phase == 2:
             self.collision_timer -= self.step_dt
@@ -975,6 +989,8 @@ class WheelLegEnv(DirectRLEnv):
         if self.shu is not None:
             self.collision_timer[ids] = uniform(t.settings["disturbance"]["collision_interval_s"], (n,), d)
             self.push_timer[ids] = uniform(r["push_interval_s"], (n,), d)
+            if self.map_wrench_timer is not None:
+                self.map_wrench_timer[ids] = uniform(r["push_interval_s"], (n,), d)
         for buffer, bounds in (
             (self.obs_delay, r["observation_delay_steps"]),
             (self.act_delay, r["action_delay_steps"]),
