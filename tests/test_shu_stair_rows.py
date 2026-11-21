@@ -21,11 +21,10 @@ def test_update_has_strict_thresholds_promotion_priority_bottom_clamp_and_id_ord
         torch.tensor([6, 4, 1, 3, 5, 2]),
         torch.tensor([1.01, 0.0, 0.0, 1.01, 1.0, 1.0]),
         torch.tensor([0.0, 0.1, 0.1, 0.1, 0.39, 0.4]),
-        torch.tensor([False, True, False, True, False, False]),
     )
 
-    assert new_rows.tolist() == [7, 3, 0, 3, 1, 2]
-    assert curriculum.levels.tolist() == [2, 0, 2, 3, 3, 1, 7, 7]
+    assert new_rows.tolist() == [7, 1, 0, 3, 1, 2]
+    assert curriculum.levels.tolist() == [2, 0, 2, 3, 1, 1, 7, 7]
 
 
 def test_only_promoted_top_envs_replay_across_all_rows_without_changing_other_envs():
@@ -33,15 +32,14 @@ def test_only_promoted_top_envs_replay_across_all_rows_without_changing_other_en
     curriculum.levels.fill_(8)
     ids = torch.arange(0, 1024, 2)
     zeros = torch.zeros_like(ids, dtype=torch.float32)
-    reverse_goal = torch.ones_like(ids, dtype=torch.bool)
 
-    replayed = curriculum.update(ids, zeros, zeros, reverse_goal)
+    replayed = curriculum.update(ids, zeros + 1.1, zeros)
 
     assert replayed.unique().tolist() == list(range(9))
     assert torch.equal(curriculum.levels[ids], replayed)
     assert (curriculum.levels[1::2] == 8).all()
 
-    demoted = curriculum.update(ids, zeros, zeros, ~reverse_goal)
+    demoted = curriculum.update(ids, zeros, zeros)
     assert torch.equal(demoted, (replayed - 1).clamp_min(0))
 
 
@@ -54,9 +52,7 @@ def test_checkpoint_round_trip_and_empty_update_keep_per_env_state():
     restored = StairRowCurriculum(3, 4, 2.0, "cpu")
     restored.load_state_dict(state)
     state["levels"].zero_()
-    result = restored.update(
-        torch.empty(0, dtype=torch.long), torch.empty(0), torch.empty(0), torch.empty(0, dtype=torch.bool)
-    )
+    result = restored.update(torch.empty(0, dtype=torch.long), torch.empty(0), torch.empty(0))
 
     assert result.numel() == 0
     assert restored.levels.tolist() == [0, 2, 3]

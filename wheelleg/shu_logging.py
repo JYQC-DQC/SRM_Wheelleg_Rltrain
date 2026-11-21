@@ -1,5 +1,7 @@
 """Rollout-local TensorBoard scalars for SHU first landing and preset rise events."""
 
+from math import pi
+
 import torch
 
 from wheelleg.shu_landing import ShuLanding
@@ -37,7 +39,16 @@ _MEASURES = (
     "rise_failure_time_s",
     "rise_max_drift_m",
 )
-_GROUPS = ("Landing/all", "Landing/top_band", "Rise/all")
+_GROUPS = (
+    "Landing/all",
+    "Landing/top_band",
+    "Rise/all",
+    "Landing/birth_leg_diff_below_45deg",
+    "Landing/birth_leg_diff_at_least_45deg",
+    "Landing/birth_forward_same_direction",
+    "Landing/birth_forward_opposite_direction",
+    "Landing/birth_forward_near_zero",
+)
 
 
 class ShuLandingLog:
@@ -52,10 +63,11 @@ class ShuLandingLog:
 
     def __init__(self) -> None:
         self._seen_birth: torch.Tensor | None = None
-        self._window: torch.Tensor | None = None  # (3 groups, 4 statistics, padded columns)
+        self._window: torch.Tensor | None = None
+        self._birth_window = None
 
     @torch.inference_mode()
-    def add(self, event: ShuLanding, band: torch.Tensor) -> None:
+    def add(self, event: ShuLanding, band: torch.Tensor, air_debug=None) -> None:
         """band (N,) stores each environment's original birth band until after settlement."""
         m = event.metrics()
         if self._seen_birth is None:
@@ -64,8 +76,38 @@ class ShuLandingLog:
         self._seen_birth.copy_(torch.where(pulse, event.born, self._seen_birth))
         air_end, rise_end = pulse & event.air_birth, pulse & event.preset_birth
         # Fixed-size reductions avoid per-step dynamic indexing, host synchronization and rollout histories.
-        groups = torch.stack((air_end, air_end & (band == 3), rise_end))
+        groups = (air_end, air_end & (band == 3), rise_end)
+        if air_debug is None:
+            groups += (torch.zeros_like(air_end),) * (len(_GROUPS) - len(groups))
+        else:
+            angle_diff, vx_at_birth, first_vx_cmd, rim_sq_sum, rim_ticks = air_debug
+            valid_angle = air_end & angle_diff.isfinite()
+            valid_speed = air_end & vx_at_birth.isfinite() & first_vx_cmd.isfinite()
+            # Reporting bins only. Near zero includes either the sampled speed or its first issued target.
+            near_zero = torch.minimum(vx_at_birth.abs(), first_vx_cmd.abs()) < 0.1
+            same = (vx_at_birth * first_vx_cmd) > 0
+            groups += (
+                valid_angle & (angle_diff < pi / 4),
+                valid_angle & (angle_diff >= pi / 4),
+                valid_speed & ~near_zero & same,
+                valid_speed & ~near_zero & ~same,
+                valid_speed & near_zero,
+            )
+        groups = torch.stack(groups)
         air, rise = m["resolved"], m["rise_succeeded"] | m["rise_failed"]
+        if air_debug is not None:
+            with_rim = groups & air & (rim_ticks > 0)
+            sums = torch.stack(
+                (
+                    torch.where(with_rim, rim_sq_sum, 0).sum(1),
+                    torch.where(with_rim, rim_ticks, 0).sum(1),
+                ),
+                dim=-1,
+            )
+            if self._birth_window is None:
+                self._birth_window = sums
+            else:
+                self._birth_window.add_(sums)
         caught = m["succeeded"] & air
         hard = m["hard_guide"] | m["body_collision"]
         flags = torch.stack(
@@ -112,7 +154,7 @@ class ShuLandingLog:
         values, eligible, observed = (torch.stack(cols, dim=1) for cols in zip(*fields, strict=True))
         valid = observed & values.isfinite()
         if self._window is None:
-            self._window = values.new_zeros((3, 4, len(_FLAGS) + values.shape[1]))
+            self._window = values.new_zeros((len(_GROUPS), 4, len(_FLAGS) + values.shape[1]))
             self._window[:, 3].fill_(-torch.inf)
         w = self._window
         # (population, env, measured quantity); no per-env or per-quantity device reductions.
@@ -133,6 +175,8 @@ class ShuLandingLog:
         # The runner can drain outside rollout inference_mode: read the old tensor, never mutate it.
         rows = self._window.cpu().tolist()
         self._window = None
+        birth_rows = None if self._birth_window is None else self._birth_window.tolist()
+        self._birth_window = None
         out = {}
         for i, (exposure, valid, total, maximum) in enumerate(rows):
             counts = dict(zip(_FLAGS, map(int, exposure)))
@@ -148,6 +192,11 @@ class ShuLandingLog:
             )
             out.update({prefix + k + "_count": counts[k] for k in (*common, *extras)})
             resolved = counts["resolved"]
+            if birth_rows is not None:
+                rim_sq_sum, rim_ticks = birth_rows[i]
+                if rim_ticks:
+                    out[prefix + "air_wheel_rim_rmse_m_s"] = (rim_sq_sum / rim_ticks) ** 0.5
+                    out[prefix + "air_wheel_rim_policy_sample_count"] = int(rim_ticks)
             if resolved:
                 rates = (
                     {"success_rate": "success"}
@@ -165,4 +214,45 @@ class ShuLandingLog:
                 if n:
                     out[tag + "mean"] = total[j] / n
                     out[tag + "max"] = maximum[j]
+        return out
+
+
+class ShuRewardLog:
+    """Per-term means over enabled, finite policy steps and fraction changed by clipping."""
+
+    def __init__(self):
+        self._window = None
+        self._names = ()
+
+    def add(self, terms, valid):
+        self._names = tuple(terms)
+        pre, post, enabled, saturated = (torch.stack(values) for values in zip(*terms.values(), strict=True))
+        use = enabled & valid & pre.isfinite() & post.isfinite()
+        stats = torch.stack(
+            (
+                torch.where(use, pre, 0).sum(-1),
+                torch.where(use, post, 0).sum(-1),
+                (use & saturated).sum(-1),
+                use.sum(-1),
+            ),
+            dim=-1,
+        )
+        if self._window is None:
+            self._window = stats
+        else:
+            self._window.add_(stats)
+
+    def take(self):
+        if self._window is None:
+            return {}
+        rows = self._window.tolist()
+        self._window = None
+        out = {}
+        for name, (pre, post, saturated, valid) in zip(self._names, rows, strict=True):
+            if valid:
+                prefix = f"Reward_Diagnostics/{name}/"
+                out[prefix + "pre_clip_mean"] = pre / valid
+                out[prefix + "post_clip_mean"] = post / valid
+                out[prefix + "saturation_fraction"] = saturated / valid
+                out[prefix + "sample_count"] = int(valid)
         return out

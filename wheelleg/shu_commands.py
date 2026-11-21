@@ -79,6 +79,7 @@ class ShuCommands:
             if not isfinite(p[key]) or p[key] <= 0:
                 raise ValueError(f"{key} must be positive and finite")
         self.flat = flat
+        self._rollout_fraction = flat.fraction.clone() if flat is not None else None
         if landing_metadata is not None:
             m = landing_metadata
             if not (
@@ -142,6 +143,15 @@ class ShuCommands:
     @property
     def zero_translation(self) -> torch.Tensor:
         return ~self.vx_active
+
+    def begin_rollout(self) -> None:
+        if self.flat is not None:
+            self._rollout_fraction.copy_(self.flat.fraction)
+
+    @property
+    def reward_height_fraction(self) -> torch.Tensor:
+        """Width annealing uses the rollout's bucket level, independent of command sampling."""
+        return self.fraction if self._rollout_fraction is None else self._rollout_fraction[self.kind]
 
     def transfer_metadata(self) -> dict:
         """Portable checkpoint proof; never infer all_full from PPO iteration or the loaded network."""
@@ -254,7 +264,7 @@ class ShuCommands:
 
     def clamp_free_motion(self, command: torch.Tensor, ids=slice(None)) -> None:
         if self.free_limits is not None:
-            vx, wz = torch.where(self.route[ids, None], torch.inf, self.free_limits[ids]).unbind(-1)
+            vx, wz = self.free_limits[ids].unbind(-1)
             command[:, 0].clamp_(-vx, vx)
             command[:, 2].clamp_(-wz, wz)
 
@@ -331,13 +341,9 @@ class ShuCommands:
         """Before policy execution; recovering=True throughout release/rise; driving=False until handoff."""
         if route_open is not None:
             self._route_open.copy_(route_open)
-        new = self.remaining == 0
-        self._motion(new.nonzero().flatten())
-        # An independently running height target survives a motion change only inside the new envelope.
+        self._motion((self.remaining == 0).nonzero().flatten())
+        # A new bucket changes the range of the next height draw, not the timing of that draw.
         due = self.height_remaining == 0
-        lo, hi = self.settings["height_range_m"]
-        mid = (lo + hi) / 2
-        due |= new & ~self.route & ((self.height_target[:, 0] - mid).abs() > (hi - lo) / 2 * self.fraction)
         self._height_held.copy_(recovering | self.upstairs)
         self._heights((due & ~self._height_held).nonzero().flatten())
         issued_height = torch.where(recovering[:, None], self.height, self.height_target)

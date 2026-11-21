@@ -162,12 +162,20 @@ class WheelLegRunner(OnPolicyRunner):
         if env.shu is not None:
             for key, scalar in env.shu.log.take().items():
                 self.writer.add_scalar(key, scalar, iteration)
+            for key, scalar in env.shu.reward_log.take().items():
+                self.writer.add_scalar(key, scalar, iteration)
             if env.shu.drop is not None:
                 self.writer.add_scalar("Curriculum/drop_band", env.shu.drop.level + 1, iteration)
                 self.writer.add_scalar("Curriculum/latest_band_sample_count", env.shu.drop.events, iteration)
             if env.shu.flat is not None:
-                for kind, fraction in enumerate(env.shu.flat.fraction.tolist()):
-                    self.writer.add_scalar(f"Curriculum/flat_bucket_{kind}", fraction, iteration)
+                flat = env.shu.flat
+                fields = ("fraction", "attempts", "successes", "completed", "falls", "interruptions")
+                rows = torch.stack(tuple(getattr(flat, name) for name in fields)).tolist()
+                for kind, (fraction, *counts) in enumerate(zip(*rows, strict=True)):
+                    prefix = f"Curriculum/flat_bucket_{kind}"
+                    self.writer.add_scalar(prefix, fraction, iteration)
+                    for name, count in zip(fields[1:], counts, strict=True):
+                        self.writer.add_scalar(f"{prefix}/{name}", count, iteration)
         if env.mixed_diagnostics is not None:
             for key, scalar in env.mixed_diagnostics.take().items():
                 self.writer.add_scalar(key, scalar, iteration)

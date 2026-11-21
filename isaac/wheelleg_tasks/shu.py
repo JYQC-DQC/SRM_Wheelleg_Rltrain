@@ -3,14 +3,15 @@
 from math import pi
 
 import torch
-from isaaclab.utils.math import quat_apply_inverse
+from isaaclab.utils.math import euler_xyz_from_quat, quat_apply_inverse
 
+from wheelleg.shu_air_clearance import AirBirthClearance, retry_air_births
 from wheelleg.shu_commands import ShuCommands
 from wheelleg.shu_curriculum import AirHeightCurriculum, FlatCommandCurriculum
 from wheelleg.shu_landing import ShuLanding
-from wheelleg.shu_logging import ShuLandingLog
+from wheelleg.shu_logging import ShuLandingLog, ShuRewardLog
 from wheelleg.shu_map import ShuFreeMap
-from wheelleg.shu_rewards import DRIVE, RELEASE, RISE, air_wheel_height_reward, shu_reward_terms
+from wheelleg.shu_rewards import AIR, DRIVE, RELEASE, RISE, air_wheel_height_reward, shu_reward_terms
 from wheelleg.shu_spawn import AIR as AIR_BIRTH
 from wheelleg.shu_spawn import (
     ORDINARY,
@@ -44,6 +45,7 @@ class ShuP1:
         self.free_map = None
         self.proof = proof
         self.log = ShuLandingLog()
+        self.reward_log = ShuRewardLog()
         if t.task == "p1-flat":
             self.flat = FlatCommandCurriculum(t.stage["initial_fraction"], t.stage["min_segments"], dev)
             self.commands = ShuCommands(cp, n, dev, flat=self.flat)
@@ -52,6 +54,7 @@ class ShuP1:
         elif t.task == "p1-landing":
             self.commands = ShuCommands(cp, n, dev, landing_metadata=proof)
             self.drop = AirHeightCurriculum(t.stage["height_edges_m"], dev)
+            self.air_debug = tuple(torch.zeros(n, device=dev) for _ in range(5))
         else:
             terrain = t.stage["terrain"]
             self.commands = ShuCommands.for_mixed(cp, n, dev, route=terrain["route"])
@@ -113,6 +116,16 @@ class ShuP1:
             self.reset_model.canonical_to_asset_sign,
             self.reset_model.canonical_zero_in_asset_rad,
         )
+        self._air_clearance = None
+        if self.drop is not None:
+            self._air_clearance = AirBirthClearance(
+                t.shared["shu_air_collision"],
+                base=t.asset["base_body_name"],
+                colliders=t.asset["collision_body_names"],
+                body_names=env.robot.body_names,
+                joint_names=env.robot.joint_names,
+                like=env.raw_action,
+            )
         gs = _exact(env.contact.find_bodies, t.asset["guide_body_names"])
         links = _exact(env.contact.find_bodies, t.asset["leg_body_names"])
         self.guide_bodies = _exact(env.robot.find_bodies, t.asset["guide_body_names"])
@@ -229,9 +242,22 @@ class ShuP1:
             spawn = sample_spawn(kinds, offsets, self.spawn_cfg)
             # Do not overwrite a subset of the default q/qd: a different leg pose also changes
             # pin orientation, slider extension and their velocities. Resolve all DOFs atomically.
-            asset_q, asset_qd = self.reset_model.resolve(
-                spawn, self.spawn_joints, env.robot.data.joint_pos_limits[spawn_ids]
-            )
+            limits = env.robot.data.joint_pos_limits[spawn_ids]
+            asset_q, asset_qd = self.reset_model.resolve(spawn, self.spawn_joints, limits)
+            if self.drop is not None:
+                retry_air_births(
+                    spawn,
+                    asset_q,
+                    asset_qd,
+                    rows=spawn_air.nonzero().flatten(),
+                    band=self.band[spawn_ids],
+                    edges_m=self.drop.edges,
+                    spawn=self.spawn_cfg,
+                    mapping=self.spawn_joints,
+                    model=self.reset_model,
+                    limits=limits,
+                    clearance=self._air_clearance,
+                )
             root[spawn_rows] = spawn.root_state
             root[spawn_rows, :3] += env.terrain.env_origins[spawn_ids]
             q[spawn_rows], qd[spawn_rows] = asset_q, asset_qd
@@ -240,6 +266,20 @@ class ShuP1:
                 # Fixed evaluation commands, including height, are already in force at reset.
                 self.commands.value[spawn_ids], self.commands.height[spawn_ids] = env.fixed_command
         self.event.reset(ids, air, preset, env._sim_step_counter)
+        if self.stage == "p1-landing":
+            angle_diff, birth_vx, first_cmd, rim_sq_sum, rim_ticks = self.air_debug
+            # Read the accepted reset pose, including retries. The two active
+            # coordinates in five_bar_joint_angles() bracket each virtual leg angle.
+            axes = self.spawn_joints
+            angle_q = q[:, list(axes.leg_ids[:4])]
+            angle_q = (angle_q - q.new_tensor(axes.canonical_zero_in_asset_rad[:4])) * q.new_tensor(
+                axes.canonical_to_asset_sign[:4]
+            )
+            angle_diff[ids] = (angle_q[:, 0::2] - angle_q[:, 1::2]).sum(-1).abs() / 2
+            _, _, yaw = euler_xyz_from_quat(root[:, 3:7])
+            birth_vx[ids] = root[:, 7] * yaw.cos() + root[:, 8] * yaw.sin()
+            first_cmd[ids] = torch.nan
+            rim_sq_sum[ids] = rim_ticks[ids] = 0
         self.second_action[ids] = 0
         self.prev_qd[ids] = qd[:, env.joints]
         self.reset_rows[ids] = True
@@ -318,7 +358,7 @@ class ShuP1:
         s["wheel_contact"] = ev.wheel_contact
         if self.drop is not None and not e.cfg.evaluation:
             self.drop.record(self.band, ev.succeeded, ev.resolved)
-        terminated = ev.physical_failure | ev.rise_timeout | ev.numerical_failure | ev.invalid_birth | ev.unknown_guide
+        terminated = ev.physical_failure | ev.rise_timeout | ev.numerical_failure | ev.invalid_birth
         if not e.commands_fixed or e.mixed_curriculum is not None:
             yaw = s["yaw"]
             vw = s["velocity_w"]
@@ -338,11 +378,11 @@ class ShuP1:
                 ev.physical_failure,
                 (timeout | terminated) & ~ev.physical_failure,
                 criterion if self.flat is not None else None,
+                invalid=ev.numerical_failure,
             )
             if fixed_replay is not None:
                 for clock, previous in zip(clocks, before, strict=True):
                     clock[fixed_replay] = previous
-            c.handoff(ev.handoff & ~self.flat_replay if e.commands_fixed else ev.handoff, s["yaw"])
         return terminated
 
     def rewards(self, s):
@@ -374,12 +414,17 @@ class ShuP1:
             previous_joint_vel=self.prev_qd,
             previous_previous_action=self.second_action,
         )
-        self.params["height_fraction"] = c.fraction
+        self.params["height_fraction"] = c.reward_height_fraction
         terrain_masks = None
         if self.free_map is not None:
             nonflat, pyramid = self.free_map.reward_masks_at(root_pos_w)
             terrain_masks = nonflat & ~self.flat_replay, pyramid & ~self.flat_replay
-        terms = shu_reward_terms(s, ev.reward_phase, self.params, e.step_dt, terrain_masks=terrain_masks)
+        diagnostics = None if e.cfg.evaluation else {}
+        terms = shu_reward_terms(
+            s, ev.reward_phase, self.params, e.step_dt, terrain_masks=terrain_masks, diagnostics=diagnostics
+        )
+        if diagnostics is not None:
+            self.reward_log.add(diagnostics, ~(ev.numerical_failure | ev.invalid_birth | ev.unknown_guide))
         if self.stage == "p1-stairs":
             # Before autoreset, keep the scan-derived reference and error independently of the reward gates.
             e.extras["p1_mixed"] = {
@@ -400,8 +445,20 @@ class ShuP1:
         terms.update(ev.event_terms)
         terms["termination"] = -4.0 * ev.physical_failure.float()
         self.prev_qd.copy_(qd)
-        if self.stage == "p1-landing" and not e.cfg.evaluation:
-            self.log.add(ev, self.band)
+        if not e.cfg.evaluation:
+            if self.stage == "p1-landing":
+                _, _, first_cmd, rim_sq_sum, rim_ticks = self.air_debug
+                first = ev.air_birth & (e._sim_step_counter - ev.born == e.training.robot.decimation)
+                first_cmd.copy_(torch.where(first, s["vx_cmd"], first_cmd))
+                vx, vy = s["velocity_w"][:, :2].unbind(-1)
+                forward = vx * yaw.cos() + vy * yaw.sin()
+                rim_sq = (s["wheel_rim_speed"] - forward[:, None]).square().mean(-1)
+                use = (ev.reward_phase == AIR) & ~ev.numerical_failure & ~ev.invalid_birth & rim_sq.isfinite()
+                rim_sq_sum.add_(torch.where(use, rim_sq, 0))
+                rim_ticks.add_(use)
+                self.log.add(ev, self.band, self.air_debug)
+            else:
+                self.log.add(ev, self.band)
         if self.stage == "p1-landing":
             # Raw observations for the collector must survive the vectorized autoreset on this same step.
             e.extras["landing"] = {k: v.detach().clone() for k, v in ev.metrics().items()}

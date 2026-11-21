@@ -98,13 +98,14 @@ def test_current_tile_caps_final_dash_heading_and_turn_without_changing_route(ki
     c.free_limits = capped_atlas().limits_at(torch.tensor([[0.0, 1, 0], [0, 1, 0], [0, 1, 0]]))
     c.prepare(torch.tensor([1.0, -1.0, 1.0]), drive, no, no, c.steps, route_open=route)
     expected = [[-0.8, 0.0, -0.4], [0.8, 0.0, 0.4]] if kind == DASH else [[0, 0, -0.4], [0, 0, 0.4]]
-    torch.testing.assert_close(c.value, torch.tensor([*expected, [2.1, 0.0, 0.0]]))
+    torch.testing.assert_close(c.value, torch.tensor([*expected, [0.8, 0.0, 0.0]]))
     torch.testing.assert_close(c._issued[:, :2], c.value[:, (0, 2)])
 
     # Exit across a column seam mid-segment: restore the target without waiting for resampling.
-    c.free_limits = capped_atlas().limits_at(torch.tensor([[0.0, -1, 0], [0, 1, 0], [0, 1, 0]]))
+    c.free_limits = capped_atlas().limits_at(torch.tensor([[0.0, -1, 0], [0, 1, 0], [0, -1, 0]]))
     c.prepare(torch.tensor([1.0, -1.0, 1.0]), drive, no, no, c.steps, route_open=route)
     assert c.value[0, 2 if kind == TURN else 0] == -3
+    assert c.value[2, 0] == pytest.approx(2.1)
     torch.testing.assert_close(c.value[1], torch.tensor(expected[1]))
 
 
@@ -170,6 +171,8 @@ def test_free_outer_edge_adds_timeout_and_physical_failure_wins(runtime, at_hori
     assert terminated[:5].tolist() == [False, False, True, False, True]
     assert timeout[:5].tolist() == [at_horizon, True, False, True, False]
     assert e.shu.event.physical_failure[2]
+    assert e.state["map_boundary_timeout"][:5].tolist() == [False, True, False, True, False]
+    assert e.state["normal_time_limit"][:5].tolist() == [at_horizon, False, False, False, False]
 
 
 def test_flat_replay_never_inherits_atlas_height_or_edge(runtime):

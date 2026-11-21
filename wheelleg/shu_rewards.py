@@ -54,6 +54,7 @@ def shu_reward_terms(
     dt: float,
     *,
     terrain_masks: tuple[torch.Tensor, torch.Tensor] | None = None,
+    diagnostics: dict | None = None,
 ) -> dict[str, torch.Tensor]:
     """Return weighted, individually clipped (where applicable), per-step terms of shape (N,).
 
@@ -143,9 +144,9 @@ def shu_reward_terms(
     # Clamp the annealing fraction before multiplying by the initial weight.
     fraction = torch.as_tensor(p["height_fraction"], device=h_error.device, dtype=h_error.dtype)
     wide_weight = p["height_wide_weight"] * ((0.8 - fraction) / 0.2).clamp(0.0, 1.0)
-    height = (torch.exp(-h_error.square() / 0.001) + wide_weight * torch.exp(-h_error.square() / 0.025)) / (
-        1.0 + wide_weight
-    )
+    tight_height = torch.exp(-h_error.square() / 0.001)
+    wide_height = torch.exp(-h_error.square() / 0.025)
+    height = (tight_height + wide_weight * wide_height) / (1.0 + wide_weight)
     height_gate = motion_height_factor(h_error, p["height_gate_shape"])
 
     gx, gy = s["gravity"][:, :2].unbind(-1)
@@ -179,28 +180,45 @@ def shu_reward_terms(
     costs = joint_costs(s, p["leg_lower_rad"], p["leg_upper_rad"], dt)
     smooth_scale = torch.where(drop, 0.4, one)
 
-    def paid(rate: torch.Tensor, enabled: torch.Tensor, lower: float = -1.0, upper: float = 1.0) -> torch.Tensor:
-        return torch.where(enabled, rate.clamp(lower, upper) * dt, 0.0)
+    def paid(name, rate, enabled, lower=-1.0, upper=1.0, scale=1.0):
+        clipped = rate.clamp(lower, upper)
+        if diagnostics is not None:
+            diagnostics[name] = (rate * scale, clipped * scale, enabled, (rate < lower) | (rate > upper))
+        return torch.where(enabled, clipped * dt, 0.0) * scale
 
     center_error_sq = s["wheel_heading_x"].square()
     rim_error_sq = (s["wheel_rim_speed"] - forward[:, None]).square()
+    if diagnostics is not None:
+        for name, value in (
+            ("height_tight_kernel", tight_height),
+            ("height_wide_kernel", wide_height),
+            ("height_wide_weight", wide_weight.expand_as(height)),
+            ("height_abs_error_m", h_error.abs()),
+        ):
+            diagnostics[name] = (value, value, drive, torch.zeros_like(drive))
     return {
-        "track_lin_vel": paid(tracking("vx", s["vx_cmd"], vx_error), drive & vx_active),
-        "lin_vel_error": paid(torch.expm1(-vx_error.square() / p["vx_error_sigma"]), drive & vx_active),
-        "track_ang_vel": paid(tracking("wz", s["wz_cmd"], wz_error), drive & wz_active),
-        "ang_vel_error": paid(torch.expm1(-wz_error.square() / p["wz_error_sigma"]), drive | rise) * steady_scale,
-        "stand_still": paid(-horizontal_l1, (drive & ~vx_active) | rise) * steady_scale,
-        "track_height": paid(height, drive),
-        "vertical_velocity": paid(vertical_rate, drive | drop),
-        "angular_xy": paid(angular_xy_rate, controlled),
-        "orientation": paid(tilt, controlled) * torch.where(rise, 0.6, one),
-        "no_fork_square": paid(-(5.0 * dx).square(), on_ground_terms),
-        "no_fork": paid(-(dx.abs() > 0.05).to(dx.dtype), drive & fork_threshold),
-        "undesired_contact": paid(contact_rate, on_ground_terms, -2.0, 0.0),
+        "track_lin_vel": paid("track_lin_vel", tracking("vx", s["vx_cmd"], vx_error), drive & vx_active),
+        "lin_vel_error": paid(
+            "lin_vel_error", torch.expm1(-vx_error.square() / p["vx_error_sigma"]), drive & vx_active
+        ),
+        "track_ang_vel": paid("track_ang_vel", tracking("wz", s["wz_cmd"], wz_error), drive & wz_active),
+        "ang_vel_error": paid(
+            "ang_vel_error", torch.expm1(-wz_error.square() / p["wz_error_sigma"]), drive | rise, scale=steady_scale
+        ),
+        "stand_still": paid("stand_still", -horizontal_l1, (drive & ~vx_active) | rise, scale=steady_scale),
+        "track_height": paid("track_height", height, drive),
+        "vertical_velocity": paid("vertical_velocity", vertical_rate, drive | drop),
+        "angular_xy": paid("angular_xy", angular_xy_rate, controlled),
+        "orientation": paid("orientation", tilt, controlled, scale=torch.where(rise, 0.6, one)),
+        "no_fork_square": paid("no_fork_square", -(5.0 * dx).square(), on_ground_terms),
+        "no_fork": paid("no_fork", -(dx.abs() > 0.05).to(dx.dtype), drive & fork_threshold),
+        "undesired_contact": paid("undesired_contact", contact_rate, on_ground_terms, -2.0, 0.0),
         **{
-            name: paid(-cost * (1 if name in ("joint_torque", "leg_soft_limits") else smooth_scale), controlled)
+            name: paid(name, -cost * (1 if name in ("joint_torque", "leg_soft_limits") else smooth_scale), controlled)
             for name, cost in costs.items()
         },
-        "air_wheel_center": paid(4.0 * torch.expm1(-center_error_sq / 0.02).mean(-1), air, -4.0, 0.0),
-        "air_wheel_speed": paid(6.0 * torch.expm1(-rim_error_sq.mean(-1) / 1.0), air, -6.0, 0.0),
+        "air_wheel_center": paid(
+            "air_wheel_center", 4.0 * torch.expm1(-center_error_sq / 0.02).mean(-1), air, -4.0, 0.0
+        ),
+        "air_wheel_speed": paid("air_wheel_speed", 6.0 * torch.expm1(-rim_error_sq.mean(-1) / 1.0), air, -6.0, 0.0),
     }

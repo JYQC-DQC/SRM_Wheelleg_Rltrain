@@ -20,6 +20,30 @@ def make_diagnostics(n, **window):
     )
 
 
+def test_timeout_fractions_weight_all_ended_episodes_and_atlas_episodes():
+    log = make_diagnostics(5)
+    t = torch.tensor
+    flags = dict(
+        terminated=t([False, False, False, True, False]),
+        timeout=t([True, True, True, False, False]),
+        physical_failure=t([False, False, False, True, False]),
+        numerical_failure=t([False] * 5),
+        boundary_timeout=t([True, False, False, False, False]),
+        normal_time_limit=t([False, True, True, False, False]),
+        atlas=t([True, True, False, True, True]),
+    )
+    log.record_ended(t([0]), **flags)
+    log.record_ended(t([1, 2, 3, 4]), **flags)
+    stats = log.take()
+    assert stats["Mixed/all/ended_episode_count"] == 4
+    assert stats["Mixed/atlas/ended_episode_count"] == 3
+    assert stats["Mixed/all/boundary_timeout_fraction"] == 1 / 4
+    assert stats["Mixed/all/normal_time_limit_fraction"] == 2 / 4
+    assert stats["Mixed/atlas/boundary_timeout_fraction"] == 1 / 3
+    assert stats["Mixed/atlas/normal_time_limit_fraction"] == 1 / 3
+    assert log.take() == {}
+
+
 def births(diag, ids, route, yaw, *, lip=None, oblique=None, tick=0):
     diag.reset(
         torch.tensor(ids),

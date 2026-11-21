@@ -250,7 +250,7 @@ class ShuLanding:
             self.fall_steps, risk & ~release, self.dt, self.p["termination_duration_s"], self.p["termination_decay_s"]
         )
         self.fall_steps.copy_(torch.where(release, 0.0, steps))
-        self.physical_failure.copy_((physical | sustained) & ~self.numerical_failure)
+        self.physical_failure.copy_((physical | sustained) & ~(self.numerical_failure | self.unknown_guide))
         broken = self.numerical_failure | self.invalid_birth
         stop = broken | self.physical_failure | timeout
         takeover = release & self.active & (tick - self.born >= self._release_ticks) & ~stop
@@ -285,7 +285,7 @@ class ShuLanding:
         self.air_timeout.copy_(
             air & expired & ~air_on_time & ~(hard | self.physical_failure | broken | self.unknown_guide)
         )
-        failed = air & ~broken & (hard | self.physical_failure | self.air_timeout)
+        failed = air & ~(broken | self.unknown_guide) & (hard | self.physical_failure | self.air_timeout)
         self.resolved.copy_(self.succeeded | failed)
         self.rise_succeeded.copy_(rise & self.active & rise_on_time & ~timeout)
         self.rise_timeout.copy_(
@@ -302,7 +302,6 @@ class ShuLanding:
             (catch & confirmed & ~timeout & (~air | self.succeeded | self.air_timeout)) | self.rise_succeeded
         )
         self.phase.masked_fill_(self.handoff, DRIVE)
-        self.reward_phase.masked_fill_(self.handoff, DRIVE)
 
         height_q = torch.exp(-height.square() / 0.025)  # unannealed wide kernel, not an extra height reward
         self.best.copy_(torch.where(takeover, height_q, self.best))
@@ -322,7 +321,9 @@ class ShuLanding:
         result = 1.5 * (0.7 * torch.exp(-(elapsed - 0.5).clamp_min(0)) + 0.3 * (1.0 - angle / _TILT).clamp(0, 1))
         self.event_terms["landing_outcome"].copy_(torch.where(self.succeeded, result, -failed.float()))
         self.event_terms["landing_guide_contact"].masked_fill_(stop | self.unknown_guide | hard | self.air_timeout, 0.0)
-        self.truncated.copy_(self.active & timeout & ~(self.resolved | self.rise_failed | broken | self.unknown_guide))
+        self.truncated.copy_(
+            self.active & (timeout | self.unknown_guide) & ~(self.resolved | self.rise_failed | broken)
+        )
         self.ended.copy_(
             self.active & (self.resolved | self.rise_succeeded | self.rise_failed | stop | self.unknown_guide)
         )

@@ -65,9 +65,7 @@ training:
     desired_kl: 0.01
     max_grad_norm: 1.0
   commands:
-    segment_duration_s:
-    - 3.0
-    - 15.0
+    segment_duration_s: [5.0, 5.0]
     height_duration_s:
     - 2.0
     - 6.0
@@ -97,9 +95,12 @@ training:
     wz_error_sigma: 2.5
     height_wide_weight: 1.0
     height_gate_shape: 2.0
+  control_randomization:
+    gain_scale: [0.9, 1.1]
+    output_scale: [0.9, 1.1]
+    action_delay_steps: [0, 5]  # 500 Hz physics, independently per training episode
   evaluation:
-    observation_delay_steps: null
-    action_delay_steps: null
+    action_delay_steps: null  # fixed latency in 500 Hz steps, fill from hardware measurement
     duration_s: 10.0
     settling_s: 1.0
     episodes_per_case: 16

@@ -82,6 +82,8 @@ def motor_torque(
     no_load_speed: torch.Tensor,
     output_scale: torch.Tensor,
     wheels: list[int],
+    *,
+    scale_before_limit: bool = False,
 ) -> torch.Tensor:
     """Signed DC envelope; opposing/braking torque remains available at high speed."""
     position_error = q_target - q
@@ -89,6 +91,8 @@ def motor_torque(
     effort = kp * position_error + kd * (qd_target - qd)
     top = torch.minimum(saturation * (1 - qd / no_load_speed), limit).clamp_min(0)
     bottom = torch.maximum(saturation * (-1 - qd / no_load_speed), -limit).clamp_max(0)
+    if scale_before_limit:
+        return torch.maximum(torch.minimum(effort * output_scale, top), bottom)
     return torch.maximum(torch.minimum(effort, top), bottom) * output_scale
 
 

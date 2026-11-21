@@ -109,7 +109,7 @@ def test_legacy_straight_route_can_return_from_side_excursion_but_not_finish_on_
     assert mix.crossed[0] and not mix.route_open[0] and not mix.reward_active.any()
 
 
-def test_pyramid_forward_keeps_signed_drive_but_reverse_stops_after_landing():
+def test_pyramid_forward_and_reverse_keep_signed_drive_after_completion():
     mix, terrain, columns = setup_routes(3)
     ids = torch.arange(3)
     no = ids < 0
@@ -131,8 +131,8 @@ def test_pyramid_forward_keeps_signed_drive_but_reverse_stops_after_landing():
     assert mix.route_open.all() and mix.reward_active.all()
     mix.step(terrain, apron, apron, cmd.value[:, 0] * yaw.cos(), no, wheels)
     cmd.prepare(yaw, ~no, no, no, ids * 0 + 1, route_open=mix.route_open)
-    assert cmd.value[:, 0].sign().tolist() == [1, 1, 0]
-    assert cmd.vx_active.tolist() == [True, True, False]
+    assert cmd.value[:, 0].sign().tolist() == [1, 1, -1]
+    assert cmd.vx_active.all()
     assert mix.crossed.tolist() == [True, True, False]
     assert mix.reverse_completed.tolist() == [False, False, True]
     assert not mix.reward_active.any()

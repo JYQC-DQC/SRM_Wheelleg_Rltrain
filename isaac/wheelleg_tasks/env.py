@@ -144,10 +144,19 @@ class WheelLegEnv(DirectRLEnv):
         self.stair_tracking_sum = torch.zeros(n, device=d) if self.mixed_curriculum is not None else None
         self.training_iteration_offset = 0
         r = t.shared["randomization"]
-        obs_history = (
-            t.settings["evaluation"]["observation_delay_steps"] if cfg.evaluation else r["observation_delay_steps"][1]
-        )
-        act_history = t.settings["evaluation"]["action_delay_steps"] if cfg.evaluation else r["action_delay_steps"][1]
+        if self.shu is not None:
+            obs_history = 0
+            act_history = (
+                t.settings["evaluation"]["action_delay_steps"]
+                if cfg.evaluation
+                else t.settings["control_randomization"]["action_delay_steps"][1]
+            )
+        elif cfg.evaluation:
+            obs_history = t.settings["evaluation"]["observation_delay_steps"]
+            act_history = t.settings["evaluation"]["action_delay_steps"]
+        else:
+            obs_history = r["observation_delay_steps"][1]
+            act_history = r["action_delay_steps"][1]
         self.obs_delay = DelayBuffer(obs_history, n, d)
         self.act_delay = DelayBuffer(act_history, n, d)
         self.noise = observation_noise(t.robot, t.policy, t.shared["observation_noise"], d)
@@ -259,6 +268,8 @@ class WheelLegEnv(DirectRLEnv):
         maximum = torch.nan_to_num(actions.abs(), nan=float("inf"), posinf=float("inf")).amax()
         self.iteration_raw_action_max = torch.maximum(self.iteration_raw_action_max, maximum)
         if self.shu is not None:
+            if self.shu.flat is not None and self.common_step_counter % self.training.settings["rollout_steps"] == 0:
+                self.shu.commands.begin_rollout()
             self.shu.second_action.copy_(self.previous_action)
             self.shu.event.begin_step()
         else:
@@ -412,12 +423,15 @@ class WheelLegEnv(DirectRLEnv):
         )
         q = self.robot.data.joint_pos[:, self.joints]
         qd = self.robot.data.joint_vel[:, self.joints]
-        fraction = (self.episode_length_buf / self.max_episode_length)[:, None]
-        hip_limit_scale = 1 - self.voltage_drop * fraction
-        limit = q.new_tensor(t.policy.torque_limit_nm).expand_as(q).clone()
-        limit[:, self.wheel_channels] *= self.power_scale
-        limit[:, self.legs] *= hip_limit_scale
-        speed = q.new_tensor(t.shared["no_load_speed_rad_s"]) * self.voltage
+        limit = q.new_tensor(t.policy.torque_limit_nm)
+        speed = q.new_tensor(t.shared["no_load_speed_rad_s"])
+        if self.shu is None:
+            fraction = (self.episode_length_buf / self.max_episode_length)[:, None]
+            hip_limit_scale = 1 - self.voltage_drop * fraction
+            limit = limit.expand_as(q).clone()
+            limit[:, self.wheel_channels] *= self.power_scale
+            limit[:, self.legs] *= hip_limit_scale
+            speed = speed * self.voltage
         commanded_torque = motor_torque(
             q,
             qd,
@@ -430,6 +444,7 @@ class WheelLegEnv(DirectRLEnv):
             speed,
             self.output_scale,
             self.wheel_channels,
+            scale_before_limit=self.shu is not None,
         )
         self.torque = commanded_torque
         if self.shu is not None:
@@ -570,12 +585,17 @@ class WheelLegEnv(DirectRLEnv):
                 t.settings["episode_length_s"] / self.physics_dt
             )
             if self.mixed_curriculum is not None:
-                outside = self.shu.free_map.outside(self.robot.data.root_pos_w)
-                timeout |= outside & ~self.shu.flat_replay  # flat retention is not on the atlas
+                outside = self.shu.free_map.outside(self.robot.data.root_pos_w) & ~self.shu.flat_replay
+                s["map_boundary_timeout"] = outside
+                s["normal_time_limit"] = timeout & ~outside
+                timeout |= outside
             terminated = self.shu.update(s, timeout)
+            timeout |= self.shu.event.unknown_guide
             self.numerical_bad |= self.shu.event.numerical_failure
             self.iteration_numerical_terminations += self.numerical_bad.sum()
             if self.mixed_curriculum is not None:
+                s["map_boundary_timeout"] &= ~terminated
+                s["normal_time_limit"] &= ~terminated
                 self.mixed_curriculum.step(
                     self.terrain,
                     self.previous_position,
@@ -712,6 +732,8 @@ class WheelLegEnv(DirectRLEnv):
                 "reverse_descent_completed": mix.reverse_completed.clone(),
                 "forward_outward_completed": mix.crossed.clone(),
                 "stuck_now": self.mixed_diagnostics.stuck_now.clone(),
+                "map_boundary_timeout": s["map_boundary_timeout"].clone(),
+                "normal_time_limit": s["normal_time_limit"].clone(),
             }
         if self.jump is not None:
             self.extras["jump"] = {
@@ -719,6 +741,10 @@ class WheelLegEnv(DirectRLEnv):
                 "failed": (self.jump.failed | (self.jump.finished & s["terminated"])).clone(),
                 "first_touch": self.jump.first_touch.clone(),
             }
+        if self.shu is not None and (not self.commands_fixed or self.mixed_curriculum is not None):
+            event = self.shu.event
+            handoff = event.handoff & ~self.shu.flat_replay if self.commands_fixed else event.handoff
+            self.commands.handoff(handoff, s["yaw"])
         return torch.stack(list(terms.values())).sum(0) if terms else s["base_height"].new_zeros(n)
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
@@ -759,7 +785,10 @@ class WheelLegEnv(DirectRLEnv):
                 component("delay_steps", self.obs_delay.time_lags[:, None]),
                 component("delay_steps", self.act_delay.time_lags[:, None]),
                 component("wheel_linear_velocity", s["wheel_velocity_b"].flatten(1)),
-                component("wheel_contact", s["wheel_contact"].float()),
+                component(
+                    "wheel_contact",
+                    (self.shu.event.wheel_contact if self.shu is not None else s["wheel_contact"]).float(),
+                ),
                 component("mass_ratio", self.mass_ratio),
                 component("material", self.wheel_material),
                 component("spring_force", self.spring_bias),
@@ -826,18 +855,22 @@ class WheelLegEnv(DirectRLEnv):
             for value in self.reward_sums.values():
                 value[env_ids] = 0
         if self.mixed_curriculum is not None:
-            if self.mixed_diagnostics is not None:
+            ended_ids = env_ids[self.episode_length_buf[env_ids] > 0]
+            if self.mixed_diagnostics is not None and ended_ids.numel():
                 self.mixed_diagnostics.record_ended(
-                    env_ids[self.episode_length_buf[env_ids] > 0],
+                    ended_ids,
                     terminated=self.reset_terminated,
                     timeout=self.reset_time_outs,
                     physical_failure=self.shu.event.physical_failure,
                     numerical_failure=self.numerical_bad,
+                    boundary_timeout=self.state.get("map_boundary_timeout"),
+                    normal_time_limit=self.state.get("normal_time_limit"),
+                    atlas=~self.shu.flat_replay,
                 )
             self.mixed_curriculum.reset(
                 self.terrain,
                 env_ids,
-                (self.episode_length_buf > 0) & (self.reset_terminated | self.reset_time_outs),
+                (self.episode_length_buf > 0) & (self.reset_terminated | self.reset_time_outs) & ~self.numerical_bad,
                 self.reset_terminated,
                 evaluation=self.cfg.evaluation,
                 final_xy=self.robot.data.root_pos_w[:, :2],
@@ -945,6 +978,7 @@ class WheelLegEnv(DirectRLEnv):
     def _randomize_controls(self, ids: torch.Tensor) -> None:
         t, n, d = self.training, len(ids), self.device
         r = t.shared["randomization"]
+        p1_controls = t.settings["control_randomization"] if self.shu is not None else None
         self.kp[ids] = torch.tensor(t.policy.kp, device=d)
         self.kd[ids] = torch.tensor(t.policy.kd, device=d)
         self.output_scale[ids] = 1
@@ -960,7 +994,8 @@ class WheelLegEnv(DirectRLEnv):
         self.push_force[ids] = 0
         self.push_torque[ids] = 0
         if self.cfg.evaluation:
-            self.obs_delay.set_time_lag(t.settings["evaluation"]["observation_delay_steps"], ids)
+            if p1_controls is None:
+                self.obs_delay.set_time_lag(t.settings["evaluation"]["observation_delay_steps"], ids)
             self.act_delay.set_time_lag(t.settings["evaluation"]["action_delay_steps"], ids)
             return
         static_friction = self.nominal_friction.expand(n, -1).clone()
@@ -974,15 +1009,26 @@ class WheelLegEnv(DirectRLEnv):
         self.robot.write_joint_friction_coefficient_to_sim(static_friction, joint_ids=self.joints, env_ids=ids)
         self.robot.write_joint_dynamic_friction_coefficient_to_sim(dynamic_friction, joint_ids=self.joints, env_ids=ids)
         self.robot.write_joint_viscous_friction_coefficient_to_sim(viscous_friction, joint_ids=self.joints, env_ids=ids)
-        self.kp[ids] *= uniform(r["gain_scale"], (n, 6), d)
-        self.kd[ids] *= uniform(r["gain_scale"], (n, 6), d)
-        scale = torch.ones(n, 6, device=d)
-        scale[:, self.legs] = uniform(r["hip_torque_scale"], (n, 4), d)
-        scale[:, self.wheel_channels] = uniform(r["wheel_torque_scale"], (n, 2), d)
-        self.output_scale[ids] = scale
-        self.power_scale[ids] = uniform(r["wheel_power_scale"], (n, 1), d)
-        self.voltage[ids] = uniform(r["voltage_scale"], (n, 1), d)
-        self.voltage_drop[ids] = uniform(r["episode_voltage_drop"], (n, 1), d)
+        gain_range = (p1_controls if p1_controls is not None else r)["gain_scale"]
+        self.kp[ids] *= uniform(gain_range, (n, 6), d)
+        self.kd[ids] *= uniform(gain_range, (n, 6), d)
+        if p1_controls is not None:
+            self.output_scale[ids] = uniform(p1_controls["output_scale"], (n, 6), d)
+            lo, hi = p1_controls["action_delay_steps"]
+            self.act_delay.set_time_lag(torch.randint(lo, hi + 1, (n,), device=d), ids)
+        else:
+            scale = torch.ones(n, 6, device=d)
+            scale[:, self.legs] = uniform(r["hip_torque_scale"], (n, 4), d)
+            scale[:, self.wheel_channels] = uniform(r["wheel_torque_scale"], (n, 2), d)
+            self.output_scale[ids] = scale
+            self.power_scale[ids] = uniform(r["wheel_power_scale"], (n, 1), d)
+            self.voltage[ids] = uniform(r["voltage_scale"], (n, 1), d)
+            self.voltage_drop[ids] = uniform(r["episode_voltage_drop"], (n, 1), d)
+            for buffer, bounds in (
+                (self.obs_delay, r["observation_delay_steps"]),
+                (self.act_delay, r["action_delay_steps"]),
+            ):
+                buffer.set_time_lag(torch.randint(bounds[0], bounds[1] + 1, (n,), device=d), ids)
         self.spring_bias[ids] = uniform(r["spring_bias_n"], (n, 2), d)
         self.zero_bias[ids] = uniform(r["joint_zero_bias_rad"], (n, 4), d)
         self.imu_bias[ids] = uniform(r["imu_roll_pitch_bias_rad"], (n, 2), d)
@@ -991,8 +1037,3 @@ class WheelLegEnv(DirectRLEnv):
             self.push_timer[ids] = uniform(r["push_interval_s"], (n,), d)
             if self.map_wrench_timer is not None:
                 self.map_wrench_timer[ids] = uniform(r["push_interval_s"], (n,), d)
-        for buffer, bounds in (
-            (self.obs_delay, r["observation_delay_steps"]),
-            (self.act_delay, r["action_delay_steps"]),
-        ):
-            buffer.set_time_lag(torch.randint(bounds[0], bounds[1] + 1, (n,), device=d), ids)

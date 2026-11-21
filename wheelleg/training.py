@@ -151,7 +151,7 @@ def _asset_name_fields(task):
         fields.update(dict.fromkeys(_SHU_CONTACT_BODIES))
         fields["shu_leg_reset_joint_names"] = 12
         fields[_P1_MASS_LEGS] = None
-    if task == "p3-tunnel":
+    if task in ("p1-landing", "p3-tunnel"):
         fields["collision_body_names"] = None
     return fields
 
@@ -212,6 +212,10 @@ class TrainingConfig:
         shared = dict(self.shared)
         stage = dict(self.stage)
         family = TASKS[self.task].policy
+        if self.task == "p1-landing":
+            shared.setdefault("shu_air_collision", None)
+        else:
+            shared.pop("shu_air_collision", None)
         settings.pop("transition_reset", None)  # Inert legacy metadata only; active resets are rejected at load.
         settings.pop("command_curriculum", None)
         if family == "p1":
@@ -264,9 +268,12 @@ class TrainingConfig:
         if evaluation:
             evaluation_settings = dict(settings.get("evaluation") or {})
             for key in ("observation_delay_steps", "action_delay_steps"):
-                value = evaluation_settings.setdefault(key, None)
-                if value is not None and (type(value) is not int or value < 0):
-                    raise ValueError(f"evaluation.{key}: expected a nonnegative integer or null")
+                if family == "p1" and key == "observation_delay_steps":
+                    evaluation_settings.pop(key, None)
+                else:
+                    value = evaluation_settings.setdefault(key, None)
+                    if value is not None and (type(value) is not int or value < 0):
+                        raise ValueError(f"evaluation.{key}: expected a nonnegative integer or null")
             settings["evaluation"] = evaluation_settings
         else:
             settings.pop("evaluation", None)
@@ -337,7 +344,7 @@ class TrainingConfig:
                 boxes = {**boxes, **_required(boxes, (name for name in names if name is not None))}
             tunnel["collision_bounds_m"] = boxes
             stage["tunnel"] = tunnel
-        else:
+        elif self.task != "p1-landing":
             asset.pop("collision_body_names", None)
         asset.setdefault("usd_path", None)
         return (
@@ -371,6 +378,22 @@ class TrainingConfig:
 
             common = ("hip_pivot_positions_b_m", "wheel_radius_m", "spawn_clearance_m")
             SpawnConfig(**self.shared["shu_spawn"], **{key: self.shared[key] for key in common})
+        if self.task == "p1-landing":
+            from .shu_air_clearance import validate_air_collision
+
+            colliders = self.asset["collision_body_names"]
+            required_bodies = {
+                self.asset["base_body_name"],
+                *self.asset["wheel_body_names"],
+                *self.asset["guide_body_names"],
+                *self.asset["leg_body_names"],
+                *self.asset["undesired_contact_body_names"],
+                *self.asset["termination_contact_body_names"],
+            }
+            omitted = required_bodies - set(colliders)
+            if omitted:
+                raise ValueError(f"robot.asset.collision_body_names: omitted contact bodies {sorted(omitted)}")
+            validate_air_collision(self.shared["shu_air_collision"], self.asset["base_body_name"], colliders)
         if (
             not evaluation
             and TASKS[self.task].policy == "p1"
@@ -440,6 +463,22 @@ def _validate_training(cfg: TrainingConfig) -> None:
             raise ValueError(f"training.numerical_safety.{key} must be finite and positive")
     if TASKS[cfg.task].policy == "p1":
         _validate_p1_randomization(cfg)
+        controls = cfg.settings.get("control_randomization") or {}
+        for key in ("gain_scale", "output_scale"):
+            path = f"policy.training.control_randomization.{key}"
+            bounds = _values(controls.get(key), path, 2)
+            if len(bounds) != 2 or not 0 < bounds[0] <= bounds[1]:
+                raise ValueError(f"{path}: expected an ordered positive scale range")
+        delay = controls.get("action_delay_steps")
+        if (
+            not isinstance(delay, tuple)
+            or len(delay) != 2
+            or any(type(step) is not int for step in delay)
+            or not 0 <= delay[0] <= delay[1]
+        ):
+            raise ValueError(
+                "policy.training.control_randomization.action_delay_steps: expected two ordered step counts"
+            )
         duration = cfg.shared["randomization"]["external_wrench_duration_s"]
         if type(duration) not in (float, int) or not isfinite(duration) or duration <= 0:
             raise ValueError("external_wrench_duration_s must be finite and positive")

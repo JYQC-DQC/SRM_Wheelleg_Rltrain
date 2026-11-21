@@ -29,14 +29,13 @@ class StairRowCurriculum:
         env_ids: torch.Tensor,
         displacement: torch.Tensor,
         tracking_fraction: torch.Tensor,
-        reverse_descent_completed: torch.Tensor,
     ) -> torch.Tensor:
         """Settle unique finished IDs; return their new rows in ID order.
 
         All inputs are aligned 1-D tensors on the curriculum device. Displacement is
-        horizontal distance in meters; reverse_descent_completed is a boolean completion flag.
+        horizontal distance in meters. Route completion is a diagnostic, not an input.
         """
-        up = (displacement > self._half_tile) | reverse_descent_completed
+        up = displacement > self._half_tile
         down = (tracking_fraction < 0.4) & ~up
         levels = (self.levels[env_ids] + up.long() - down.long()).clamp_min_(0)
         # Entering the highest row is not a clear; promotion from it triggers replay only.

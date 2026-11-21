@@ -102,7 +102,7 @@ def test_center_to_outside_requires_safe_floor_landing_on_any_face(name, reverse
     visit(x, y)  # landing; no second line crossing needed
     assert mix.crossed.item() == (not reverse)
     assert mix.reverse_completed.item() == reverse
-    assert mix.route_open.item() == (not reverse)
+    assert mix.route_open.item()
     assert not mix.reward_active.any()
     visit(0, 0)  # both outcomes latch and never resume scoring within this episode
     assert mix.crossed.item() == (not reverse)
@@ -140,7 +140,7 @@ def test_apron_rejects_stationary_birth_neighbor_reentry_and_failure():
     assert mix.crossed.item() and mix.route_open.item() and not mix.reward_active.any()
 
 
-def test_only_landed_reverse_promotes_short_of_fudan_displacement():
+def test_completion_does_not_affect_fudan_row_curriculum():
     mix, t, columns = setup_routes(6)
     ids = torch.arange(6)
     no = ids < 0
@@ -158,7 +158,7 @@ def test_only_landed_reverse_promotes_short_of_fudan_displacement():
     mix.step(t, start, apron, speed, no, wheels)
     assert mix.crossed.tolist() == [True, True, True, False, False, False]
     assert mix.reverse_completed.tolist() == [False, False, False, True, True, False]
-    assert mix.route_open.tolist() == [True, True, True, False, False, True]
+    assert mix.route_open.all()
     assert mix.reward_active.tolist() == [False, False, False, False, False, True]
 
     final = apron.clone()
@@ -167,7 +167,7 @@ def test_only_landed_reverse_promotes_short_of_fudan_displacement():
     mix.step(t, apron, final, speed, no, wheels)
     assert mix.route_open[:3].all() and not mix.reward_active[:3].any()
     failed = no.clone()
-    failed[4] = True  # a later failure forfeits the reverse extra promotion
+    failed[4] = True  # a later failure cannot turn the diagnostic into a promotion, either
     mix.reset(t, ids, ~no, failed, evaluation=False, final_xy=final[:, :2], tracking_fraction=torch.full((6,), 0.5))
     assert not (mix.crossed | mix.reverse_completed | mix.reward_active).any()
-    assert mix.stair_rows.levels.tolist() == [1, 1, 2, 2, 1, 1]
+    assert mix.stair_rows.levels.tolist() == [1, 1, 2, 1, 1, 1]

@@ -249,7 +249,7 @@ def make_env_cfg(
                         "static_friction_range": tuple(static_friction),
                         "dynamic_friction_range": tuple(dynamic_friction),
                         "restitution_range": tuple(restitution),
-                        "num_buckets": 64,
+                        "num_buckets": 8 if name == "guide_material" else 64,
                         "make_consistent": True,
                     },
                 ),

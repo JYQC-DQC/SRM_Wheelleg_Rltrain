@@ -36,6 +36,27 @@ def observed(c):
     return torch.stack((c.value[:, 0], c.value[:, 2], c.height[:, 0]), -1)
 
 
+def test_wide_height_kernel_uses_rollout_bucket_snapshot_after_midbatch_promotion():
+    fractions = [0.25] * 6
+    fractions[STRAIGHT], fractions[TURN] = 0.65, 0.35
+    flat = FlatCommandCurriculum(fractions, 1, "cpu")
+    commands = ShuCommands(settings(), 2, "cpu", flat=flat)
+    ids = torch.arange(2)
+    commands.reset(ids)
+    commands.begin_rollout()
+    yes = torch.tensor([True])
+    straight = torch.tensor([STRAIGHT])
+    flat.record(straight, flat.fraction[straight], yes, yes, ~yes, ~yes)
+    commands.reset(ids[:1])  # a brand-new segment already uses the promoted command range
+    commands.kind[1] = TURN
+    assert commands.fraction.tolist() == pytest.approx([0.75, 0.65])
+    assert commands.reward_height_fraction.tolist() == pytest.approx([0.65, 0.35])
+    commands.begin_rollout()
+    assert commands.reward_height_fraction.tolist() == pytest.approx([0.75, 0.35])
+    commands.kind[1] = STRAIGHT  # recurrent segments use the new batch's level too
+    assert commands.reward_height_fraction.tolist() == pytest.approx([0.75, 0.75])
+
+
 @pytest.mark.parametrize("fraction", [0.25, 1.0])
 def test_dash_targets_use_two_signed_bands(fraction):
     torch.manual_seed(21)
@@ -58,6 +79,26 @@ def test_resampled_height_is_issued_in_one_tick():
     torch.testing.assert_close(c.height_rate, (c.height[:, 0] - 0.1) / 0.01)
     ordinary(c)
     assert not c.height_rate.any()
+
+
+def test_motion_bucket_change_does_not_restart_independent_height_clock():
+    courses = [1.0] * 6
+    courses[TURN] = 0.25
+    c = ShuCommands(settings(TURN), 1, "cpu", flat=FlatCommandCurriculum(courses, 512, "cpu"))
+    c.reset(torch.tensor([0]))
+    c.kind.fill_(STRAIGHT)
+    c.fraction.fill_(1.0)
+    c.height.fill_(0.35)
+    c.height_target.copy_(c.height)
+    c.height_remaining.fill_(1)
+    c.remaining.zero_()
+    ordinary(c)
+    assert c.kind.item() == TURN and c.fraction.item() == 0.25
+    assert c.height.item() == pytest.approx(0.35)
+    assert c.height_remaining.item() == 1
+    c.height_remaining.zero_()
+    ordinary(c)
+    assert 0.235 <= c.height.item() <= 0.285
 
 
 def test_exact_100hz_segments_and_actual_issued_errors_not_endpoint_or_raw_target():

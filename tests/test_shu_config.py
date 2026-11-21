@@ -71,6 +71,8 @@ def test_shu_stage_scope(tmp_path):
         assert "robot.asset.shu_leg_reset_joint_names[0]" in missing
         assert ("policy.stages.flat.min_segments" in missing) == (task == "p1-flat")
         assert ("policy.stages.landing.height_edges_m[0]" in missing) == (task == "p1-landing")
+        assert ("robot.training.shu_air_collision" in missing) == (task == "p1-landing")
+        assert ("robot.asset.collision_body_names" in missing) == (task == "p1-landing")
         for key in ("air_wheel_height_bias_m", "air_wheel_height_max_m"):
             assert (f"policy.stages.landing.{key}" in missing) == (task == "p1-landing")
         assert not any("states_npz" in key or ".evaluation." in key for key in missing)
@@ -195,13 +197,31 @@ def test_literal_asset_names(tmp_path, key, bad):
 def test_pending_p1_randomization_only_blocks_p1_training(task):
     family = TASKS[task].policy
     cfg = load_training(task, ROBOT, policy(family))
-    expected = {"robot.asset.mass_randomized_leg_body_names"} | {
+    expected = {"robot.asset.mass_randomized_leg_body_names"}
+    assert expected.intersection(cfg.missing()) == (expected if family == "p1" else set())
+    assert not expected.intersection(cfg.missing(evaluation=True))
+    materials = {
         f"robot.training.randomization.p1_materials.{group}.{field}"
         for group in ("base", "guide")
         for field in ("static_friction", "dynamic_friction", "restitution")
     }
-    assert expected.intersection(cfg.missing()) == (expected if family == "p1" else set())
-    assert not expected.intersection(cfg.missing(evaluation=True))
+    assert not materials.intersection(cfg.missing())
+
+
+@pytest.mark.parametrize("task", ["p1-flat", "p1-landing", "p1-stairs"])
+def test_p1_motion_and_delay_contract(task):
+    cfg = load_training(task, ROBOT, policy("p1"))
+    commands = cfg.settings["commands"]
+    assert commands["segment_duration_s"] == (5.0, 5.0)
+    assert commands["height_duration_s"] == (2.0, 6.0)
+    assert commands["segment_probabilities"][-1] == 0.15
+    assert cfg.settings["control_randomization"]["action_delay_steps"] == (0, 5)
+    if task == "p1-flat":
+        assert cfg.stage["initial_fraction"] == 0.25
+    missing_eval = cfg.missing(evaluation=True)
+    assert "policy.training.evaluation.observation_delay_steps" not in missing_eval
+    assert "policy.training.evaluation.action_delay_steps" in missing_eval
+    assert "policy.training.evaluation.action_delay_steps" not in cfg.missing()
 
 
 def test_p1_missing_material_entries_are_not_defaulted(tmp_path):

@@ -47,7 +47,7 @@ asset:
   termination_contact_body_names: null
   initial_root_position_m: [0.0, 0.0, null]
   initial_joint_positions_rad: null
-  # One filtered ContactSensor per USD body; exact asset names, no bounding spheres.
+  # Every USD rigid body with enabled collision geometry. Used by P1 landing FK and P3 tunnel sensors.
   collision_body_names: null
 
 training:
@@ -119,6 +119,9 @@ training:
     wheel_angle_rad: null
     wheel_speed_rad_s: null
     leg_speed_rad_s: null
+  # P1 landing only. Parent-first USD link/FK mapping and collision vertices in each link frame.
+  # Export/review against the loaded USD and its cooked collision shapes, including the guide wheels.
+  shu_air_collision: null
   # Flat/landing only: explicitly resolve the WHOLE articulation at the sampled pose. No default axes.
   shu_reset_map:
     mode: null  # planar_rear_knee_coaxial_v1 only for COPLANAR, COAXIAL eyes on the two rear links
@@ -174,13 +177,13 @@ training:
     dynamic_friction: [0.4, 1.0]
     p1_materials:
       base:
-        static_friction: null
-        dynamic_friction: null
-        restitution: null
+        static_friction: [0.01, 0.10]
+        dynamic_friction: [0.01, 0.10]
+        restitution: [0.02, 0.20]
       guide:
-        static_friction: null
-        dynamic_friction: null
-        restitution: null
+        static_friction: [0.10, 0.70]
+        dynamic_friction: [0.10, 0.70]
+        restitution: [0.01, 0.10]
     hip_static_friction_add: [0.25, 1.0]
     hip_dynamic_friction_add: [0.25, 1.0]
     hip_viscous_friction_add: [0.05, 0.2]

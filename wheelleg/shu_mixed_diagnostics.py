@@ -67,6 +67,7 @@ class ShuMixedDiagnostics:
         self._force_samples = torch.zeros_like(self._group)
         self._bad_force_samples = torch.zeros_like(self._group)
         self._rollout = None
+        self._episode_ends = None
 
     def reset(self, env_ids, *, route, with_lip, oblique, spawn_yaw_rad, tick):
         """Register new episodes after assignment and spawn. The four tensors are sliced to env_ids."""
@@ -204,7 +205,18 @@ class ShuMixedDiagnostics:
             for name, value in zip(names, row.view(*_GROUP_SHAPE, -1).unbind(-1))
         }
 
-    def record_ended(self, env_ids, *, terminated, timeout, physical_failure, numerical_failure):
+    def record_ended(
+        self,
+        env_ids,
+        *,
+        terminated,
+        timeout,
+        physical_failure,
+        numerical_failure,
+        boundary_timeout=None,
+        normal_time_limit=None,
+        atlas=None,
+    ):
         """Accumulate once per reset batch, before changing old birth labels or clearing telemetry."""
         rows = self._reduce_ended(
             env_ids,
@@ -219,6 +231,16 @@ class ShuMixedDiagnostics:
             self._rollout[0].add_(rows[0])
             self._rollout[1].add_(rows[1])
             torch.maximum(self._rollout[2], rows[2], out=self._rollout[2])
+        if boundary_timeout is not None:
+            ended = (terminated | timeout)[env_ids]
+            boundary = boundary_timeout[env_ids] & timeout[env_ids] & ~terminated[env_ids]
+            horizon = normal_time_limit[env_ids] & timeout[env_ids] & ~terminated[env_ids]
+            on_map = atlas[env_ids]
+            counts = torch.stack((ended, boundary, horizon, ended & on_map, horizon & on_map)).sum(1)
+            if self._episode_ends is None:
+                self._episode_ends = counts
+            else:
+                self._episode_ends.add_(counts)
 
     def take(self) -> dict[str, int | float]:
         """Drain rollout scalars; leave all in-flight episode state untouched."""
@@ -228,6 +250,17 @@ class ShuMixedDiagnostics:
         rows = torch.cat([row.double() for row in self._rollout], dim=-1).cpu().tolist()
         self._rollout = None
         out = {}
+        if self._episode_ends is not None:
+            total, boundary, horizon, on_map, map_horizon = self._episode_ends.tolist()
+            self._episode_ends = None
+            for name, n, h in (("all", total, horizon), ("atlas", on_map, map_horizon)):
+                if n:
+                    prefix = f"Mixed/{name}/"
+                    out[prefix + "ended_episode_count"] = n
+                    out[prefix + "boundary_timeout_count"] = boundary
+                    out[prefix + "normal_time_limit_count"] = h
+                    out[prefix + "boundary_timeout_fraction"] = boundary / n
+                    out[prefix + "normal_time_limit_fraction"] = h / n
         for group, row in enumerate(rows):
             counts = dict(zip(_COUNTS, map(int, row[: len(_COUNTS)])))
             n = counts["episode_count"]

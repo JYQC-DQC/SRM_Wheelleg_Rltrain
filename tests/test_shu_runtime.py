@@ -16,6 +16,8 @@ from wheelleg.config import load_policy, load_robot
 from wheelleg.history import HistoryBuffer
 from wheelleg.shu_rewards import AIR, CATCH, DRIVE, RELEASE, RISE
 from wheelleg.shu_spawn import LEG_JOINT_ORDER, SpawnConfig
+from wheelleg.tensor_ops import motor_torque
+from wheelleg.training import load_training
 
 ROOT = Path(__file__).resolve().parents[1]
 N, SUBSTEPS = 32, 5
@@ -122,6 +124,7 @@ class Articulation:
             body_lin_vel_w=torch.zeros(N, 5, 3),
         )
         self.effort = torch.zeros(N, 16)
+        self.body_names = BODIES
         self.joint_names = ["unused"] * 16
         for i, name in zip(LEG, LEG_JOINT_ORDER, strict=True):
             self.joint_names[i] = name
@@ -165,6 +168,9 @@ class TransportDelay:
 
     def reset(self, ids):
         self.time_lags[ids] = 0
+
+    def set_time_lag(self, lag, ids):
+        self.time_lags[ids] = lag
 
     def compute(self, values):
         return values
@@ -251,6 +257,20 @@ def make_runtime(runtime, stage, proof=None):
     shared = dict(
         **geometry,
         shu_spawn=spawn,
+        # Synthetic collision geometry for the fake articulation, never the production asset.
+        shu_air_collision={
+            "base": {"vertices_m": [[0, 0, -0.04]]},
+            **{
+                name: dict(
+                    parent="base",
+                    motion="fixed",
+                    zero_xyz_m=[0, 0, -0.08],
+                    zero_quat_wxyz=[1, 0, 0, 0],
+                    vertices_m=[[0, 0, -0.03]],
+                )
+                for name in BODIES[1:]
+            },
+        },
         # Synthetic fixture only: mirrored axes, nonzero zeros, and two coaxial pin pairs.
         shu_reset_map=dict(
             mode="planar_rear_knee_coaxial_v1",
@@ -314,14 +334,21 @@ def make_runtime(runtime, stage, proof=None):
             air_wheel_height_bias_m=0.05,
             air_wheel_height_max_m=0.30,  # synthetic geometry only
         ),
-        settings=dict(commands=commands, shu_rewards=rewards, episode_length_s=20.0),
-        asset=dict(shu_leg_reset_joint_names=LEG_JOINT_ORDER, guide_body_names=["guide"], leg_body_names=["leg"]),
+        settings=dict(commands=commands, shu_rewards=rewards, episode_length_s=20.0, rollout_steps=48),
+        asset=dict(
+            shu_leg_reset_joint_names=LEG_JOINT_ORDER,
+            guide_body_names=["guide"],
+            leg_body_names=["leg"],
+            base_body_name="base",
+            collision_body_names=BODIES,
+        ),
     )
     e.commands_fixed, e.fixed_command = False, None
     e.extras, e.reward_sums = {}, {}
     e.jump = e.scanner = e.mixed_diagnostics = e.mixed_curriculum = e.transition_states = None
     e.sensor_counter = e.history_tick = -1
     e._sim_step_counter = 0
+    e.common_step_counter = 0
     e.spawn_checked = False
     e.spawn_check_mask = torch.ones(N, dtype=torch.bool)
     e.policy_history = HistoryBuffer(N, "cpu")
@@ -375,6 +402,59 @@ def make_runtime(runtime, stage, proof=None):
 
 def reset(e, seed):
     return e.reset(seed=seed)[0]
+
+
+def test_p1_reset_randomizes_training_latency_and_actuators_but_uses_fixed_eval_delay(runtime):
+    env = make_runtime(runtime, "p1-flat")
+    loaded = load_training("p1-flat", ROOT / "config/robot.yaml", ROOT / "config/policies/p1/policy_meta.yaml")
+    env.training.shared = loaded.shared
+    env.training.settings = dict(loaded.settings, evaluation={"action_delay_steps": 7})
+    env.training.policy = SimpleNamespace(kp=[3.0] * 6, kd=[0.2] * 6)
+    env.nominal_friction = env.nominal_dynamic_friction = env.nominal_viscous_friction = torch.zeros(6)
+    for name in (
+        "write_joint_friction_coefficient_to_sim",
+        "write_joint_dynamic_friction_coefficient_to_sim",
+        "write_joint_viscous_friction_coefficient_to_sim",
+    ):
+        setattr(env.robot, name, lambda *args, **kwargs: None)
+    for name in ("collision_remaining", "push_remaining", "push_timer", "collision_timer"):
+        setattr(env, name, torch.zeros(N))
+    for name in ("collision_force", "push_force", "push_torque"):
+        setattr(env, name, torch.zeros(N, 1, 3))
+    env.map_wrench_timer = None
+    # Fixture normally bypasses control randomization. Exercise the real base method.
+    randomize = runtime[0]._randomize_controls
+    ids = torch.arange(N)
+    for _ in range(4):
+        randomize(env, ids)
+        assert not env.obs_delay.time_lags.any()
+        assert ((env.act_delay.time_lags >= 0) & (env.act_delay.time_lags <= 5)).all()
+    assert env.act_delay.time_lags.unique().numel() > 1
+    for scale in (
+        env.kp / torch.tensor(env.training.policy.kp),
+        env.kd / torch.tensor(env.training.policy.kd),
+        env.output_scale,
+    ):
+        assert ((scale >= 0.9) & (scale <= 1.1)).all()
+        assert not (scale == 1).all()
+    assert (env.power_scale == 1).all() and (env.voltage == 1).all() and not env.voltage_drop.any()
+    env.cfg.evaluation = True
+    randomize(env, ids)
+    assert (env.act_delay.time_lags == 7).all()  # beyond train range is valid for measured fixed delay
+    assert not env.obs_delay.time_lags.any()
+    assert (env.output_scale == 1).all() and not env.spring_bias.any()
+    torch.testing.assert_close(env.kp, torch.tensor(env.training.policy.kp).expand_as(env.kp))
+    torch.testing.assert_close(env.kd, torch.tensor(env.training.policy.kd).expand_as(env.kd))
+
+
+def test_p1_output_randomization_stays_inside_physical_motor_envelope():
+    q = torch.zeros(1, 3)
+    qd = torch.tensor([[0.0, 8.0, -8.0]])
+    limit, saturation, speed = torch.tensor([5.0]), torch.tensor([10.0]), torch.tensor([10.0])
+    one = torch.ones_like(q)
+    args = (q, qd, 100 * one, 100 * one, one, one, limit, saturation, speed, 1.1 * one, [1])
+    safe = motor_torque(*args, scale_before_limit=True)
+    torch.testing.assert_close(safe, torch.tensor([[5.0, 2.0, 5.0]]))
 
 
 def interval(e, support):
@@ -541,6 +621,76 @@ def test_landing_fixed_command_evaluation_exercises_specialist_births(runtime):
     assert (e.commands.value[air, 0].abs() <= 2.5).all()
     assert (e.commands.value[air, 2].abs() <= pi / 2).all()
     assert (e.commands.value[preset] == 0).all()
+
+
+def test_landing_retries_penetrating_air_before_reset_writes(runtime, monkeypatch):
+    from wheelleg import shu_air_clearance
+
+    flat = make_runtime(runtime, "p1-flat")
+    flat.shu.flat.fraction.fill_(1)
+    e = make_runtime(runtime, "p1-landing", flat.shu.commands.transfer_metadata())
+    e.shu.drop.level = 2
+    e.robot.refresh()
+    reset_module = sys.modules[type(e.shu).__module__]
+    sample = shu_air_clearance.sample_spawn
+    initial = {}
+    draws = []
+    retried_angles = []
+
+    def initial_sample(kinds, offsets, cfg):
+        state = sample(kinds, offsets, cfg)
+        # The guide penetrates on two air candidates. Force one in each of two different bands.
+        rows = (kinds == shu_air_clearance.AIR).nonzero().flatten()[:2]
+        state.root_state[rows, 2] = 0.08
+        initial.update(rows=rows, angles=state.angle_rad.clone(), root=state.root_state.clone())
+        return state
+
+    def retry_sample(kinds, offsets, cfg):
+        draws.append(offsets.clone())
+        state = sample(kinds, offsets, cfg)
+        retried_angles.append(state.angle_rad.clone())
+        return state
+
+    def drop_sample(count):
+        offsets = torch.full((count,), 0.08)
+        offsets[1] = 0.25
+        return offsets, torch.bucketize(offsets, e.shu.drop.edges[1:-1])
+
+    monkeypatch.setattr(reset_module, "sample_spawn", initial_sample)
+    monkeypatch.setattr(shu_air_clearance, "sample_spawn", retry_sample)
+    monkeypatch.setattr(e.shu.drop, "sample", drop_sample)
+    written = []
+    write_pose = e.robot.write_root_pose_to_sim
+
+    def capture(pose, ids):
+        written.append((pose.clone(), ids.clone()))
+        write_pose(pose, ids)
+
+    monkeypatch.setattr(e.robot, "write_root_pose_to_sim", capture)
+    reset(e, 17)
+    rows = initial["rows"]
+    assert len(written) == len(draws) == 1
+    torch.testing.assert_close(e.shu.band[rows], torch.tensor([0, 2]))
+    torch.testing.assert_close(torch.bucketize(draws[0], e.shu.drop.edges[1:-1]), e.shu.band[rows])
+    kept = torch.ones(N, dtype=torch.bool)
+    kept[rows] = False
+    pose = written[0][0].clone()
+    pose[:, :3] -= e.terrain.env_origins
+    torch.testing.assert_close(pose[kept], initial["root"][kept, :7])
+    assert (pose[rows, 2] > 0.11).all()
+    initial_diff = (initial["angles"][:, 0] - initial["angles"][:, 1]).abs()
+    final_diff = (retried_angles[0][:, 0] - retried_angles[0][:, 1]).abs()
+    assert not torch.allclose(initial_diff[rows], final_diff)
+    angle_diff = e.shu.air_debug[0]
+    torch.testing.assert_close(angle_diff[rows], final_diff)
+    torch.testing.assert_close(angle_diff[kept], initial_diff[kept])
+    event = e.shu.event
+    assert (event.touch_tick == -1).all() and not event.invalid_birth.any() and e.shu.drop.events == 0
+    # On an accepted birth, first-substep physical contact is still a true first touch.
+    e.contact.data.net_forces_w[rows[:, None], CONTACT_WHEELS, 2] = 30.0
+    e._sim_step_counter += 1
+    e.shu.sample(e._sim_step_counter)
+    assert (event.touch_tick[rows] == 1).all()
 
 
 def test_invalid_velocity_label_can_be_filtered_by_encoder_update(runtime):

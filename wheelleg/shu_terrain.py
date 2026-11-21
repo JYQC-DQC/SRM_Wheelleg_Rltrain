@@ -223,9 +223,8 @@ class MixedTerrainRuntime:
 
     @property
     def route_open(self) -> torch.Tensor:
-        # Forward keeps driving for Fudan's displacement criterion after terrain completion.
-        stopped = self.reverse_completed if self.natural_pyramids else self.crossed
-        return self.traverse & ~stopped
+        # Production routes keep their commands through the whole episode.
+        return self.traverse if self.natural_pyramids else self.traverse & ~self.crossed
 
     def step(
         self,
@@ -245,7 +244,7 @@ class MixedTerrainRuntime:
         if self.natural_pyramids:
             if wheel_contact is None:
                 raise ValueError("pyramid route acceptance requires current wheel_contact (N, 2)")
-            route &= ~self.crossed
+            route &= ~(self.crossed | self.reverse_completed)
             obstacle = self.obstacle_half_widths[cols, None]
             # Distance to the square obstruction, including any outer lip. Keep the
             # whole apron, including corners, but inset it from the neighboring tiles.
@@ -297,7 +296,6 @@ class MixedTerrainRuntime:
                     done,
                     displacement,
                     tracking_fraction[done],
-                    self.reverse_completed[done] & ~terminated[done],
                 )
         # Tower geometry is independent of row promotion/replay.
         draw = torch.multinomial(self.draw_weights, len(ids), replacement=True)

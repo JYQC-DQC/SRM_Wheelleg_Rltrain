@@ -78,10 +78,6 @@ def test_startup_mass_and_material_targets(make_env_cfg, task, evaluation):
     )
     shared["saturation_torque_nm"] = [1] * 6
     shared["spring"]["force_limit_n"] = [1, 1]
-    shared["randomization"]["p1_materials"] = {
-        "base": {"static_friction": [0.3, 0.4], "dynamic_friction": [0.1, 0.3], "restitution": [0.0, 0.05]},
-        "guide": {"static_friction": [0.5, 0.7], "dynamic_friction": [0.2, 0.6], "restitution": [0.1, 0.15]},
-    }
     stage = {}
     if task == "p1-stairs":
         p1 = yaml.safe_load((ROOT / "config/policies/p1/policy_meta.yaml").read_text(encoding="utf8"))
@@ -113,8 +109,8 @@ def test_startup_mass_and_material_targets(make_env_cfg, task, evaluation):
     if task.startswith("p1-"):
         assert matched == {"upper_leg", "spring_link", "wheel_l", "wheel_r"}
         expected_materials.update(
-            base_material=(["chassis"], (0.3, 0.4), (0.1, 0.3), (0.0, 0.05)),
-            guide_material=(asset["guide_body_names"], (0.5, 0.7), (0.2, 0.6), (0.1, 0.15)),
+            base_material=(["chassis"], (0.01, 0.1), (0.01, 0.1), (0.02, 0.20)),
+            guide_material=(asset["guide_body_names"], (0.10, 0.70), (0.10, 0.70), (0.01, 0.10)),
         )
     else:
         assert matched == set(bodies) - {"chassis"}
@@ -127,3 +123,4 @@ def test_startup_mass_and_material_targets(make_env_cfg, task, evaluation):
         assert term.params["dynamic_friction_range"] == dynamic
         assert term.params["restitution_range"] == restitution
         assert term.params["make_consistent"] is True
+        assert term.params["num_buckets"] == (8 if name == "guide_material" else 64)
