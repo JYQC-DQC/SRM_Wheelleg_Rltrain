@@ -262,6 +262,16 @@ class JumpCurriculum:
         self.maximum_level = 0
         self.latest_rate = torch.zeros_like(self.levels)
 
+    def restart(self, level: int) -> None:
+        """Start a one-based grade with a fresh acceptance window after an explicit override."""
+        if not 1 <= level <= len(self.levels):
+            raise ValueError("Jump curriculum level is outside the configured range")
+        self.maximum_level = level - 1
+        self.attempts.zero_()
+        self.successes.zero_()
+        self.latest_rate.zero_()
+        self.anneal_start.fill_(-1)
+
     def sample(self, count: int) -> tuple[torch.Tensor, torch.Tensor]:
         if "curriculum_demote_rate" in self.settings:
             bins = torch.full((count,), self.maximum_level, dtype=torch.long, device=self.levels.device)

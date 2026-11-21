@@ -120,6 +120,28 @@ class WheelLegRunner(OnPolicyRunner):
             self.writer.add_scalar("MultiActor/handoff_failures", failed, iteration)
             if total:
                 self.writer.add_scalar("MultiActor/handoff_success_rate", 1 - failed / total, iteration)
+                self.writer.add_scalar(
+                    "MultiActor/handoff_stability_success_rate",
+                    1 - env.iteration_handoff_stability_failures.item() / total,
+                    iteration,
+                )
+            self.writer.add_scalar(
+                "MultiActor/handoff_stability_failures",
+                env.iteration_handoff_stability_failures.item(),
+                iteration,
+            )
+            for name, counts in zip(("stationary", "moving"), env.iteration_handoff_reasons.tolist()):
+                for reason, count in zip(env.handoff_reasons, counts):
+                    self.writer.add_scalar(f"Handoff/{name}/{reason}_failures", count, iteration)
+            env.iteration_handoff_reasons.zero_()
+            for name, counts in zip(("stationary", "moving"), env.outcome_tracker.counts.tolist()):
+                events = counts[0]
+                for field, value in zip(env.outcome_tracker.fields, counts):
+                    self.writer.add_scalar(f"JumpOutcome/{name}/{field}", value, iteration)
+                    if events and field != "events":
+                        self.writer.add_scalar(f"JumpOutcome/{name}/{field}_rate", value / events, iteration)
+            env.outcome_tracker.counts.zero_()
+            env.iteration_handoff_stability_failures.zero_()
             env.iteration_handoff_counts = torch.zeros_like(env.iteration_handoff_counts)
             self.alg.specialist_actions = torch.zeros_like(self.alg.specialist_actions)
             self.alg.total_actions = 0
@@ -263,13 +285,24 @@ class WheelLegRunner(OnPolicyRunner):
         super().save(path, extra)
 
     def load(
-        self, path: str, load_optimizer: bool = True, map_location=None, restart_command_curriculum: bool = False
+        self,
+        path: str,
+        load_optimizer: bool = True,
+        map_location=None,
+        restart_command_curriculum: bool = False,
+        handoff_vertical_speed: float | None = None,
     ) -> dict:
         """restart_command_curriculum: the caller restarts the command curriculum, so its saved state is not needed,
         and a landing air-height curriculum missing from an older checkpoint starts at its first level."""
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         infos = checkpoint["infos"]
-        if not infos or infos.get("observation_contract") != self.observation_contract():
+        from wheelleg.multi_actor import resume_contract_matches
+
+        if not infos or not resume_contract_matches(
+            infos.get("observation_contract"),
+            self.observation_contract(),
+            handoff_vertical_speed,
+        ):
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"
             )

@@ -14,7 +14,7 @@ actors:
 handoff:
   duration_s: 2.0
   tilt_rad: 0.25
-  vertical_speed_m_s: 0.20
+  vertical_speed_m_s: 0.30
   angular_xy_rad_s: 1.0
   vx_error_m_s: 0.5
   yaw_error_rad_s: 0.5

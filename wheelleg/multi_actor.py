@@ -1,6 +1,7 @@
 """Named actor bundles. Routing never changes the fixed seven-slot mode contract."""
 
 import hashlib
+from copy import deepcopy
 from pathlib import Path
 
 import torch
@@ -10,6 +11,20 @@ from torch import nn
 from .checkpoints import load_policy_module
 from .config import load_policy, load_robot
 from .observation import MODE_CONTRACT_REVISION
+
+
+def resume_contract_matches(saved: dict | None, current: dict, handoff_vertical_speed: float | None = None) -> bool:
+    if saved is None:
+        return False
+    if handoff_vertical_speed is None:
+        return saved == current
+    if "actor_bundle" not in saved or "actor_bundle" not in current:
+        return False
+    if current["actor_bundle"]["handoff"]["vertical_speed_m_s"] != handoff_vertical_speed:
+        return False
+    migrated = deepcopy(saved)
+    migrated["actor_bundle"]["handoff"]["vertical_speed_m_s"] = handoff_vertical_speed
+    return migrated == current
 
 
 def read_bundle(path: Path, specialist_checkpoint: Path | None = None) -> dict:
@@ -59,8 +74,11 @@ class BundlePolicy(nn.Module):
 
 
 class NumpyBundlePolicy:
-    def __init__(self, checkpoint: Path, bundle_path: Path):
-        self.bank = ActorBank(read_bundle(bundle_path, checkpoint), "cpu")
+    def __init__(self, checkpoint: Path, bundle_path: Path, handoff_vertical_speed: float | None = None):
+        bundle = read_bundle(bundle_path, checkpoint)
+        if handoff_vertical_speed is not None:
+            bundle["handoff"]["vertical_speed_m_s"] = handoff_vertical_speed
+        self.bank = ActorBank(bundle, "cpu")
         self.policy = BundlePolicy(self.bank)
         self.iteration = torch.load(checkpoint, map_location="cpu", weights_only=True).get("iter")
 

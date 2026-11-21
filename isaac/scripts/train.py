@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -22,10 +23,20 @@ def main() -> None:
     )
     parser.add_argument("--run-name")
     parser.add_argument("--actor-bundle", type=Path, help="Frozen base and trainable specialist manifest")
+    parser.add_argument(
+        "--handoff-vertical-speed",
+        type=float,
+        help="Explicitly override only the bundle handoff vertical-speed limit (m/s), including on resume",
+    )
     parser.add_argument("--num-envs", type=int)
     parser.add_argument("--iterations", type=int)
     parser.add_argument(
         "--initial-jump-level", type=int, help="One-based starting level for both fresh flat-jump curricula"
+    )
+    parser.add_argument(
+        "--restart-jump-level",
+        type=int,
+        help="With --resume: reset both flat-jump acceptance windows at this one-based level",
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--resume", type=Path, help="Restore this task's policy, critic, optimizer and iteration")
@@ -46,6 +57,10 @@ def main() -> None:
         help="With --resume on p1-landing: restart the air-birth height curriculum at its first level",
     )
     args, _ = parser.parse_known_args()
+    if args.handoff_vertical_speed is not None and (
+        not math.isfinite(args.handoff_vertical_speed) or args.handoff_vertical_speed <= 0
+    ):
+        parser.error("--handoff-vertical-speed must be finite and positive")
     if args.inherit_action_std and not args.initialize_from:
         parser.error("--inherit-action-std needs --initialize-from")
     if args.command_fraction is not None and (not args.resume or not 0 < args.command_fraction <= 1):
@@ -54,6 +69,14 @@ def main() -> None:
         parser.error("--restart-air-height needs --resume and --task p1-landing")
     path = args.policy or Path(f"config/policies/{TASKS[args.task].policy}/policy_meta.yaml")
     cfg = load_training(args.task, args.robot, path)
+    if args.restart_jump_level is not None and (
+        not args.resume
+        or args.initial_jump_level is not None
+        or args.task != "p3-jump"
+        or "moving_probability" not in cfg.stage
+        or not 1 <= args.restart_jump_level <= len(cfg.stage.get("height_levels_m", ()))
+    ):
+        parser.error("--restart-jump-level requires --resume on staged p3-jump and a valid level")
     if args.initial_jump_level is not None and (
         args.resume
         or args.task != "p3-jump"
@@ -84,6 +107,8 @@ def main() -> None:
         saved_bundle = args.resume.parent / "params/actor_bundle.yaml"
         if saved_bundle.exists():
             args.actor_bundle = saved_bundle
+    if args.handoff_vertical_speed is not None and args.actor_bundle is None:
+        parser.error("--handoff-vertical-speed requires an actor bundle")
     from wheelleg.checkpoints import initialize_actor, require_target_runtime
 
     require_target_runtime()
@@ -110,6 +135,8 @@ def main() -> None:
         initialize_from=str(args.initialize_from) if args.initialize_from else None,
         inherit_action_std=args.inherit_action_std,
         initial_jump_level=args.initial_jump_level,
+        restart_jump_level=args.restart_jump_level,
+        handoff_vertical_speed_override=args.handoff_vertical_speed,
         allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
@@ -126,6 +153,9 @@ def main() -> None:
         if args.task != "p3-jump":
             parser.error("Specialist training currently supports p3-jump")
         bundle = read_bundle(args.actor_bundle)
+        if args.handoff_vertical_speed is not None:
+            manifest["previous_handoff_vertical_speed_m_s"] = bundle["handoff"]["vertical_speed_m_s"]
+            bundle["handoff"]["vertical_speed_m_s"] = args.handoff_vertical_speed
         from copy import deepcopy
 
         portable = deepcopy(bundle)
@@ -169,10 +199,28 @@ def main() -> None:
                 if old["task"] != args.task or old["obs_version"] != cfg.policy.obs_version:
                     raise ValueError("--resume requires the same task and observation contract; use --initialize-from")
                 runner.load(
-                    str(args.resume), load_optimizer=True, restart_command_curriculum=args.command_fraction is not None
+                    str(args.resume),
+                    load_optimizer=True,
+                    restart_command_curriculum=args.command_fraction is not None,
+                    handoff_vertical_speed=args.handoff_vertical_speed,
                 )
                 runner.current_learning_iteration += 1
                 env.training_iteration_offset = runner.current_learning_iteration
+                if args.handoff_vertical_speed is not None:
+                    # The old window used a different acceptance limit; retain levels and learned guidance.
+                    for curriculum in env.flat_jump_curricula:
+                        curriculum.attempts.zero_()
+                        curriculum.successes.zero_()
+                        curriculum.latest_rate.zero_()
+                    env.reset()
+                    print(f"HANDOFF_VERTICAL_SPEED_RESET {args.handoff_vertical_speed} m/s")
+                if args.restart_jump_level is not None:
+                    for curriculum in env.flat_jump_curricula:
+                        curriculum.restart(args.restart_jump_level)
+                    # Discard physical states sampled at the old level; actor/critic/optimizer stay restored.
+                    env.reset()
+                    height = env.flat_jump_curricula[0].levels[args.restart_jump_level - 1].item()
+                    print(f"JUMP_LEVEL_RESET level={args.restart_jump_level} height_m={height}")
                 if args.task == "p3-tunnel" and "mix_switch_iteration" in cfg.stage["tunnel"]:
                     # Initial construction precedes loading the absolute iteration.
                     # Reapply the mix at episode reset before collecting resumed rollouts.

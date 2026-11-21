@@ -10,6 +10,36 @@ from wheelleg.multi_actor import ActorBank, BundlePolicy, actor_mask, masked_mea
 from wheelleg.training import load_training
 
 
+def test_explicit_handoff_limit_migration_does_not_bypass_other_contract_changes():
+    from copy import deepcopy
+
+    from wheelleg.multi_actor import resume_contract_matches
+
+    saved = {
+        "mode_contract_revision": 1,
+        "actor_bundle": {
+            "frozen": {"landing": "fixed-hash"},
+            "handoff_critic_features": 2,
+            "handoff": {"vertical_speed_m_s": 0.2, "duration_s": 2.0},
+        },
+    }
+    current = deepcopy(saved)
+    current["actor_bundle"]["handoff"]["vertical_speed_m_s"] = 0.3
+    assert not resume_contract_matches(saved, current)
+    assert resume_contract_matches(saved, current, 0.3)
+    assert saved["actor_bundle"]["handoff"]["vertical_speed_m_s"] == 0.2
+    for changed in ("frozen", "handoff_critic_features"):
+        bad = deepcopy(current)
+        bad["actor_bundle"][changed] = "changed"
+        assert not resume_contract_matches(saved, bad, 0.3)
+    bad = deepcopy(current)
+    bad["mode_contract_revision"] = 2
+    assert not resume_contract_matches(saved, bad, 0.3)
+    bad = deepcopy(current)
+    bad["actor_bundle"]["handoff"]["duration_s"] = 3
+    assert not resume_contract_matches(saved, bad, 0.3)
+
+
 def test_specialist_mix_and_exact_sixty_percent_promotion():
     data = yaml.safe_load(
         (Path(__file__).resolve().parents[1] / "config/reference/scut_p3_multi_actor.yaml").read_text(encoding="utf-8")

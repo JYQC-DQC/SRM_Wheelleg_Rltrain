@@ -716,6 +716,9 @@ def main() -> None:
     parser.add_argument("--run", type=Path, default=ROOT / "sim2sim/checkpoints/jump_latest")
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--actor-bundle", type=Path, help="Default: params/actor_bundle.yaml if present")
+    parser.add_argument(
+        "--handoff-vertical-speed", type=float, help="Override only the handoff vertical-speed limit (m/s)"
+    )
     parser.add_argument("--source", type=Path, default=ROOT / "runs/scut_experience/scene.xml")
     parser.add_argument("--site", type=int, default=1, choices=range(1, 13), help="F-key site number")
     parser.add_argument("--height", type=float, help="jump target in metres")
@@ -724,6 +727,10 @@ def main() -> None:
     parser.add_argument("--no-panel", action="store_true")
     parser.add_argument("--headless", type=float, metavar="SECONDS", help="CPU smoke run without a window")
     args = parser.parse_args()
+    if args.handoff_vertical_speed is not None and (
+        not math.isfinite(args.handoff_vertical_speed) or args.handoff_vertical_speed <= 0
+    ):
+        parser.error("--handoff-vertical-speed must be finite and positive")
     torch.set_num_threads(1)
     run = args.run.resolve()
     cfg = RunConfig(run)
@@ -741,10 +748,12 @@ def main() -> None:
     if bundle_path.exists():
         from wheelleg.multi_actor import NumpyBundlePolicy
 
-        actor = NumpyBundlePolicy(checkpoint, bundle_path)
+        actor = NumpyBundlePolicy(checkpoint, bundle_path, args.handoff_vertical_speed)
     else:
         if args.actor_bundle is not None:
             parser.error("Actor bundle does not exist")
+        if args.handoff_vertical_speed is not None:
+            parser.error("--handoff-vertical-speed requires an actor bundle")
         actor = NumpyActor(checkpoint, cfg.policy["hidden_dims"])
     sim = JumpSim(cfg, actor, arena)
     player = JumpPlayer(sim, sites, settings["controls"])
@@ -758,6 +767,7 @@ def main() -> None:
         missing_contact_patterns=sim.missing_contact_patterns,
         control_hz=cfg.control_hz,
         policy_hz=cfg.policy_hz,
+        handoff=sim.handoff_cfg,
     )
     (output / "last_launch.json").write_text(json.dumps(launch, indent=2), encoding="utf-8")
     print(json.dumps(launch, ensure_ascii=False), flush=True)

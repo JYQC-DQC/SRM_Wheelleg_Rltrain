@@ -2,12 +2,24 @@
 
 import torch
 
+from wheelleg.jump_outcomes import JumpOutcomeTracker
 from wheelleg.multi_actor import ActorBank, actor_mask
 
 from .env import WheelLegEnv
 
 
 class MultiActorEnv(WheelLegEnv):
+    handoff_reasons = (
+        "tilt",
+        "vertical_speed",
+        "angular_xy",
+        "vx_error",
+        "yaw_error",
+        "contact_loss",
+        "termination",
+        "timeout",
+    )
+
     def __init__(self, cfg, bundle, **kwargs):
         cfg.state_space += 2  # Critic-only handoff time and accumulated failure; actor stays at 35 inputs.
         super().__init__(cfg, **kwargs)
@@ -29,6 +41,13 @@ class MultiActorEnv(WheelLegEnv):
         self.handoff_pulse = torch.zeros_like(self.handoff_bad)
         self.handoff_failed = torch.zeros_like(self.handoff_bad)
         self.iteration_handoff_counts = torch.zeros(2, dtype=torch.long, device=self.device)
+        self.outcome_tracker = JumpOutcomeTracker(n, self.device)
+        self.outcome_checks = torch.ones((n, 3), dtype=torch.bool, device=self.device)
+        self.iteration_handoff_stability_failures = torch.zeros((), dtype=torch.long, device=self.device)
+        self.handoff_reason_flags = torch.zeros((n, len(self.handoff_reasons)), dtype=torch.bool, device=self.device)
+        self.iteration_handoff_reasons = torch.zeros(
+            (2, len(self.handoff_reasons)), dtype=torch.long, device=self.device
+        )
 
     def _get_observations(self):
         # Publish accepted requests before the actor is selected, so the first push is owned by Jump.
@@ -46,11 +65,18 @@ class MultiActorEnv(WheelLegEnv):
     def _record_jump_curriculum(self, ids, success, iteration):
         if not hasattr(self, "actor_bundle"):
             return super()._record_jump_curriculum(ids, success, iteration)
-        passed = ids[success]
-        self.handoff_grade[passed] = True
-        failed = ids[~success]
-        if len(failed):
-            super()._record_jump_curriculum(failed, torch.zeros_like(failed, dtype=torch.bool), iteration)
+        # The base calls this before the handoff verdict exists. All final grading is done below.
+
+    def _record_final_outcome(self, ids, event_failed, handoff_failed, iteration):
+        ids, success = self.outcome_tracker.record(
+            ids,
+            self.commands.target[ids, 0] > 0,
+            self.outcome_checks[ids],
+            event_failed,
+            handoff_failed,
+        )
+        if len(ids) and not self.cfg.evaluation:
+            super()._record_jump_curriculum(ids, success, iteration)
 
     def _get_dones(self):
         watching = self.handoff_left > 0
@@ -58,32 +84,58 @@ class MultiActorEnv(WheelLegEnv):
         self.handoff_pulse.zero_()
         self.handoff_failed.zero_()
         cfg, state = self.actor_bundle["handoff"], self.state
-        bad = (state["roll"].abs() >= cfg["tilt_rad"]) | (state["pitch"].abs() >= cfg["tilt_rad"])
-        bad |= state["velocity_w"][:, 2].abs() >= cfg["vertical_speed_m_s"]
-        bad |= state["angular_velocity"][:, :2].abs().amax(-1) >= cfg["angular_xy_rad_s"]
-        bad |= state["linear_error"].abs() >= cfg["vx_error_m_s"]
-        bad |= state["angular_error"].abs() >= cfg["yaw_error_rad_s"]
-        bad |= ~state["wheel_contact"].all(-1)
-        self.handoff_bad |= watching & bad
+        reasons = torch.stack(
+            (
+                (state["roll"].abs() >= cfg["tilt_rad"]) | (state["pitch"].abs() >= cfg["tilt_rad"]),
+                state["velocity_w"][:, 2].abs() >= cfg["vertical_speed_m_s"],
+                state["angular_velocity"][:, :2].abs().amax(-1) >= cfg["angular_xy_rad_s"],
+                state["linear_error"].abs() >= cfg["vx_error_m_s"],
+                state["angular_error"].abs() >= cfg["yaw_error_rad_s"],
+                ~state["wheel_contact"].all(-1),
+                terminated,
+                timeout,
+            ),
+            dim=-1,
+        )
+        self.handoff_reason_flags |= watching[:, None] & reasons
+        self.handoff_bad |= watching & reasons.any(-1)
         self.handoff_left = (self.handoff_left - self.step_dt).clamp_min(0)
         finished = watching & ((self.handoff_left <= 0) | terminated | timeout)
         self.handoff_pulse.copy_(finished)
-        self.handoff_failed.copy_(finished & (self.handoff_bad | ~self.handoff_grade | terminated | timeout))
+        stability_failed = self.handoff_bad | terminated | timeout
+        self.handoff_failed.copy_(finished & (stability_failed | ~self.handoff_grade))
         self.iteration_handoff_counts += torch.stack((finished.sum(), self.handoff_failed.sum()))
+        self.iteration_handoff_stability_failures += (finished & stability_failed).sum()
         ids = finished.nonzero().flatten()
-        if len(ids) and not self.cfg.evaluation:
+        self.iteration_handoff_reasons.index_add_(
+            0,
+            (self.commands.target[ids, 0] > 0).long(),
+            self.handoff_reason_flags[ids].long(),
+        )
+        if len(ids):
             iteration = (
                 self.training_iteration_offset + self.common_step_counter / self.training.settings["rollout_steps"]
             )
-            super()._record_jump_curriculum(ids, self.handoff_grade[ids] & ~self.handoff_failed[ids], iteration)
+            self._record_final_outcome(ids, torch.zeros_like(ids, dtype=torch.bool), stability_failed[ids], iteration)
         started = self.jump.landing_pulse & ~terminated
-        grade = self.jump.target_reached & self.jump_vx_qualified
-        if self.promotion_checks is not None:
-            grade &= self._jump_direction_ok()
+        heading_ok = self._jump_direction_ok() if self.promotion_checks is not None else torch.ones_like(started)
+        checks = torch.stack((self.jump.target_reached, self.jump_vx_qualified, heading_ok), dim=-1)
+        grade = checks.all(-1)
+        self.outcome_checks[started] = checks[started]
         self.handoff_grade[started] = grade[started]
         self.handoff_left[started] = cfg["duration_s"]
         self.handoff_bad[started] = False
+        self.handoff_reason_flags[started] = False
         self.handoff_left[finished] = 0
+        aborted = self.jump.finished & ~started & ~watching & (self.jump.elapsed > 0)
+        ids = aborted.nonzero().flatten()
+        if len(ids):
+            iteration = (
+                self.training_iteration_offset + self.common_step_counter / self.training.settings["rollout_steps"]
+            )
+            self._record_final_outcome(
+                ids, torch.ones_like(ids, dtype=torch.bool), torch.zeros_like(ids, dtype=torch.bool), iteration
+            )
         terminated |= finished
         timeout &= ~terminated
         return terminated, timeout
@@ -101,4 +153,7 @@ class MultiActorEnv(WheelLegEnv):
             self.handoff_left[ids] = 0
             self.handoff_bad[ids] = False
             self.handoff_grade[ids] = False
+            self.outcome_tracker.reset(ids)
+            self.outcome_checks[ids] = True
+            self.handoff_reason_flags[ids] = False
         super()._reset_idx(ids)
