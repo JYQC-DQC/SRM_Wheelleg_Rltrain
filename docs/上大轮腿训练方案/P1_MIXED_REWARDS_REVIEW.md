@@ -4,7 +4,7 @@
 
 - [华南虎 `rough_rotation_stair/2026-07-30_09-16-27` 参数](../../../wheeled-legged_RL/pretrained/26_infantry/rough_rotation_stair/2026-07-30_09-16-27/params/env.yaml#L1925)，[计算与 dt](../../../wheeled-legged_RL/source/agent_tasks/agent_tasks/direct/wheelbipe/wheelbipe25_v3/env.py#L3709)。不引用轻量 flat 的高度门控来代表本次运行。
 - [复旦非腿熊 Upstairs v2 激活项](../../../fudan_rl_wheel_leg/plane/logs/wheel_legged/上台阶3_angz+添加随机地形，进一步训练v2/legged_robot_config.py#L185)、[具体函数](../../../fudan_rl_wheel_leg/plane/logs/wheel_legged/上台阶3_angz+添加随机地形，进一步训练v2/legged_robot.py#L1804)、[任务接触名单](../../../fudan_rl_wheel_leg/plane/logs/wheel_legged/上台阶3_angz+添加随机地形，进一步训练v2/wheel_legged_config.py#L80)。`enhance` 有些是负值；不能把 `plane` 基础版本的参数当本次快照。
-- [现有上大连续项](../../wheelleg/shu_rewards.py)、[地面测量与旧路线项](../../isaac/wheelleg_tasks/env.py)、[课程和到达判据](../../wheelleg/shu_terrain.py)。下表普通项按带符号每秒系数讨论，非轮接触最低 −2/s，普通项逐项 ±1/s 后乘 0.01 s；事件独立。两校表内为名义系数，不是直接可加的每拍分。
+- [现有上大连续项](../../shu_train/wheelleg/shu_rewards.py)、[地面测量与旧路线项](../../shu_train/isaac/wheelleg_tasks/env.py)、[课程和到达判据](../../shu_train/wheelleg/shu_terrain.py)。下表普通项按带符号每秒系数讨论，非轮接触最低 −2/s，普通项逐项 ±1/s 后乘 0.01 s；事件独立。两校表内为名义系数，不是直接可加的每拍分。
 
 | 已确认项 | 华南虎实际实现 | 复旦实际实现 | 上大定案及理由 |
 |---|---|---|---|

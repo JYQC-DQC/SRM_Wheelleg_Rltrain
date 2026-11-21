@@ -73,13 +73,13 @@
 - 只用 Isaac Lab 2.3.2、rsl_rl 以及 SCUT 仓库已经依赖的库。**不要引入新依赖**，确实需要时先在汇报里说明理由。
 
 ### 2.2 配置
-- `config/robot.yaml` 和 `config/policies/*/policy_meta.yaml` 是**唯一的**参数来源。代码里不允许出现物理参数的数字字面量，比如杆长、质量、PD 增益、缩放系数、限幅。
+- `shu_train/config/robot.yaml` 和 `shu_train/config/policies/*/policy_meta.yaml` 是**唯一的**参数来源。代码里不允许出现物理参数的数字字面量，比如杆长、质量、PD 增益、缩放系数、限幅。
 - 配置**只在加载时校验一次**：必填字段齐不齐、单位和取值范围对不对。校验失败就报错，指明文件和字段。加载后得到一个 `dataclass(frozen=True)`，显式地作为参数传下去。
 - 不用全局可变状态；除了文档里写明的少数几个，不用环境变量控制行为。
 
 ### 2.3 Isaac Lab 和训练代码
 - **照 Isaac Lab 的写法来：** 用它的配置类、事件（event）、奖励项（reward term）、观测项（observation term）的机制，不要自己再发明一套。
-- 从 SCUT 复制代码时，复制到 `isaac/wheelleg_tasks/` 下修改，并注明来源。不要修改 `third_party/`。
+- 从 SCUT 复制代码时，复制到 `shu_train/isaac/wheelleg_tasks/` 下修改，并注明来源。不要修改 `third_party/`。
 - **全部向量化：** 4096 个环境，不允许按环境写 Python 循环。需要按环境区别处理时，用掩码（mask）。
 - **一项奖励一个函数**，函数名就是日志里显示的名字，返回形状为 `(N,)` 的张量。不要把多项奖励合并在一个函数里，否则日志里看不出是哪一项在起作用。
 - **观测的拼接顺序只在一个地方定义**（obs_v2 布局），导出脚本、MuJoCo、固件代码生成都从这一处读取。

@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "srm-wheelleg"
+name = "shu-train-wheelleg"
 version = "0.1.0"
 description = "SRM wheel-leg PPO configuration and deployment interface"
 requires-python = ">=3.11"
@@ -16,10 +16,14 @@ train = ["rsl-rl-lib==3.1.2"]
 export = ["onnx", "onnxruntime"]
 
 [tool.setuptools.packages.find]
-include = ["wheelleg*", "isaac*", "tools*"]
+include = ["shu_train*"]
+exclude = ["shu_train.tests*", "shu_train.config*"]
+
+[tool.setuptools.package-data]
+shu_train = ["config/*.yaml", "config/policies/*/*.yaml"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["shu_train/tests"]
 python_files = ["test_shu_*.py"]
 pythonpath = ["."]
 markers = ["isaac: requires Isaac Sim 5.1 / Isaac Lab 2.3.2 and a calibrated USD"]

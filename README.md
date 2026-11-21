@@ -1,5 +1,7 @@
 # SHU-Train｜上大无云台轮腿底盘
 
+**上大专用代码、配置和回归测试只在 [shu_train/](shu_train/)；文档在 [docs/上大轮腿训练方案/](docs/上大轮腿训练方案/)。** 在本仓根目录执行 `python -m shu_train.isaac.scripts.train --task p1-flat --check-only`；正式训练输出默认 `runs/shu_train/<run-name>/`。不会从旧训练分支引入同名模块。
+
 P1 通行先练平地，再练被动落地与预设起身，最后混合地形；不另训旧 recovery。P2 练原地自转，P3 练按键跳跃。三套策略各有自己的速度估计器。这里记录训练合同，不代表已完成 Isaac/GPU 训练或实车验证。
 
 - [训练顺序、学习率、检查命令与校准交接](docs/上大轮腿训练方案/TRAINING.md)

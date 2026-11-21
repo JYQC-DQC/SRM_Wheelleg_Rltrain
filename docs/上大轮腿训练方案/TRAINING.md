@@ -29,20 +29,20 @@ P3 的指令与模拟按键分布、各阶段时间、落稳阈值、碰撞包�
 
 ## 不启动仿真的检查
 
-在仓库根目录、已安装项目依赖的环境执行。训练入口的 `--check-only` 列出该 task 的缺项，不启动仿真；正式启动仍须通过阶段就绪检查。下面 `tools.check_config --require-ready` 单独检查机器人与策略的公共合同，不能代替阶段就绪检查。
+在仓库根目录、已安装项目依赖的环境执行。训练入口的 `--check-only` 列出该 task 的缺项，不启动仿真；正式启动仍须通过阶段就绪检查。下面 `shu_train.tools.check_config --require-ready` 单独检查机器人与策略的公共合同，不能代替阶段就绪检查。
 
 ```powershell
-python -m isaac.scripts.train --task p1-flat --check-only
-python -m tools.check_config --robot config/robot.yaml --policy config/policies/p1/policy_meta.yaml --require-ready
+python -m shu_train.isaac.scripts.train --task p1-flat --check-only
+python -m shu_train.tools.check_config --robot shu_train/config/robot.yaml --policy shu_train/config/policies/p1/policy_meta.yaml --require-ready
 ```
 
 ## P3：训练输入与手动 rollout
 
-P3 的默认模板是 `config/policies/p3/policy_meta.yaml`。检查两阶段的缺参：
+P3 的默认模板是 `shu_train/config/policies/p3/policy_meta.yaml`。检查两阶段的缺参：
 
 ```powershell
-python -m isaac.scripts.train --task p3-jump --check-only
-python -m isaac.scripts.train --task p3-tunnel --check-only
+python -m shu_train.isaac.scripts.train --task p3-jump --check-only
+python -m shu_train.isaac.scripts.train --task p3-tunnel --check-only
 ```
 
 正式 P3 入口读取所选阶段的 `press_time_range_s`（秒）、`no_press_probability`、`moving_probability`。三者未定为 `null`；确认后填写才有训练输入。每个非空回合最多模拟一次按键上升沿，按回合时间触发，不读取梁距。移动与不移动使用各自的前速目标；没有外力辅助跳跃。
@@ -56,9 +56,9 @@ python -m isaac.scripts.train --task p3-tunnel --check-only
 下面路径是占位符，不代表仓库已附带训练权重：
 
 ```powershell
-python -m isaac.scripts.train --task p1-flat --run-name shu-flat
-python -m isaac.scripts.train --task p1-landing --run-name shu-landing --initialize-from "<flat 六桶满档检查点>"
-python -m isaac.scripts.train --task p1-stairs --run-name shu-mixed --initialize-from "<负责人在 sim2sim 后指定的 landing 检查点>"
+python -m shu_train.isaac.scripts.train --task p1-flat --run-name shu-flat
+python -m shu_train.isaac.scripts.train --task p1-landing --run-name shu-landing --initialize-from "<flat 六桶满档检查点>"
+python -m shu_train.isaac.scripts.train --task p1-stairs --run-name shu-mixed --initialize-from "<负责人在 sim2sim 后指定的 landing 检查点>"
 ```
 
 所有阶段固定使用[统一接口 v4](INTERFACE.md)，不接旧版检查点。P1 起身和落地仍由环境状态机发奖、计时和交回驾驶，不由网络提交成功标志。P2 当前不训练横移；未来启用已有 `vy_cmd` 需要训练对应指令和课程，不扩网络。

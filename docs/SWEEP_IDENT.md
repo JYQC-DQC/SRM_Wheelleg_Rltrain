@@ -4,7 +4,7 @@
 
 - **来源标注：** 没有标注的内容来自上面两份文档；**[判]** 是本文补充的设计判断，**没有经过实测**，其中的姿态数、幅度、增益都只是起点。
 - **分工：** 采集固件、原始数据和拟合脚本在 `D:/Code-RM/github` 的 `wheelleg_RL` 分支；本仓库只导入审核后的参数（见 §8）。
-- **当前状态：** 本文只是流程，本车还没有做过任何一项辨识，`config/robot.yaml` 里相关字段都是 `null`。
+- **当前状态：** 本文只是流程，本车还没有做过任何一项辨识，`shu_train/config/robot.yaml` 里相关字段都是 `null`。
 
 ---
 
@@ -17,7 +17,7 @@
 | 2 个轮电机 | 速度目标 `ω_ref = 10·a`，再按上限裁剪 | `τ = Kd_w·(ω_ref − ω)`，换算成电流发给 C620 |
 
 - 每个电机只有这一层 PD，没有积分，不串级。队内框架原有的角度环、速度环 PID 不用。
-- 这层 PD 和训练里的 `motor_torque()`（`wheelleg/tensor_ops.py`）是同一个公式。辨识时也用它，回放时才能一一对应。
+- 这层 PD 和训练里的 `motor_torque()`（`shu_train/wheelleg/tensor_ops.py`）是同一个公式。辨识时也用它，回放时才能一一对应。
 
 ### 1.2 Kp/Kd 不是辨识出来的
 - 辨识的对象是 armature、摩擦、阻尼、力矩缩放、延迟、弹簧曲线，这些不随 Kp/Kd 变化。
@@ -168,7 +168,7 @@
 | 轮半径改变 | 必须更新模型（半径没有被随机化）。先跑评测，退化就续训 |
 | 半径或轮距变化大到默认姿态、腿高范围要改 | 从头训练 |
 
-流程：重做空载测试 → 更新 `config/robot.yaml`、重新生成资产 → 重跑评测 → 退化才从 checkpoint 续训。电机和减速箱没换时堵转扭矩不用重测。已经确定要换轮子的话，等轮子定型再开始 P1 正式训练。
+流程：重做空载测试 → 更新 `shu_train/config/robot.yaml`、重新生成资产 → 重跑评测 → 退化才从 checkpoint 续训。电机和减速箱没换时堵转扭矩不用重测。已经确定要换轮子的话，等轮子定型再开始 P1 正式训练。
 
 ---
 
@@ -199,7 +199,7 @@
 | Kp、Kd、力矩限幅 | `policy_meta.yaml: kp`、`kd`、`torque_limit_nm`（轮通道的 `kd` 就是 `Kd_w`，`kp` 不参与计算） |
 | 完成标记 | `robot.yaml: pending_measurements` 下的 `hip_torque_calibration_and_envelope`、`wheel_torque_calibration_and_envelope`、`motor_sweep_and_held_out_validation`、`spring_left_*`、`spring_right_*`、`measured_sensor_and_action_delay` |
 
-- 弹簧模型见 `wheelleg/tensor_ops.py` 的 `spring_force()`：`压缩量 = clamp(direction·(q − reference_q_m), 0, 行程)`，`F = f0_n + stiffness_n_m·压缩量`，再加阻尼项和 `hysteresis_n·sign(q̇)`。`hysteresis_n` 填两个方向之差的一半。
+- 弹簧模型见 `shu_train/wheelleg/tensor_ops.py` 的 `spring_force()`：`压缩量 = clamp(direction·(q − reference_q_m), 0, 行程)`，`F = f0_n + stiffness_n_m·压缩量`，再加阻尼项和 `hysteresis_n·sign(q̇)`。`hysteresis_n` 填两个方向之差的一半。
 - 随机化范围按指南 §5.7 的表，不因为进度放宽。实测超出表里范围时，只把那一项扩大到能覆盖实测值。
 - 验证：把留出的那组扫频指令放进随机化后的 MuJoCo 跑 50 次，实车曲线应落在这 50 条曲线的范围内。落在外面就回去补辨识，不加宽随机化（手册 §8.3）。
 
@@ -208,7 +208,7 @@
 ## 9. 待确认
 
 - **三个摩擦字段的含义和单位：** `env_cfg.py` 把它们分别传给执行器的 `friction`、`dynamic_friction`、`viscous_friction`。它们在 Isaac Lab 2.3.2 / PhysX 里是力矩还是系数、和 MuJoCo 的 `frictionloss`、`damping` 怎么对应，要在目标镜像里核对后，再决定拟合脚本输出什么量。
-- **力矩缩放系数放在哪里：** 手册写的是固件侧的 `config/hw/torque_scale.yaml`，本仓库没有对应的标称字段，只有随机化范围 `hip_torque_scale`、`wheel_torque_scale`。是在固件里修正读数和指令，还是在模型里加标称缩放，需要定。
+- **力矩缩放系数放在哪里：** 手册写的是固件侧的 `shu_train/config/hw/torque_scale.yaml`，本仓库没有对应的标称字段，只有随机化范围 `hip_torque_scale`、`wheel_torque_scale`。是在固件里修正读数和指令，还是在模型里加标称缩放，需要定。
 - **`pending_measurements` 填什么：** 代码只判断是否为 `null`，没有规定填报告路径、日期还是别的。
 - **髋电机的空载转速：** 带着腿、受关节行程限制，很难直接测。是用手册的 17.6 rad/s@24 V，还是用大幅阶跃里的速度饱和段来估，需要定。
 - **采集格式：** 遥测协议文档还没有；手册里的文件名是 `hip_sweep_<日期>.csv`、`spring_with_<日期>.csv`、`spring_without_<日期>.csv`。

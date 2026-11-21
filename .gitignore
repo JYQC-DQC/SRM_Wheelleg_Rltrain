@@ -14,5 +14,5 @@ export/
 *.mp4
 
 # Keep unrelated local experiments untracked; ship the SHU regression suite.
-tests/*
-!tests/test_shu_*.py
+shu_train/tests/*
+!shu_train/tests/test_shu_*.py
