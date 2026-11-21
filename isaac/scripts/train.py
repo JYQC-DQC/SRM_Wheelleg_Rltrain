@@ -153,6 +153,9 @@ def main() -> None:
         if args.task != "p3-jump":
             parser.error("Specialist training currently supports p3-jump")
         bundle = read_bundle(args.actor_bundle)
+        from wheelleg.jump_outcomes import HANDOFF_COST_TIMING
+
+        manifest["handoff_failure_cost_timing"] = HANDOFF_COST_TIMING
         if args.handoff_vertical_speed is not None:
             manifest["previous_handoff_vertical_speed_m_s"] = bundle["handoff"]["vertical_speed_m_s"]
             bundle["handoff"]["vertical_speed_m_s"] = args.handoff_vertical_speed
@@ -198,12 +201,19 @@ def main() -> None:
                 old = json.loads((args.resume.parent / "params/run.json").read_text(encoding="utf-8"))
                 if old["task"] != args.task or old["obs_version"] != cfg.policy.obs_version:
                     raise ValueError("--resume requires the same task and observation contract; use --initialize-from")
-                runner.load(
+                restored = runner.load(
                     str(args.resume),
                     load_optimizer=True,
                     restart_command_curriculum=args.command_fraction is not None,
                     handoff_vertical_speed=args.handoff_vertical_speed,
                 )
+                if bundle is not None:
+                    manifest["previous_handoff_failure_cost_timing"] = restored.get(
+                        "handoff_failure_cost_timing", "observation_end"
+                    )
+                    (params / "run.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+                    previous_timing = manifest["previous_handoff_failure_cost_timing"]
+                    print(f"HANDOFF_FAILURE_COST_TIMING {previous_timing} -> {HANDOFF_COST_TIMING}")
                 runner.current_learning_iteration += 1
                 env.training_iteration_offset = runner.current_learning_iteration
                 if args.handoff_vertical_speed is not None:

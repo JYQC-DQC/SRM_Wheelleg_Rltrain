@@ -134,6 +134,12 @@ class WheelLegRunner(OnPolicyRunner):
                 for reason, count in zip(env.handoff_reasons, counts):
                     self.writer.add_scalar(f"Handoff/{name}/{reason}_failures", count, iteration)
             env.iteration_handoff_reasons.zero_()
+            paid, amount, lead = env.iteration_handoff_cost_stats.tolist()
+            self.writer.add_scalar("MultiActor/failure_cost_events", paid, iteration)
+            self.writer.add_scalar("MultiActor/failure_cost_total", amount, iteration)
+            if paid:
+                self.writer.add_scalar("MultiActor/failure_cost_lead_time_s", lead / paid, iteration)
+            env.iteration_handoff_cost_stats.zero_()
             for name, counts in zip(("stationary", "moving"), env.outcome_tracker.counts.tolist()):
                 events = counts[0]
                 for field, value in zip(env.outcome_tracker.fields, counts):
@@ -259,6 +265,8 @@ class WheelLegRunner(OnPolicyRunner):
         extra = {} if infos is None else dict(infos)
         env = self.env.unwrapped
         extra["observation_contract"] = self.observation_contract()
+        if hasattr(env, "actor_bundle"):
+            extra["handoff_failure_cost_timing"] = env.handoff_failure_cost_timing
         extra["command_fraction"] = env.commands.command_fraction
         if env.command_curriculum is not None:
             extra["command_curriculum"] = env.command_curriculum.state_dict()

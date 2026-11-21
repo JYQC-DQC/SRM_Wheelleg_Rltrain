@@ -2,13 +2,14 @@
 
 import torch
 
-from wheelleg.jump_outcomes import JumpOutcomeTracker
+from wheelleg.jump_outcomes import HANDOFF_COST_TIMING, JumpOutcomeTracker, handoff_cost_due
 from wheelleg.multi_actor import ActorBank, actor_mask
 
 from .env import WheelLegEnv
 
 
 class MultiActorEnv(WheelLegEnv):
+    handoff_failure_cost_timing = HANDOFF_COST_TIMING
     handoff_reasons = (
         "tilt",
         "vertical_speed",
@@ -40,6 +41,8 @@ class MultiActorEnv(WheelLegEnv):
         self.handoff_grade = torch.zeros_like(self.handoff_bad)
         self.handoff_pulse = torch.zeros_like(self.handoff_bad)
         self.handoff_failed = torch.zeros_like(self.handoff_bad)
+        self.handoff_cost_pulse = torch.zeros_like(self.handoff_bad)
+        self.iteration_handoff_cost_stats = torch.zeros(3, device=self.device)
         self.iteration_handoff_counts = torch.zeros(2, dtype=torch.long, device=self.device)
         self.outcome_tracker = JumpOutcomeTracker(n, self.device)
         self.outcome_checks = torch.ones((n, 3), dtype=torch.bool, device=self.device)
@@ -80,6 +83,8 @@ class MultiActorEnv(WheelLegEnv):
 
     def _get_dones(self):
         watching = self.handoff_left > 0
+        was_bad = self.handoff_bad.clone()
+        previous_grade = self.handoff_grade.clone()
         terminated, timeout = super()._get_dones()
         self.handoff_pulse.zero_()
         self.handoff_failed.zero_()
@@ -121,6 +126,9 @@ class MultiActorEnv(WheelLegEnv):
         heading_ok = self._jump_direction_ok() if self.promotion_checks is not None else torch.ones_like(started)
         checks = torch.stack((self.jump.target_reached, self.jump_vx_qualified, heading_ok), dim=-1)
         grade = checks.all(-1)
+        self.handoff_cost_pulse.copy_(
+            handoff_cost_due(watching, was_bad, previous_grade, stability_failed, started, grade)
+        )
         self.outcome_checks[started] = checks[started]
         self.handoff_grade[started] = grade[started]
         self.handoff_left[started] = cfg["duration_s"]
@@ -142,10 +150,18 @@ class MultiActorEnv(WheelLegEnv):
 
     def _get_rewards(self):
         rewards = super()._get_rewards()
-        cost = self.handoff_failed.float() * self.actor_bundle["handoff"]["failure_cost"]
+        cost = self.handoff_cost_pulse.float() * self.actor_bundle["handoff"]["failure_cost"]
         rewards += cost
+        self.iteration_handoff_cost_stats += torch.stack(
+            (
+                self.handoff_cost_pulse.sum().float(),
+                cost.sum(),
+                (self.handoff_left * self.handoff_cost_pulse).sum(),
+            )
+        )
         self.extras["evaluation"]["handoff_complete"] = self.handoff_pulse.clone()
         self.extras["evaluation"]["handoff_failed"] = self.handoff_failed.clone()
+        self.extras["evaluation"]["handoff_cost_paid"] = self.handoff_cost_pulse.clone()
         return rewards
 
     def _reset_idx(self, ids):

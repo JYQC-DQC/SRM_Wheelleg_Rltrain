@@ -1,7 +1,35 @@
 import torch
 
 from wheelleg.curriculum import JumpCurriculum
-from wheelleg.jump_outcomes import JumpOutcomeTracker
+from wheelleg.jump_outcomes import JumpOutcomeTracker, handoff_cost_due
+
+
+def test_handoff_cost_moves_to_first_known_failure_with_identical_event_total():
+    # Entry failure, early violation, final-frame violation, recurring violations, clean success.
+    grade = torch.tensor([False, True, True, True, True])
+    first_bad_step = torch.tensor([3, 7, 200, 11, 999])
+    was_bad = torch.zeros(5, dtype=torch.bool)
+    previous_grade = torch.zeros(5, dtype=torch.bool)
+    payments = []
+    for step in range(201):
+        watching = torch.full((5,), step > 0)
+        started = torch.full((5,), step == 0)
+        bad = was_bad | ((first_bad_step <= step) & watching)
+        payments.append(handoff_cost_due(watching, was_bad, previous_grade, bad, started, grade))
+        was_bad, previous_grade = bad, grade.clone()
+    payments = torch.stack(payments)
+    assert payments.sum(0).tolist() == [1, 1, 1, 1, 0]
+    assert [payments[:, i].nonzero().flatten().tolist() for i in range(5)] == [[0], [7], [200], [11], []]
+    old_total = (~grade | was_bad).float() * -4
+    torch.testing.assert_close(payments.float().sum(0) * -4, old_total)
+
+
+def test_new_event_can_pay_again_after_the_existing_handoff_state_is_reset():
+    yes, no = torch.tensor([True]), torch.tensor([False])
+    assert handoff_cost_due(yes, no, yes, yes, no, yes).item()
+    assert not handoff_cost_due(yes, yes, yes, yes, no, yes).item()
+    assert not handoff_cost_due(no, no, no, no, yes, yes).item()
+    assert handoff_cost_due(yes, no, yes, yes, no, yes).item()
 
 
 def test_final_event_is_counted_once_and_reasons_are_independent():

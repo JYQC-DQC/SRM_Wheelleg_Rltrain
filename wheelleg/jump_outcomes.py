@@ -2,6 +2,14 @@
 
 import torch
 
+HANDOFF_COST_TIMING = "first_known_failure"
+
+
+def handoff_cost_due(watching, was_bad, previous_grade, stability_failed, started, new_grade):
+    # Grade failure is known at entry; otherwise the first latched observation failure pays it.
+    # Existing grade/bad state already identifies payment, so no extra hidden state is needed.
+    return (watching & ~was_bad & previous_grade & stability_failed) | (started & ~new_grade)
+
 
 class JumpOutcomeTracker:
     fields = (
