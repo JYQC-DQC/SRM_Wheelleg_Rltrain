@@ -59,8 +59,8 @@ def _closed_stair_mesh(edges, tops, bottom, width) -> trimesh.Trimesh:
     return mesh
 
 
-def _pyramid_mesh(size, layout, height, down, ground, lip) -> tuple[trimesh.Trimesh, float]:
-    """Watertight rectangular rings, including an optional raised rim on each high tread."""
+def _pyramid_mesh(size, layout, height, down, lip) -> tuple[trimesh.Trimesh, float]:
+    """Terrain surface only: apron, risers, treads (with optional lips) and center deck."""
     sx, sy = size
     lift, depth = lip or (0.0, 0.0)
     if height <= lift:
@@ -79,12 +79,10 @@ def _pyramid_mesh(size, layout, height, down, ground, lip) -> tuple[trimesh.Trim
             inner = layout.platform_half_width_m if i == len(risers) - 1 else half - depth
             rings.extend(((inner, inner, crest), (inner, inner, new_z)))
         z = new_z
-    bottom = min(0.0, z) - ground
-    rings.insert(0, (sx / 2, sy / 2, bottom))
     vertices = [
         (sx / 2 + dx * x, sy / 2 + dy * y, z) for x, y, z in rings for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
     ]
-    faces = [(0, 2, 1), (0, 3, 2)]
+    faces = []
     for i in range(len(rings) - 1):
         for j in range(4):
             a, b = 4 * i + j, 4 * i + (j + 1) % 4
@@ -111,6 +109,14 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         raise ValueError(f"Unknown SHU mixed terrain profile: {kind}")
     if kind == "rough":
         raise ValueError("rough uses Isaac Lab HfRandomUniformTerrainCfg, not the custom mesh builder")
+    if kind in STAIR_PROFILES:
+        down = kind.endswith("_down")
+        depth = cfg.stair_lip[1] if cfg.stair_lip else 0.0
+        layout = natural_pyramid_layout(cfg.size, p, down=down, lip_width_m=depth)
+        height = p["step_height_range_m"][0] + difficulty * np.ptp(p["step_height_range_m"])
+        mesh, deck_z = _pyramid_mesh(cfg.size, layout, height, down, cfg.stair_lip)
+        return [mesh], np.array((sx / 2, sy / 2, deck_z))
+
     ground = p["ground_thickness_m"]
     meshes = []
 
@@ -119,13 +125,6 @@ def mixed_terrain(difficulty: float, cfg) -> tuple[list, np.ndarray]:
         mesh.apply_translation(((x0 + x1) / 2, (y0 + y1) / 2, (top + bottom) / 2))
         meshes.append(mesh)
 
-    if kind in STAIR_PROFILES:
-        down = kind.endswith("_down")
-        depth = cfg.stair_lip[1] if cfg.stair_lip else 0.0
-        layout = natural_pyramid_layout(cfg.size, p, down=down, lip_width_m=depth)
-        height = p["step_height_range_m"][0] + difficulty * np.ptp(p["step_height_range_m"])
-        mesh, deck_z = _pyramid_mesh(cfg.size, layout, height, down, ground, cfg.stair_lip)
-        return [mesh], np.array((sx / 2, sy / 2, deck_z))
     if kind == "grid":
         # SCUT agent_world/terrains/height_field.py: mesh_grid_bars_terrain (frozen tiny_step_rot).
         # Count and width use separate random draws, not the row difficulty used for height.

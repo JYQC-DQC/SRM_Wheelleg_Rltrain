@@ -169,7 +169,6 @@ def settings():
                 row_range=[0, 2],
                 command_mode="traverse" if name in STAIR_PROFILES else "free",
                 geometry=dict(
-                    ground_thickness_m=0.1,
                     first_edge_x_m=1.4,
                     step_width_m=0.30,
                     step_height_range_m=(0.10, 0.23),
@@ -246,8 +245,14 @@ def test_natural_pyramid_has_exact_clear_center_and_full_riser_pitch(terrain_mod
     geometry["first_edge_x_m"] = border
     cfg = SimpleNamespace(size=size, profile=name, parameters=geometry, stair_lip=lip)
     (mesh,), origin = terrain_module.mixed_terrain(1.0, cfg)
-    assert mesh.is_watertight and mesh.is_winding_consistent and mesh.volume > 0
+    # No underside or perimeter skirt: the only open edges are the four outer apron edges at z=0.
+    assert not mesh.is_watertight and mesh.is_winding_consistent
+    assert (mesh.face_normals[:, 2] >= 0).all()
+    boundary = mesh.edges_unique[np.bincount(mesh.edges_unique_inverse) == 1]
+    assert len(boundary) == 4
     sx, sy = size
+    corners = mesh.vertices[np.unique(boundary)]
+    assert set(map(tuple, corners)) == {(x, y, 0) for x in (0, sx) for y in (0, sy)}
     down = name == "pyramid_down"
     count = counts[lip is not None]
     assert tuple(origin[:2]) == (sx / 2, sy / 2)

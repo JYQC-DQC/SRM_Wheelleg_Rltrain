@@ -20,7 +20,7 @@ def p1_terrain():
         if profile["row_range"] is None:
             profile["row_range"] = [0, settings["rows"] - 1]
         if name in STAIR_PROFILES:
-            profile["geometry"]["ground_thickness_m"] = 0.10
+            assert "ground_thickness_m" not in profile["geometry"]
     return settings
 
 
