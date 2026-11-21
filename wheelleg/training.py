@@ -75,6 +75,10 @@ _SHU_COMMANDS = (
 )
 _SHU_CONTACT = ("contact_force_n", "wheel_contact_force_n", "support_force_n", "release_s")
 _SHU_CONTACT_BODIES = ("guide_body_names", "leg_body_names")
+_P1_MASS_LEGS = "mass_randomized_leg_body_names"
+_P1_MASS_FIELDS = ("base_mass_scale", "limb_mass_scale", "inertia_scale", "com_offset_m")
+_P1_MATERIAL_GROUPS = ("base", "guide")
+_P1_MATERIAL_FIELDS = ("static_friction", "dynamic_friction", "restitution")
 _RESET_MODE = "planar_rear_knee_coaxial_v1"
 _RESET_SIGNS = {"canonical_to_asset_sign": 14, "knee_rotation_sign": 2, "extension_sign": 2}
 _RESET_PAIRS = ("fixed_pin_xz_m", "knee_pivot_xz_m", "moving_pin_knee0_xz_m", "slider_safe_range_m")
@@ -146,6 +150,7 @@ def _asset_name_fields(task):
     if TASKS[task].policy == "p1":
         fields.update(dict.fromkeys(_SHU_CONTACT_BODIES))
         fields["shu_leg_reset_joint_names"] = 12
+        fields[_P1_MASS_LEGS] = None
     if task == "p3-tunnel":
         fields["collision_body_names"] = None
     return fields
@@ -166,6 +171,15 @@ def _validate_asset_names(cfg):
             for name in known
         ) or len(set(known)) != len(known):
             raise ValueError(f"robot.asset.{key}: expected distinct literal USD names, not patterns")
+    if TASKS[cfg.task].policy == "p1":
+        base = cfg.asset.get("base_body_name")
+        wheels = set(cfg.asset.get("wheel_body_names") or ()) - {None}
+        guides = set(cfg.asset.get("guide_body_names") or ()) - {None}
+        legs = set(cfg.asset.get(_P1_MASS_LEGS) or ()) - {None}
+        if base in wheels or base in guides or wheels & guides:
+            raise ValueError("robot.asset: P1 base_body_name, wheel_body_names and guide_body_names must be disjoint")
+        if legs & (wheels | guides | {base}):
+            raise ValueError(f"robot.asset.{_P1_MASS_LEGS}: exclude the base, main wheels and guide wheels")
     if cfg.task == "p3-tunnel":
         names = cfg.asset.get("collision_body_names")
         boxes = (cfg.stage.get("tunnel") or {}).get("collision_bounds_m")
@@ -227,6 +241,17 @@ class TrainingConfig:
                 asset.pop(key, None)
             asset.setdefault("termination_contact_body_names", None)
         asset.update(_required(self.asset, _asset_name_fields(self.task)))
+        randomization = dict(shared["randomization"])
+        if family == "p1" and not evaluation:
+            randomization.update(_required(randomization, (*_P1_MASS_FIELDS, *_P1_MATERIAL_FIELDS[:2])))
+            materials = randomization.get("p1_materials") or {}
+            randomization["p1_materials"] = {
+                group: _required(materials.get(group) or {}, _P1_MATERIAL_FIELDS) for group in _P1_MATERIAL_GROUPS
+            }
+        else:
+            randomization.pop("p1_materials", None)
+            asset.pop(_P1_MASS_LEGS, None)
+        shared["randomization"] = randomization
         if self.task == "p2-spin":
             stage.pop("hardware_spin_limit_rad_s", None)  # Deployment sign-off, not a simulation limit.
         stage.update(_required(self.stage, _SHU_STAGE.get(self.task, ())))
@@ -414,6 +439,7 @@ def _validate_training(cfg: TrainingConfig) -> None:
         if type(value) not in (float, int) or not isfinite(value) or value <= 0:
             raise ValueError(f"training.numerical_safety.{key} must be finite and positive")
     if TASKS[cfg.task].policy == "p1":
+        _validate_p1_randomization(cfg)
         duration = cfg.shared["randomization"]["external_wrench_duration_s"]
         if type(duration) not in (float, int) or not isfinite(duration) or duration <= 0:
             raise ValueError("external_wrench_duration_s must be finite and positive")
@@ -587,6 +613,44 @@ def _values(value, key, length):
         if x is not None and (type(x) not in (float, int) or not isfinite(x)):
             raise ValueError(f"{key}: expected finite numbers or null")
     return [x for x in value if x is not None]
+
+
+def _validate_p1_randomization(cfg: TrainingConfig) -> None:
+    randomization = cfg.shared["randomization"]
+    prefix = "robot.training.randomization"
+    for key in _P1_MASS_FIELDS:
+        if randomization.get(key) is None:
+            continue
+        path = f"{prefix}.{key}"
+        if key == "com_offset_m":
+            if any(v < 0 for v in _values(randomization[key], path, 3)):
+                raise ValueError(f"{path}: expected nonnegative XYZ offset magnitudes")
+        else:
+            vals = _values(randomization[key], path, 2)
+            if any(v <= 0 for v in vals) or (len(vals) == 2 and vals[0] > vals[1]):
+                raise ValueError(f"{path}: expected an ordered positive scale range")
+    materials = randomization.get("p1_materials")
+    if materials is not None and (
+        not isinstance(materials, MappingProxyType) or set(materials) - set(_P1_MATERIAL_GROUPS)
+    ):
+        raise ValueError(f"{prefix}.p1_materials: expected a mapping of base and guide materials")
+    groups = [(prefix, randomization)]
+    groups.extend((f"{prefix}.p1_materials.{group}", (materials or {}).get(group)) for group in _P1_MATERIAL_GROUPS)
+    for path, group in groups:
+        if group is None:
+            continue
+        if not isinstance(group, MappingProxyType):
+            raise ValueError(f"{path}: expected a material mapping")
+        fields = _P1_MATERIAL_FIELDS[:2] if path == prefix else _P1_MATERIAL_FIELDS
+        for key in fields:
+            if group.get(key) is None:
+                continue
+            vals = _values(group[key], f"{path}.{key}", 2)
+            if any(v < 0 or (key == "restitution" and v > 1) for v in vals) or (len(vals) == 2 and vals[0] > vals[1]):
+                raise ValueError(f"{path}.{key}: expected an ordered nonnegative range, restitution at most 1")
+        static, dynamic = group.get("static_friction"), group.get("dynamic_friction")
+        if static and dynamic and static[0] is not None and dynamic[0] is not None and dynamic[0] > static[0]:
+            raise ValueError(f"{path}.dynamic_friction: its lower bound must not exceed the static lower bound")
 
 
 def _validate_reset_map(cfg):

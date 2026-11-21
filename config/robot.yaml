@@ -42,6 +42,8 @@ asset:
   shu_leg_reset_joint_names: null
   guide_body_names: null
   leg_body_names: null
+  # P1 startup mass targets from the USD, independent of the leg contact/termination list.
+  mass_randomized_leg_body_names: null
   termination_contact_body_names: null
   initial_root_position_m: [0.0, 0.0, null]
   initial_joint_positions_rad: null
@@ -167,8 +169,18 @@ training:
     base_mass_scale: [0.9, 1.3]
     limb_mass_scale: [0.9, 1.1]
     com_offset_m: [0.04, 0.02, 0.02]
+    # Main wheels. P1 uses separate material events for the chassis and guide wheels.
     static_friction: [0.5, 1.2]
     dynamic_friction: [0.4, 1.0]
+    p1_materials:
+      base:
+        static_friction: null
+        dynamic_friction: null
+        restitution: null
+      guide:
+        static_friction: null
+        dynamic_friction: null
+        restitution: null
     hip_static_friction_add: [0.25, 1.0]
     hip_dynamic_friction_add: [0.25, 1.0]
     hip_viscous_friction_add: [0.05, 0.2]

@@ -191,6 +191,66 @@ def test_literal_asset_names(tmp_path, key, bad):
         load_training("p2-spin", write(tmp_path / "r.yaml", r), policy("p2"))
 
 
+@pytest.mark.parametrize("task", list(TASKS))
+def test_pending_p1_randomization_only_blocks_p1_training(task):
+    family = TASKS[task].policy
+    cfg = load_training(task, ROBOT, policy(family))
+    expected = {"robot.asset.mass_randomized_leg_body_names"} | {
+        f"robot.training.randomization.p1_materials.{group}.{field}"
+        for group in ("base", "guide")
+        for field in ("static_friction", "dynamic_friction", "restitution")
+    }
+    assert expected.intersection(cfg.missing()) == (expected if family == "p1" else set())
+    assert not expected.intersection(cfg.missing(evaluation=True))
+
+
+def test_p1_missing_material_entries_are_not_defaulted(tmp_path):
+    r = read(ROBOT)
+    del r["asset"]["mass_randomized_leg_body_names"]
+    del r["training"]["randomization"]["p1_materials"]
+    cfg = load_training("p1-flat", write(tmp_path / "r.yaml", r), policy("p1"))
+    with pytest.raises(ValueError, match=r"p1_materials\.guide\.restitution"):
+        cfg.require_ready()
+    assert "robot.asset.mass_randomized_leg_body_names" in cfg.missing()
+
+
+@pytest.mark.parametrize(
+    "names",
+    [["chassis"], ["wheel_l"], ["guide_l"], ["leg_a", "leg_a"], ["leg_.*"]],
+)
+def test_p1_mass_leg_names_must_be_literal_and_distinct_from_other_groups(tmp_path, names):
+    r = read(ROBOT)
+    r["asset"].update(
+        base_body_name="chassis",
+        wheel_body_names=["wheel_l", "wheel_r"],
+        guide_body_names=["guide_l"],
+        mass_randomized_leg_body_names=names,
+    )
+    with pytest.raises(ValueError, match="mass_randomized_leg_body_names"):
+        load_training("p1-landing", write(tmp_path / "r.yaml", r), policy("p1"))
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("static_friction", [-0.1, 1.0]),
+        ("static_friction", [0.8, 0.4]),
+        ("dynamic_friction", [0.5, 0.9]),
+        ("restitution", [0.0, 1.1]),
+    ],
+)
+def test_p1_material_ranges_are_validated_before_event_setup(tmp_path, key, value):
+    r = read(ROBOT)
+    r["training"]["randomization"]["p1_materials"]["guide"] = {
+        "static_friction": [0.4, 1.0],
+        "dynamic_friction": [0.1, 0.8],
+        "restitution": [0.0, 0.05],
+        key: value,
+    }
+    with pytest.raises(ValueError, match=rf"p1_materials\.guide\.{key}"):
+        load_training("p1-stairs", write(tmp_path / "r.yaml", r), policy("p1"))
+
+
 def test_partial_evidence_and_body_bounds(tmp_path):
     r = read(ROBOT)
     r["asset"]["collision_body_names"] = ["base", "wheel_left"]

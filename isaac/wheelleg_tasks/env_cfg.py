@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 
 from wheelleg.observation import POLICY_OBS_DIM
 from wheelleg.shu_terrain import mixed_columns, stair_lip_dimensions
+from wheelleg.tasks import TASKS
 from wheelleg.training import TrainingConfig, mutable
 
 from .events import randomize_inertia
@@ -185,7 +186,12 @@ def make_env_cfg(
     if not evaluation:
         r = physics["randomization"]
         base = SceneEntityCfg("robot", body_names=[asset["base_body_name"]])
-        limb_pattern = f"(?!{asset['base_body_name']}$).*"
+        p1 = TASKS[t.task].policy == "p1"
+        wheels = SceneEntityCfg("robot", body_names=list(asset["wheel_body_names"]))
+        if p1:
+            limb_names = [*asset["mass_randomized_leg_body_names"], *asset["wheel_body_names"]]
+        else:
+            limb_names = [f"(?!{asset['base_body_name']}$).*"]
         cfg.events = SimpleNamespace(
             base_mass=EventTermCfg(
                 func=mdp.randomize_rigid_body_mass,
@@ -200,7 +206,7 @@ def make_env_cfg(
                 func=mdp.randomize_rigid_body_mass,
                 mode="startup",
                 params={
-                    "asset_cfg": SceneEntityCfg("robot", body_names=[limb_pattern]),
+                    "asset_cfg": SceneEntityCfg("robot", body_names=limb_names),
                     "mass_distribution_params": tuple(r["limb_mass_scale"]),
                     "operation": "scale",
                 },
@@ -216,17 +222,36 @@ def make_env_cfg(
                     "com_range": {k: (-v, v) for k, v in zip("xyz", r["com_offset_m"], strict=True)},
                 },
             ),
-            material=EventTermCfg(
-                func=mdp.randomize_rigid_body_material,
-                mode="startup",
-                params={
-                    "asset_cfg": SceneEntityCfg("robot", body_names=list(asset["wheel_body_names"])),
-                    "static_friction_range": tuple(r["static_friction"]),
-                    "dynamic_friction_range": tuple(r["dynamic_friction"]),
-                    "restitution_range": (0.0, 0.0),
-                    "num_buckets": 64,
-                    "make_consistent": True,
-                },
-            ),
         )
+        materials = [("material", wheels, r["static_friction"], r["dynamic_friction"], (0.0, 0.0))]
+        if p1:
+            guide = SceneEntityCfg("robot", body_names=list(asset["guide_body_names"]))
+            for group_name, entity in (("base", base), ("guide", guide)):
+                material = r["p1_materials"][group_name]
+                materials.append(
+                    (
+                        f"{group_name}_material",
+                        entity,
+                        material["static_friction"],
+                        material["dynamic_friction"],
+                        material["restitution"],
+                    )
+                )
+        for name, entity, static_friction, dynamic_friction, restitution in materials:
+            setattr(
+                cfg.events,
+                name,
+                EventTermCfg(
+                    func=mdp.randomize_rigid_body_material,
+                    mode="startup",
+                    params={
+                        "asset_cfg": entity,
+                        "static_friction_range": tuple(static_friction),
+                        "dynamic_friction_range": tuple(dynamic_friction),
+                        "restitution_range": tuple(restitution),
+                        "num_buckets": 64,
+                        "make_consistent": True,
+                    },
+                ),
+            )
     return cfg
