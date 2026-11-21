@@ -17,6 +17,8 @@
 
 ## 核对底稿（参考，不是定案）
 
+- [P1 三阶段：逐项确认、出处、实装审计（2026-11-21）](P1_APPROVAL_AUDIT_20261121.md)
+
 - [平地三方基线](P1_FLAT_BASELINE_AUDIT_20261115.md)
 - [被动落地三方基线](P1_LANDING_BASELINE_AUDIT_20261116.md)
 
