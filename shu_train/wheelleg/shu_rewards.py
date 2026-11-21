@@ -5,6 +5,8 @@ from math import pi
 
 import torch
 
+from .tensor_ops import heading_forward_velocity
+
 DRIVE, AIR, CATCH, RISE, RELEASE = range(5)
 _LEGS = (0, 1, 3, 4)  # LF, LR, LW, RF, RR, RW (docs/INTERFACE.md)
 
@@ -131,7 +133,7 @@ def shu_reward_terms(
 
     vx_w, vy_w, vz_w = s["velocity_w"].unbind(-1)
     cy, sy = yaw.cos(), yaw.sin()
-    forward = vx_w * cy + vy_w * sy
+    forward = heading_forward_velocity(s["velocity_w"], yaw)
     # L1 depends on axes: use current yaw axes, not world XYZ or full tilted body axes.
     horizontal_l1 = forward.abs() + (vy_w * cy - vx_w * sy).abs()
     vx_error = forward - s["vx_cmd"]

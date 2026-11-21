@@ -464,6 +464,9 @@ def _validate_training(cfg: TrainingConfig) -> None:
     if TASKS[cfg.task].policy == "p1":
         _validate_p1_randomization(cfg)
         controls = cfg.settings.get("control_randomization") or {}
+        spring_bias = _values(controls.get("spring_bias_n"), "policy.training.control_randomization.spring_bias_n", 2)
+        if len(spring_bias) != 2 or spring_bias[0] > spring_bias[1]:
+            raise ValueError("policy.training.control_randomization.spring_bias_n: expected ordered bounds in newtons")
         for key in ("gain_scale", "output_scale"):
             path = f"policy.training.control_randomization.{key}"
             bounds = _values(controls.get(key), path, 2)

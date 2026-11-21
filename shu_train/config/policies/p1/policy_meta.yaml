@@ -96,6 +96,7 @@ training:
     height_wide_weight: 1.0
     height_gate_shape: 2.0
   control_randomization:
+    spring_bias_n: [-30.0, 30.0]  # independent L/R baseline offsets, held for the episode
     gain_scale: [0.9, 1.1]
     output_scale: [0.9, 1.1]
     action_delay_steps: [0, 5]  # 500 Hz physics, independently per training episode

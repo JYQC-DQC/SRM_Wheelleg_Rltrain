@@ -25,6 +25,7 @@ from shu_train.wheelleg.tasks import TASKS
 from shu_train.wheelleg.tensor_ops import (
     action_targets,
     clipped_component,
+    heading_forward_velocity,
     motor_torque,
     observation_noise,
     observation_tensor,
@@ -531,9 +532,13 @@ class WheelLegEnv(DirectRLEnv):
         force = self.contact_peaks[:, self.contact_wheels]
         contact = force > t.shared["airborne"]["contact_force_n"]
         height_target = self.commands.height[:, 0]
-        linear_error = data.root_lin_vel_b[:, 0] * pitch.cos() - self.commands.value[:, 0]
-        if t.task == "p3-tunnel":
-            linear_error = data.root_lin_vel_w[:, 0] - self.commands.value[:, 0]
+        if self.shu is not None:
+            measured_vx = heading_forward_velocity(data.root_lin_vel_w, yaw)
+        elif t.task == "p3-tunnel":
+            measured_vx = data.root_lin_vel_w[:, 0]
+        else:
+            measured_vx = data.root_lin_vel_b[:, 0] * pitch.cos()
+        linear_error = measured_vx - self.commands.value[:, 0]
         angular_error = data.root_ang_vel_b[:, 2] - self.commands.value[:, 2]
         height_error = base_height - height_target
         leg_vector = wheel_b - wheel_b.new_tensor(t.shared["hip_pivot_positions_b_m"])
@@ -1029,7 +1034,7 @@ class WheelLegEnv(DirectRLEnv):
                 (self.act_delay, r["action_delay_steps"]),
             ):
                 buffer.set_time_lag(torch.randint(bounds[0], bounds[1] + 1, (n,), device=d), ids)
-        self.spring_bias[ids] = uniform(r["spring_bias_n"], (n, 2), d)
+        self.spring_bias[ids] = uniform((p1_controls if p1_controls is not None else r)["spring_bias_n"], (n, 2), d)
         self.zero_bias[ids] = uniform(r["joint_zero_bias_rad"], (n, 4), d)
         self.imu_bias[ids] = uniform(r["imu_roll_pitch_bias_rad"], (n, 2), d)
         if self.shu is not None:

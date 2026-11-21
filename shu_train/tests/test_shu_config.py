@@ -216,6 +216,7 @@ def test_p1_motion_and_delay_contract(task):
     assert commands["height_duration_s"] == (2.0, 6.0)
     assert commands["segment_probabilities"][-1] == 0.15
     assert cfg.settings["control_randomization"]["action_delay_steps"] == (0, 5)
+    assert cfg.settings["control_randomization"]["spring_bias_n"] == (-30.0, 30.0)
     if task == "p1-flat":
         assert cfg.stage["initial_fraction"] == 0.25
     missing_eval = cfg.missing(evaluation=True)

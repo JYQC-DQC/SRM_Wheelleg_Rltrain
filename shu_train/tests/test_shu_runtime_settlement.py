@@ -68,3 +68,23 @@ def test_unknown_first_guide_touch_returns_truncation(runtime):
     assert not event.resolved[index] and e.shu.drop.events == 0
     e._get_rewards()
     assert e.shu.log.take()["Landing/all/unknown_guide_count"] == 1
+
+
+def test_p1_driving_error_does_not_charge_oblique_entry_pitch_or_vertical_motion(runtime):
+    from math import cos, radians, sin
+
+    e = transport.make_runtime(runtime, "p1-flat")
+    transport.reset(e, 32)
+    yaw, pitch = radians(25), radians(18)
+    cy, sy, cp, sp = cos(yaw / 2), sin(yaw / 2), cos(pitch / 2), sin(pitch / 2)
+    e.robot.root[:, 3:7] = torch.tensor([cy * cp, -sy * sp, cy * sp, sy * cp])
+    for cmd in (-1.0, 1.0):
+        e.commands.value[:, 0] = cmd
+        e.robot.root[:, 7:10] = torch.tensor([cmd * cos(yaw), cmd * sin(yaw), 2.0])
+        e.robot.refresh()
+        s = e._measure()
+        torch.testing.assert_close(s["linear_error"], torch.zeros_like(s["linear_error"]), atol=1e-6, rtol=0)
+        assert (s["velocity"][:, 0] - cmd).abs().min() > 0.1  # independent body-vx diagnostic remains distinct
+        e.robot.root[:, 7:9].neg_()
+        e.robot.refresh()
+        torch.testing.assert_close(e._measure()["linear_error"], torch.full_like(s["linear_error"], -2 * cmd))

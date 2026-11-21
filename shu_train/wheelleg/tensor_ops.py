@@ -110,6 +110,11 @@ def slew(current: torch.Tensor, target: torch.Tensor, rate: torch.Tensor | float
     return current + (target - current).clamp(-rate * dt, rate * dt)
 
 
+def heading_forward_velocity(velocity_w: torch.Tensor, yaw: torch.Tensor) -> torch.Tensor:
+    """Signed ground-plane speed along the actual chassis heading; independent of pitch and vertical velocity."""
+    return velocity_w[:, 0] * yaw.cos() + velocity_w[:, 1] * yaw.sin()
+
+
 def rotate_xy(vector: torch.Tensor, angle: torch.Tensor) -> torch.Tensor:
     c, s = angle.cos(), angle.sin()
     return torch.stack((c * vector[:, 0] - s * vector[:, 1], s * vector[:, 0] + c * vector[:, 1]), dim=-1)

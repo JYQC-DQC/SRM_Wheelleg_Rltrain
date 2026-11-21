@@ -23,6 +23,7 @@ from shu_train.wheelleg.shu_spawn import (
     sample_spawn_kinds,
 )
 from shu_train.wheelleg.shu_terrain import STAIR_PROFILES, mixed_columns
+from shu_train.wheelleg.tensor_ops import heading_forward_velocity
 
 PLATFORM_SPAWN_JITTER_M = 1.0
 
@@ -361,8 +362,7 @@ class ShuP1:
         terminated = ev.physical_failure | ev.rise_timeout | ev.numerical_failure | ev.invalid_birth
         if not e.commands_fixed or e.mixed_curriculum is not None:
             yaw = s["yaw"]
-            vw = s["velocity_w"]
-            forward = vw[:, 0] * yaw.cos() + vw[:, 1] * yaw.sin()
+            forward = heading_forward_velocity(s["velocity_w"], yaw)
 
             def criterion(kind, error, magnitude):
                 return (error <= self.error_floor + self.relative_error * magnitude).all(-1)
@@ -450,8 +450,7 @@ class ShuP1:
                 _, _, first_cmd, rim_sq_sum, rim_ticks = self.air_debug
                 first = ev.air_birth & (e._sim_step_counter - ev.born == e.training.robot.decimation)
                 first_cmd.copy_(torch.where(first, s["vx_cmd"], first_cmd))
-                vx, vy = s["velocity_w"][:, :2].unbind(-1)
-                forward = vx * yaw.cos() + vy * yaw.sin()
+                forward = heading_forward_velocity(s["velocity_w"], yaw)
                 rim_sq = (s["wheel_rim_speed"] - forward[:, None]).square().mean(-1)
                 use = (ev.reward_phase == AIR) & ~ev.numerical_failure & ~ev.invalid_birth & rim_sq.isfinite()
                 rim_sq_sum.add_(torch.where(use, rim_sq, 0))
