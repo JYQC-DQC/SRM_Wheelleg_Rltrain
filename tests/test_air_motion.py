@@ -6,6 +6,35 @@ from wheelleg.air_retraction import AirRetractionTracker
 from wheelleg.rewards import jump_air_leg_smoothness
 
 
+def test_reward_migration_does_not_allow_changed_height_or_frozen_actor():
+    from copy import deepcopy
+
+    from wheelleg.multi_actor import resume_contract_matches
+
+    stage = {
+        "clearance_jump": {"reward_overrides": {"jump_air_leg_smoothness": -0.08}},
+        "body_wheel_jump": {"air_leg_guard": {}},
+        "height_levels_m": [0.04, 0.0925],
+    }
+    saved = {"actor_bundle": {"frozen": "fixed"}, "jump_event_stage": stage}
+    current = deepcopy(saved)
+    current["jump_event_stage"]["clearance_jump"].update(
+        air_smoothness={"deadband_raw": 0.05, "quadratic_limit_raw": 0.5}
+    )
+    current["jump_event_stage"]["clearance_jump"]["reward_overrides"]["jump_air_leg_smoothness"] = -0.6
+    current["jump_event_stage"]["body_wheel_jump"]["air_leg_guard"].update(
+        tuck_extension_tolerance_m=0.01, tuck_extension_cost_per_m=4.0
+    )
+    assert not resume_contract_matches(saved, current)
+    assert resume_contract_matches(saved, current, air_motion_update=True)
+    bad = deepcopy(current)
+    bad["jump_event_stage"]["height_levels_m"] = [0.01]
+    assert not resume_contract_matches(saved, bad, air_motion_update=True)
+    bad = deepcopy(current)
+    bad["actor_bundle"]["frozen"] = "changed"
+    assert not resume_contract_matches(saved, bad, air_motion_update=True)
+
+
 def test_large_air_jerks_keep_costing_more_but_ground_is_free():
     state = {
         "jump": SimpleNamespace(

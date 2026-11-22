@@ -13,6 +13,9 @@ from wheelleg.training import load_training, runner_config
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SRM P1/P2/P3 with Isaac Lab 2.3.2 / rsl_rl 3.1.2")
     parser.add_argument("--handoff-duration", type=float, help="Post-handoff observation seconds; 0 ends at settle")
+    parser.add_argument(
+        "--air-motion-update", action="store_true", help="Explicitly migrate only air-motion reward settings"
+    )
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--robot", type=Path, default=Path("config/robot.yaml"))
     parser.add_argument("--policy", type=Path)
@@ -114,6 +117,8 @@ def main() -> None:
         parser.error("--handoff-vertical-speed requires an actor bundle")
     if args.handoff_duration is not None and args.actor_bundle is None:
         parser.error("--handoff-duration requires an actor bundle")
+    if args.air_motion_update and (not args.resume or args.actor_bundle is None):
+        parser.error("--air-motion-update requires a multi-actor --resume")
     from wheelleg.checkpoints import initialize_actor, require_target_runtime
 
     require_target_runtime()
@@ -143,6 +148,7 @@ def main() -> None:
         restart_jump_level=args.restart_jump_level,
         handoff_vertical_speed_override=args.handoff_vertical_speed,
         handoff_duration_override=args.handoff_duration,
+        air_motion_reward_update=args.air_motion_update,
         allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
@@ -218,6 +224,7 @@ def main() -> None:
                     restart_command_curriculum=args.command_fraction is not None,
                     handoff_vertical_speed=args.handoff_vertical_speed,
                     handoff_duration=args.handoff_duration,
+                    air_motion_update=args.air_motion_update,
                 )
                 if bundle is not None:
                     manifest["previous_handoff_failure_cost_timing"] = restored.get(
