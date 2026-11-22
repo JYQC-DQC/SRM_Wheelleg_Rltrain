@@ -274,6 +274,19 @@ stages:
         retract_base_threshold_m: 0.01
         retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
     clearance_jump:
+      landing_guidance:
+        retention_frames: 3  # Last 30 ms at the 100 Hz policy rate, never the flight maximum.
+        tuck_length_m: 0.17
+        prepare_length_m: 0.28
+        length_sigma_m: 0.02
+        min_touch_speed_m_s: 0.20
+        stop_speed_m_s: 0.05
+        path_cost_per_s: 0.30
+        clearance_cost_per_s: 0.30
+        clearance_margin_m: 0.03
+        full_success_bonus: 1.25
+        retained_bonus: 0.25
+        stop_bonus: 0.25
       crouch_guidance:
         start_level: 5  # The sampled event is L5 (25 cm) or higher, including review samples.
         target_leg_length_m: 0.18
@@ -291,7 +304,7 @@ stages:
         flight_scale: 0.5
         linear_progress_bonus: 0.15
         yaw_progress_bonus: 0.20
-      takeoff_velocity_hint_m_s: 2.0  # Supported upward-speed shaping, independent of the wheel clearance target.
+      takeoff_velocity_hint_m_s: 2.0  # Legacy fallback only; landing_guidance uses the geometry/energy reference.
       takeoff_response_scale_s: 0.60  # Soft response bonus, not a takeoff deadline.
       tuck_end_vz_m_s: 0.25  # Descent must be confirmed AND the body must have dropped from its measured apex.
       prepare_drop_fraction: 0.30  # Of observed body rise since confirmed liftoff; no upper cap.
@@ -301,12 +314,14 @@ stages:
       recovery_vx_error_m_s: 0.5  # Soft recovery objective, not a hard speed gate.
       fast_touchdown_vz_m_s: 2.8  # Only charge unusually fast downward base speed at first contact.
       reward_overrides:
+        jump_apex: 1.0  # Remaining budget goes to full-outcome and measured landing quality.
+        jump_prepare: 0.0  # Replaced by retained extension at actual first contact.
         jump_liftoff_progress: 0.15  # Per L1 attempt, capped at the takeoff clearance threshold.
         jump_tuck: 0.0
         jump_tuck_progress: 0.5  # Maximum per attempt, independent of flight duration.
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
         jump_air_leg_smoothness: -0.6  # Whole-flight jerk cost with an unbounded linear tail.
-        jump_landing: 1.75
+        jump_landing: 1.0  # Safety landing remains valuable even for height-short jumps.
         jump_takeoff_response: 0.20  # Maximum one-shot bonus; only for a full jump success.
         jump_settle_response: 0.35  # Clean landing only, independent of height; about +0.25 at 0.8 s.
         jump_landing_recovery: -1.2

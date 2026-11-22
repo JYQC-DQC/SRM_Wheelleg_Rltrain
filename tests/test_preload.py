@@ -102,7 +102,7 @@ def test_jump_event_uses_sampled_l5_target_and_keeps_fixed_feature_count():
     ids = torch.tensor([0])
     event.reset(ids)
     event.remaining[:] = 1
-    with pytest.raises(ValueError, match="both leg lengths"):
+    with pytest.raises(ValueError, match="leg lengths"):
         event.trigger(torch.tensor([1.0]), torch.tensor([0.30]), torch.tensor([True]), require_trigger_time=False)
     event.trigger(
         torch.tensor([1.0]),
@@ -192,6 +192,7 @@ def test_actual_environment_pays_only_final_full_success_without_dt_scaling():
     guide.added_stroke_m[:] = 0.03
     env.jump = SimpleNamespace(
         preload=guide,
+        landing_guide=None,
         finished=torch.ones(5, dtype=torch.bool),
         landing_pulse=torch.tensor([True, True, True, True, False]),
     )

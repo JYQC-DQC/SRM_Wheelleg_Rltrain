@@ -147,6 +147,34 @@ class WheelLegRunner(OnPolicyRunner):
                     if events and field != "events":
                         self.writer.add_scalar(f"JumpOutcome/{name}/{field}_rate", value / events, iteration)
             env.outcome_tracker.counts.zero_()
+            if env.jump.landing_guide is not None:
+                fields = (
+                    "request_return",
+                    "retained_extension",
+                    "first_stop_error_m",
+                    "wheel_force_peak_norm_n",
+                    "minimum_chassis_clearance_m",
+                    "buffer_path_return",
+                    "buffer_clearance_return",
+                    "retained_return",
+                    "stop_quality_return",
+                    "full_success_return",
+                )
+                for name, row in zip(("stationary", "moving"), env.iteration_landing_stats.tolist()):
+                    count, stopped, touched = row[0], row[11], row[12]
+                    self.writer.add_scalar(f"LandingGuide/{name}/events", count, iteration)
+                    self.writer.add_scalar(f"LandingGuide/{name}/first_stop_events", stopped, iteration)
+                    for index, (field, value) in enumerate(zip(fields, row[1:11])):
+                        divisor = stopped if index == 2 else touched if index in (1, 3, 4) else count
+                        if divisor:
+                            self.writer.add_scalar(f"LandingGuide/{name}/{field}", value / divisor, iteration)
+                request_counts = env.iteration_landing_stats[:, 0].tolist()
+                env.iteration_landing_stats.zero_()
+                for term, values in env.iteration_request_terms.items():
+                    for name, value, count in zip(("stationary", "moving"), values.tolist(), request_counts):
+                        if count:
+                            self.writer.add_scalar(f"JumpRequest/{name}/{term}", value / count, iteration)
+                    values.zero_()
             if env.jump.preload is not None:
                 for name, row in zip(("stationary", "moving"), env.iteration_preload_stats.tolist()):
                     count, qualified, score, stroke, paid, bonus = row
@@ -314,6 +342,7 @@ class WheelLegRunner(OnPolicyRunner):
         handoff_duration: float | None = None,
         air_motion_update: bool = False,
         crouch_guidance_update: bool = False,
+        landing_guidance_update: bool = False,
     ) -> dict:
         """restart_command_curriculum: the caller restarts the command curriculum, so its saved state is not needed,
         and a landing air-height curriculum missing from an older checkpoint starts at its first level."""
@@ -328,6 +357,7 @@ class WheelLegRunner(OnPolicyRunner):
             handoff_duration,
             air_motion_update,
             crouch_guidance_update,
+            landing_guidance_update,
         ):
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"

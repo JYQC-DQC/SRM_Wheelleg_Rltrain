@@ -225,7 +225,7 @@ class JumpSim(WheelLegSim):
         if self.body_wheel_jump:
             body_clearance, _, _ = self._jump_geometry()
             geometry["body_clearance_m"] = self.jump.elapsed.new_tensor([body_clearance])
-        if self.jump.preload is not None:
+        if self.jump.preload is not None or self.jump.landing_guide is not None:
             rot = self.data.xmat[self.base].reshape(3, 3)
             wheel_b = (self.data.xpos[self.wheel_ids] - self.data.xpos[self.base]) @ rot
             leg = wheel_b - np.asarray(self.cfg.shared["hip_pivot_positions_b_m"])
@@ -399,7 +399,7 @@ class JumpSim(WheelLegSim):
                 body_clearance_m=self.jump.elapsed.new_tensor([info["body_clearance_m"]]),
                 leg_angle_rad=self.jump.elapsed.new_tensor(info["leg_angle_rad"][None]),
             )
-            if self.jump.air_guard is not None or self.jump.preload is not None:
+            if self.jump.air_guard is not None or self.jump.preload is not None or self.jump.landing_guide is not None:
                 rot = self.data.xmat[self.base].reshape(3, 3)
                 wheel_b = (self.data.xpos[self.wheel_ids] - self.data.xpos[self.base]) @ rot
                 delta = wheel_b - np.asarray(self.cfg.shared["hip_pivot_positions_b_m"])

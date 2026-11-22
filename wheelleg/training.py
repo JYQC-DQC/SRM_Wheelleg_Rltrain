@@ -1078,6 +1078,24 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError("jump_settle_response must be finite and nonnegative")
         if "clearance_jump" in cfg.stage:
             clearance = cfg.stage["clearance_jump"]
+            if "landing_guidance" in clearance:
+                guide = clearance["landing_guidance"]
+                if type(guide["retention_frames"]) is not int or guide["retention_frames"] < 1:
+                    raise ValueError("landing_guidance.retention_frames must be a positive integer")
+                for key in ("tuck_length_m", "prepare_length_m", "length_sigma_m", "min_touch_speed_m_s",
+                            "stop_speed_m_s", "path_cost_per_s", "clearance_cost_per_s", "clearance_margin_m",
+                            "full_success_bonus", "retained_bonus", "stop_bonus"):
+                    if not isfinite(guide[key]) or guide[key] <= 0:
+                        raise ValueError(f"landing_guidance.{key} must be positive and finite")
+                weights = clearance["reward_overrides"]
+                budget = weights["jump_apex"] + weights["jump_landing"] + sum(
+                    guide[k] for k in ("full_success_bonus", "retained_bonus", "stop_bonus")
+                )
+                if (guide["tuck_length_m"] != cfg.stage["tuck_leg_length_m"] or
+                    guide["prepare_length_m"] != cfg.stage["landing_leg_length_m"] or
+                    not 0 < guide["stop_speed_m_s"] < guide["min_touch_speed_m_s"] or
+                    weights["jump_prepare"] != 0 or budget > 3.75 or "body_wheel_jump" not in cfg.stage):
+                    raise ValueError("landing_guidance requires matched geometry and a bounded redistributed budget")
             if "crouch_guidance" in clearance:
                 guide = clearance["crouch_guidance"]
                 levels = cfg.stage.get("height_levels_m", ())

@@ -2,6 +2,7 @@ import torch
 
 from .air_retraction import AirRetractionTracker
 from .commands import uniform
+from .landing_guidance import LandingGuidance
 from .preload import PreloadGuide
 
 FEATURES = 16
@@ -33,6 +34,8 @@ class JumpEvent:
         self.clearance_training = settings.get("clearance_jump")
         self.body_wheel = settings.get("body_wheel_jump")
         preload = (self.clearance_training or {}).get("crouch_guidance")
+        landing = (self.clearance_training or {}).get("landing_guidance")
+        self.landing_guide = None if landing is None else LandingGuidance(landing, count, device)
         self.preload = (
             None
             if preload is None
@@ -44,6 +47,7 @@ class JumpEvent:
         self.next_trigger = torch.zeros_like(self.elapsed)
         self.height = torch.zeros_like(self.elapsed)
         self.start_z = torch.zeros_like(self.elapsed)
+        self.current_z = torch.zeros_like(self.elapsed)
         self.apex_z = torch.zeros_like(self.elapsed)
         self.peak_wheel_clearance = torch.zeros_like(self.elapsed)
         self.start_body_clearance = torch.zeros_like(self.elapsed)
@@ -124,6 +128,8 @@ class JumpEvent:
         self.quality_paid = self.active.clone()
 
     def reset(self, ids: torch.Tensor, *, enabled: torch.Tensor | None = None) -> None:
+        if self.landing_guide is not None:
+            self.landing_guide.reset(ids)
         if self.preload is not None:
             self.preload.reset(ids)
         if self.liftoff_feedback:
@@ -212,6 +218,10 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.landing_guide is not None:
+            if leg_length_m is None:
+                raise ValueError("landing_guidance requires frozen Landing leg lengths at the press")
+            self.landing_guide.begin(ids, leg_length_m)
         if self.preload is not None:
             if leg_length_m is None:
                 raise ValueError("crouch_guidance requires both leg lengths at the jump request")
@@ -272,6 +282,7 @@ class JumpEvent:
             else target_height[ids]
         )
         self.start_z[ids] = z[ids]
+        self.current_z[ids] = z[ids]
         self.apex_z[ids] = z[ids]
 
     def _reset_liftoff_feedback(self, ids: torch.Tensor) -> None:
@@ -301,6 +312,13 @@ class JumpEvent:
         self.finished.zero_()
         self.failure_pulse.zero_()
         self.elapsed += dt * self.active
+        self.current_z.copy_(z)
+        if self.landing_guide is not None:
+            if leg_length_m is None:
+                raise ValueError("landing_guidance requires both measured leg lengths")
+            self.landing_guide.update(
+                dt, self.active, self.took_off, self.preparing, contact, leg_length_m, vz, self.last_air_vz
+            )
         if self.preload is not None:
             if leg_length_m is None:
                 raise ValueError("crouch_guidance requires supported leg-length samples")
@@ -660,6 +678,16 @@ class JumpEvent:
             prepare = flight & self.preparing
             tuck = flight & ~self.preparing
             takeoff_velocity = torch.full_like(self.height, self.clearance_training["takeoff_velocity_hint_m_s"])
+            if self.landing_guide is not None:
+                # Upright virtual-leg estimate, not a measured actuator capacity or a hard speed limit.
+                cfg = self.body_wheel
+                tuck_gain = (self.landing_guide.flat.amin(-1) - self.settings["tuck_leg_length_m"]).clamp_min(0)
+                rise = torch.maximum(self.height - tuck_gain, self.height * cfg["body_rise_fraction"])
+                rise = torch.maximum(rise, self.height + cfg["body_margin_m"] - self.start_body_clearance)
+                remaining = (rise - (self.current_z - self.start_z)).clamp_min(0)
+                takeoff_velocity = torch.sqrt(2 * gravity * remaining).clamp_min(
+                    self.settings["takeoff_upward_velocity_m_s"]
+                )
         return {
             "crouch": crouch,
             "push": push,

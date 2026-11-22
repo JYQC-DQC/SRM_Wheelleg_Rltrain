@@ -52,8 +52,26 @@ class MultiActorEnv(WheelLegEnv):
             (2, len(self.handoff_reasons)), dtype=torch.long, device=self.device
         )
         self.iteration_preload_stats = torch.zeros((2, 6), device=self.device)
+        self.specialist_return = torch.zeros(n, device=self.device)
+        self.landing_term_sums = torch.zeros((n, 5), device=self.device)
+        self.landing_force_peak = torch.zeros(n, device=self.device)
+        self.landing_clearance_min = torch.full((n,), float("inf"), device=self.device)
+        self.iteration_landing_stats = torch.zeros((2, 13), device=self.device)
+        if self.jump.landing_guide is not None:
+            if bundle["handoff"]["duration_s"] != 0:
+                raise ValueError("landing_guidance requires settle-terminal multi-actor training")
+            for name in (
+                "jump_buffer_path",
+                "jump_buffer_clearance",
+                "jump_retained_extension",
+                "jump_stop_quality",
+                "jump_full_success",
+            ):
+                self.reward_sums[name] = torch.zeros(n, device=self.device)
         if self.jump.preload is not None:
             self.reward_sums["jump_preload_success"] = torch.zeros(n, device=self.device)
+        self.request_terms = {k: torch.zeros(n, device=self.device) for k in self.reward_sums}
+        self.iteration_request_terms = {k: torch.zeros(2, device=self.device) for k in self.reward_sums}
 
     def _get_observations(self):
         # Publish accepted requests before the actor is selected, so the first push is owned by Jump.
@@ -180,7 +198,51 @@ class MultiActorEnv(WheelLegEnv):
         return terminated, timeout
 
     def _get_rewards(self):
+        previous_terms = (
+            {k: v.clone() for k, v in self.reward_sums.items()} if self.jump.landing_guide is not None else {}
+        )
         rewards = super()._get_rewards()
+        landing = self.jump.landing_guide
+        if landing is not None:
+            cfg = landing.cfg
+            clean = self.jump.landing_pulse & ~self.jump.invalid & ~self.jump.failure_paid
+            full = self.handoff_pulse & ~self.handoff_failed
+            watching = (self.jump.elapsed > 0) & self.jump.first_touch
+            clearance = self.state["body_clearance_m"]
+            clearance_cost = (
+                ((cfg["clearance_margin_m"] - clearance).clamp_min(0) / cfg["clearance_margin_m"]).square()
+                * watching
+                * self.step_dt
+            )
+            terms = torch.stack(
+                (
+                    -cfg["path_cost_per_s"] * landing.path_cost,
+                    -cfg["clearance_cost_per_s"] * clearance_cost,
+                    cfg["retained_bonus"] * landing.retained * clean,
+                    cfg["stop_bonus"] * landing.stop_quality * clean,
+                    cfg["full_success_bonus"] * full,
+                ),
+                dim=-1,
+            )
+            rewards += terms.sum(-1)
+            self.landing_term_sums += terms
+            for name, value in zip(
+                (
+                    "jump_buffer_path",
+                    "jump_buffer_clearance",
+                    "jump_retained_extension",
+                    "jump_stop_quality",
+                    "jump_full_success",
+                ),
+                terms.unbind(-1),
+            ):
+                self.reward_sums[name] += value
+            self.landing_force_peak.copy_(
+                torch.maximum(self.landing_force_peak, self.state["wheel_force"].amax(-1) * watching)
+            )
+            self.landing_clearance_min.copy_(
+                torch.minimum(self.landing_clearance_min, torch.where(watching, clearance, float("inf")))
+            )
         guide = self.jump.preload
         if guide is not None:
             bonus = guide.success_bonus(self.handoff_pulse & ~self.handoff_failed)
@@ -213,10 +275,52 @@ class MultiActorEnv(WheelLegEnv):
         self.extras["evaluation"]["handoff_complete"] = self.handoff_pulse.clone()
         self.extras["evaluation"]["handoff_failed"] = self.handoff_failed.clone()
         self.extras["evaluation"]["handoff_cost_paid"] = self.handoff_cost_pulse.clone()
+        if landing is not None:
+            self.specialist_return += rewards * (self.jump.elapsed > 0)
+            final = self.handoff_pulse | (self.jump.finished & ~self.jump.landing_pulse)
+            final &= self.jump.elapsed > 0
+            ids = final.nonzero().flatten()
+            group = (self.commands.target[ids, 0] > 0).long()
+            for name, value in self.reward_sums.items():
+                if name not in self.request_terms:
+                    # Base reward channels are created lazily, including during inference-mode collection.
+                    with torch.inference_mode(False):
+                        self.request_terms[name] = torch.zeros(self.num_envs, device=self.device)
+                        self.iteration_request_terms[name] = torch.zeros(2, device=self.device)
+                increment = value - previous_terms[name] if name in previous_terms else value
+                self.request_terms[name] += increment * (self.jump.elapsed > 0)
+                self.iteration_request_terms[name].index_add_(0, group, self.request_terms[name][ids])
+            clearance = torch.where(torch.isfinite(self.landing_clearance_min), self.landing_clearance_min, 0)
+            stats = torch.cat(
+                (
+                    torch.stack(
+                        (
+                            torch.ones_like(rewards),
+                            self.specialist_return,
+                            landing.retained,
+                            landing.stop_error,
+                            self.landing_force_peak,
+                            clearance,
+                        ),
+                        dim=-1,
+                    ),
+                    self.landing_term_sums,
+                    landing.stopped[:, None],
+                    landing.touched[:, None],
+                ),
+                dim=-1,
+            )
+            self.iteration_landing_stats.index_add_(0, (self.commands.target[ids, 0] > 0).long(), stats[ids])
         return rewards
 
     def _reset_idx(self, ids):
         if hasattr(self, "handoff_left"):
+            self.specialist_return[ids] = 0
+            self.landing_term_sums[ids] = 0
+            self.landing_force_peak[ids] = 0
+            self.landing_clearance_min[ids] = float("inf")
+            for value in self.request_terms.values():
+                value[ids] = 0
             self.handoff_left[ids] = 0
             self.handoff_bad[ids] = False
             self.handoff_grade[ids] = False
