@@ -147,6 +147,18 @@ class WheelLegRunner(OnPolicyRunner):
                     if events and field != "events":
                         self.writer.add_scalar(f"JumpOutcome/{name}/{field}_rate", value / events, iteration)
             env.outcome_tracker.counts.zero_()
+            if env.jump.preload is not None:
+                for name, row in zip(("stationary", "moving"), env.iteration_preload_stats.tolist()):
+                    count, qualified, score, stroke, paid, bonus = row
+                    prefix = f"Preload/{name}"
+                    self.writer.add_scalar(f"{prefix}/eligible_events", count, iteration)
+                    self.writer.add_scalar(f"{prefix}/bonus_events", paid, iteration)
+                    self.writer.add_scalar(f"{prefix}/bonus_total", bonus, iteration)
+                    if count:
+                        self.writer.add_scalar(f"{prefix}/used_rate", qualified / count, iteration)
+                        self.writer.add_scalar(f"{prefix}/mean_score", score / count, iteration)
+                        self.writer.add_scalar(f"{prefix}/mean_added_stroke_m", stroke / count, iteration)
+                env.iteration_preload_stats.zero_()
             env.iteration_handoff_stability_failures.zero_()
             env.iteration_handoff_counts = torch.zeros_like(env.iteration_handoff_counts)
             self.alg.specialist_actions = torch.zeros_like(self.alg.specialist_actions)
@@ -301,6 +313,7 @@ class WheelLegRunner(OnPolicyRunner):
         handoff_vertical_speed: float | None = None,
         handoff_duration: float | None = None,
         air_motion_update: bool = False,
+        crouch_guidance_update: bool = False,
     ) -> dict:
         """restart_command_curriculum: the caller restarts the command curriculum, so its saved state is not needed,
         and a landing air-height curriculum missing from an older checkpoint starts at its first level."""
@@ -314,6 +327,7 @@ class WheelLegRunner(OnPolicyRunner):
             handoff_vertical_speed,
             handoff_duration,
             air_motion_update,
+            crouch_guidance_update,
         ):
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"

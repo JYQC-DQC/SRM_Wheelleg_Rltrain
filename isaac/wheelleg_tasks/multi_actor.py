@@ -51,6 +51,9 @@ class MultiActorEnv(WheelLegEnv):
         self.iteration_handoff_reasons = torch.zeros(
             (2, len(self.handoff_reasons)), dtype=torch.long, device=self.device
         )
+        self.iteration_preload_stats = torch.zeros((2, 6), device=self.device)
+        if self.jump.preload is not None:
+            self.reward_sums["jump_preload_success"] = torch.zeros(n, device=self.device)
 
     def _get_observations(self):
         # Publish accepted requests before the actor is selected, so the first push is owned by Jump.
@@ -178,6 +181,26 @@ class MultiActorEnv(WheelLegEnv):
 
     def _get_rewards(self):
         rewards = super()._get_rewards()
+        guide = self.jump.preload
+        if guide is not None:
+            bonus = guide.success_bonus(self.handoff_pulse & ~self.handoff_failed)
+            rewards += bonus
+            self.reward_sums["jump_preload_success"] += bonus
+            final = self.handoff_pulse | (self.jump.finished & ~self.jump.landing_pulse)
+            eligible = final & guide.eligible
+            qualified = eligible & (guide.used_score > 0)
+            stats = torch.stack(
+                (
+                    eligible.float(),
+                    qualified.float(),
+                    guide.used_score * eligible,
+                    guide.added_stroke_m * eligible,
+                    (bonus > 0).float(),
+                    bonus,
+                ),
+                dim=-1,
+            )
+            self.iteration_preload_stats.index_add_(0, (self.commands.target[:, 0] > 0).long(), stats)
         cost = self.handoff_cost_pulse.float() * self.actor_bundle["handoff"]["failure_cost"]
         rewards += cost
         self.iteration_handoff_cost_stats += torch.stack(

@@ -274,6 +274,14 @@ stages:
         retract_base_threshold_m: 0.01
         retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
     clearance_jump:
+      crouch_guidance:
+        start_level: 5  # The sampled event is L5 (25 cm) or higher, including review samples.
+        target_leg_length_m: 0.18
+        window_s: 0.25
+        support_dwell_s: 0.02
+        min_added_stroke_m: 0.02
+        min_body_drop_m: 0.01
+        max_bonus: 0.20  # Once, after full success; no credit for air tuck or landing compression.
       air_smoothness:
         deadband_raw: 0.05
         quadratic_limit_raw: 0.5

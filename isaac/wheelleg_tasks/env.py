@@ -411,6 +411,14 @@ class WheelLegEnv(DirectRLEnv):
                 physical_age = self.tunnel_episode_steps * self.step_dt
                 allowed = torch.where(obstacle, near, physical_age >= self.jump.next_trigger)
             geometry = {"body_clearance_m": self._jump_body_clearance()} if self.body_wheel_jump else {}
+            if self.jump.preload is not None:
+                data = self.robot.data
+                relative = data.body_pos_w[:, self.wheels] - data.root_pos_w[:, None]
+                wheel_b = quat_apply_inverse(
+                    data.root_quat_w[:, None].expand(-1, 2, -1).reshape(-1, 4), relative.reshape(-1, 3)
+                ).reshape(-1, 2, 3)
+                leg = wheel_b - wheel_b.new_tensor(t.shared["hip_pivot_positions_b_m"])
+                geometry["leg_length_m"] = leg[:, :, [0, 2]].norm(dim=-1)
             self.jump.trigger(
                 age,
                 self.robot.data.root_pos_w[:, 2],
@@ -960,7 +968,7 @@ class WheelLegEnv(DirectRLEnv):
             if self.jump_tracking is not None:
                 already_touched = self.jump.first_touch.clone()
             geometry = {k: s[k] for k in ("body_clearance_m", "leg_angle_rad")} if self.body_wheel_jump else {}
-            if self.jump.air_guard is not None:
+            if self.jump.air_guard is not None or self.jump.preload is not None:
                 geometry["leg_length_m"] = s["leg_length"]
             self.jump.update(
                 dt,

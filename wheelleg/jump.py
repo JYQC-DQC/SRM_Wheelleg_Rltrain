@@ -2,6 +2,7 @@ import torch
 
 from .air_retraction import AirRetractionTracker
 from .commands import uniform
+from .preload import PreloadGuide
 
 FEATURES = 16
 TUNNEL_FEATURES = 5
@@ -31,6 +32,12 @@ class JumpEvent:
         self.landing_settle_timeout_s = settings.get("landing_settle_timeout_s")
         self.clearance_training = settings.get("clearance_jump")
         self.body_wheel = settings.get("body_wheel_jump")
+        preload = (self.clearance_training or {}).get("crouch_guidance")
+        self.preload = (
+            None
+            if preload is None
+            else PreloadGuide(preload, settings["height_levels_m"][preload["start_level"] - 1], count, device)
+        )
         self.active = torch.zeros(count, dtype=torch.bool, device=device)
         self.remaining = torch.zeros(count, dtype=torch.long, device=device)
         self.elapsed = torch.zeros(count, device=device)
@@ -117,6 +124,8 @@ class JumpEvent:
         self.quality_paid = self.active.clone()
 
     def reset(self, ids: torch.Tensor, *, enabled: torch.Tensor | None = None) -> None:
+        if self.preload is not None:
+            self.preload.reset(ids)
         if self.liftoff_feedback:
             self._reset_liftoff_feedback(ids)
         if self.tuck_share is not None:
@@ -195,6 +204,7 @@ class JumpEvent:
         *,
         require_trigger_time: bool = True,
         body_clearance_m: torch.Tensor | None = None,
+        leg_length_m: torch.Tensor | None = None,
     ) -> None:
         start = ~self.active & (self.remaining > 0) & allowed
         if require_trigger_time:
@@ -202,6 +212,10 @@ class JumpEvent:
         ids = start.nonzero().flatten()
         if not len(ids):
             return
+        if self.preload is not None:
+            if leg_length_m is None:
+                raise ValueError("crouch_guidance requires both leg lengths at the jump request")
+            self.preload.begin(ids, leg_length_m, z)
         if self.liftoff_feedback:
             self._reset_liftoff_feedback(ids)
         if self.tuck_share is not None:
@@ -287,6 +301,10 @@ class JumpEvent:
         self.finished.zero_()
         self.failure_pulse.zero_()
         self.elapsed += dt * self.active
+        if self.preload is not None:
+            if leg_length_m is None:
+                raise ValueError("crouch_guidance requires supported leg-length samples")
+            self.preload.update(dt, self.active, self.elapsed, self.height, contact, leg_length_m, z)
         no_contact = ~contact.any(-1)
         can_takeoff = self.active & ~self.landed
         if self.clearance_training is None:

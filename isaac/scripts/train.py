@@ -16,6 +16,9 @@ def main() -> None:
     parser.add_argument(
         "--air-motion-update", action="store_true", help="Explicitly migrate only air-motion reward settings"
     )
+    parser.add_argument(
+        "--crouch-guidance-update", action="store_true", help="Explicitly migrate only supported crouch guidance"
+    )
     parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--robot", type=Path, default=Path("config/robot.yaml"))
     parser.add_argument("--policy", type=Path)
@@ -119,6 +122,10 @@ def main() -> None:
         parser.error("--handoff-duration requires an actor bundle")
     if args.air_motion_update and (not args.resume or args.actor_bundle is None):
         parser.error("--air-motion-update requires a multi-actor --resume")
+    if args.crouch_guidance_update and (not args.resume or args.actor_bundle is None):
+        parser.error("--crouch-guidance-update requires a multi-actor --resume")
+    if "crouch_guidance" in cfg.stage.get("clearance_jump", {}) and args.actor_bundle is None:
+        parser.error("crouch_guidance requires multi-actor full-outcome grading")
     from wheelleg.checkpoints import initialize_actor, require_target_runtime
 
     require_target_runtime()
@@ -149,6 +156,7 @@ def main() -> None:
         handoff_vertical_speed_override=args.handoff_vertical_speed,
         handoff_duration_override=args.handoff_duration,
         air_motion_reward_update=args.air_motion_update,
+        crouch_guidance_update=args.crouch_guidance_update,
         allow_unvalidated_baseline=args.allow_unvalidated_baseline,
         control_hz=cfg.robot.control_hz,
         policy_hz=cfg.robot.policy_hz,
@@ -225,6 +233,7 @@ def main() -> None:
                     handoff_vertical_speed=args.handoff_vertical_speed,
                     handoff_duration=args.handoff_duration,
                     air_motion_update=args.air_motion_update,
+                    crouch_guidance_update=args.crouch_guidance_update,
                 )
                 if bundle is not None:
                     manifest["previous_handoff_failure_cost_timing"] = restored.get(

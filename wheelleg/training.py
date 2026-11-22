@@ -1078,6 +1078,32 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError("jump_settle_response must be finite and nonnegative")
         if "clearance_jump" in cfg.stage:
             clearance = cfg.stage["clearance_jump"]
+            if "crouch_guidance" in clearance:
+                guide = clearance["crouch_guidance"]
+                levels = cfg.stage.get("height_levels_m", ())
+                if type(guide["start_level"]) is not int or not 1 <= guide["start_level"] <= len(levels):
+                    raise ValueError("crouch_guidance.start_level must name a sampled height level")
+                for key in (
+                    "target_leg_length_m",
+                    "window_s",
+                    "support_dwell_s",
+                    "min_added_stroke_m",
+                    "min_body_drop_m",
+                    "max_bonus",
+                ):
+                    if not isfinite(guide[key]) or guide[key] <= 0:
+                        raise ValueError(f"crouch_guidance.{key} must be finite and positive")
+                if not (
+                    cfg.stage["tuck_leg_length_m"] <= guide["target_leg_length_m"] < cfg.stage["push_leg_length_m"]
+                    and guide["support_dwell_s"] <= guide["window_s"] <= cfg.stage["event_duration_s"]
+                    and guide["min_body_drop_m"] <= guide["min_added_stroke_m"] < guide["target_leg_length_m"]
+                    and guide["max_bonus"] <= 0.2
+                    and clearance["reward_overrides"]["jump_crouch"] == 0
+                    and "motion_tracking" in clearance
+                ):
+                    raise ValueError(
+                        "crouch_guidance requires bounded success-only credit and a feasible preload window"
+                    )
             if "air_smoothness" in clearance:
                 smooth = clearance["air_smoothness"]
                 for key in ("deadband_raw", "quadratic_limit_raw"):

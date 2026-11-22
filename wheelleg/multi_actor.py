@@ -19,14 +19,28 @@ def resume_contract_matches(
     handoff_vertical_speed: float | None = None,
     handoff_duration: float | None = None,
     air_motion_update: bool = False,
+    crouch_guidance_update: bool = False,
 ) -> bool:
     if saved is None:
         return False
-    if handoff_vertical_speed is None and handoff_duration is None and not air_motion_update:
+    if (
+        handoff_vertical_speed is None
+        and handoff_duration is None
+        and not air_motion_update
+        and not crouch_guidance_update
+    ):
         return saved == current
     if "actor_bundle" not in saved or "actor_bundle" not in current:
         return False
     migrated = deepcopy(saved)
+    if crouch_guidance_update:
+        if "jump_event_stage" not in migrated or "jump_event_stage" not in current:
+            return False
+        previous = migrated["jump_event_stage"].get("clearance_jump", {})
+        stage = current["jump_event_stage"].get("clearance_jump", {})
+        if "crouch_guidance" not in stage:
+            return False
+        previous["crouch_guidance"] = deepcopy(stage["crouch_guidance"])
     if air_motion_update:
         if "jump_event_stage" not in migrated or "jump_event_stage" not in current:
             return False
