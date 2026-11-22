@@ -6,6 +6,8 @@
 
 本架构遵循 AGENTS.md 的冻结基础 Actor 约定。当前已接通 Landing/Jump 训练、Isaac 评测、MuJoCo 跳跃回放及分别导出 ONNX 的路径。
 
+MuJoCo 手动隧道验收使用启用碰撞的机器人几何边界，只要求与隧道水平区间重叠的部件越过顶面；全车越过后沿且落在后方地面才算成功。未到达隧道的后部、装饰网格和无碰撞连杆原点不作顶面净空判据。普通跳跃或交接成绩失败保留失败提示，但继续仿真并允许再次按空格；实际姿态/碰撞安全终止、数值异常和 X 急停仍要求 R 重置。此修改仅作用于本机回放，不改变云端训练验收。
+
 ## Actor 与固定输入合同
 
 `wheelleg/multi_actor.py` 的 ActorBank 通过名称和显式整数 ID 选择 Actor，可注册三个、四个或更多 Actor。`config/reference/scut_actor_bundle.yaml` 是本机 Landing 5800 / Jump 3400 的配置示例，路径指向已有下载文件。云端需填写云端对应的检查点与参数路径。

@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import yaml
 
-from wheelleg.jump import JumpEvent, TunnelTraversal, landing_rates_ok, tunnel_landing
+from wheelleg.jump import JumpEvent, TunnelTraversal, landing_rates_ok
 from wheelleg.jump_geometry import box_bottom_z, cylinder_bottom_z, sagittal_leg_angle
 from wheelleg.observation import MODE_HEIGHT_SCALE
 
@@ -24,6 +24,28 @@ sys.path.insert(0, str(ROOT / "sim2sim"))
 from build_model import build  # noqa: E402
 
 from sim2sim import NumpyActor, RunConfig, Spawn, WheelLegSim  # noqa: E402
+
+
+def replay_tunnel_check(traversal, low, high, site, flight, contact, wheel_clearance, margin, clearance):
+    """Score physical collision bounds, not link frames or decorative geometry."""
+    front, rear = high[:, 0].max(), low[:, 0].min()
+    inside_lane = low[:, 1].min() >= site["center_y_m"] - site["width_m"] / 2 + margin
+    inside_lane &= high[:, 1].max() <= site["center_y_m"] + site["width_m"] / 2 - margin
+    inside_lane = bool(inside_lane)
+    traversal.approached |= bool(front < site["start_x_m"])
+    reached = bool(front >= site["start_x_m"])
+    overlap = (high[:, 0] >= site["start_x_m"]) & (low[:, 0] <= site["end_x_m"])
+    invalid = not inside_lane or (reached and not bool(traversal.approached[0]))
+    if not bool(traversal.cleared[0]) and overlap.any():
+        invalid |= not flight or bool((low[overlap, 2] < site["height_m"] + clearance).any())
+    traversal.invalid |= invalid
+    traversal.entered |= reached and bool(traversal.approached[0]) and not bool(traversal.invalid[0])
+    traversal.cleared |= bool(
+        bool(traversal.entered[0]) and rear > site["end_x_m"] + margin and not bool(traversal.invalid[0])
+    )
+    landed_on_ground = bool(((np.abs(wheel_clearance) < clearance) | ~contact).all())
+    valid = bool(traversal.cleared[0]) and not bool(traversal.invalid[0]) and inside_lane and landed_on_ground
+    return torch.tensor([valid]), traversal.invalid.clone()
 
 
 def build_arena(flat: Path, output: Path, course: dict, friction: float) -> list[dict]:
@@ -264,6 +286,19 @@ class JumpSim(WheelLegSim):
         angles = sagittal_leg_angle(torch.from_numpy(d.xpos[self.wheel_ids] - hips_w), yaw)
         return float(body) - floor_z, wheel_bottoms.numpy() - floor_z, angles.numpy()
 
+    def _collision_bounds(self):
+        m, d = self.model, self.data
+        mujoco.mj_kinematics(m, d)
+        ids = np.flatnonzero(self.robot_body[m.geom_bodyid] & ((m.geom_contype != 0) | (m.geom_conaffinity != 0)))
+        rotation = d.geom_xmat[ids].reshape(-1, 3, 3)
+        center = d.geom_xpos[ids] + np.einsum("nij,nj->ni", rotation, m.geom_aabb[ids, :3])
+        extent = np.einsum("nij,nj->ni", np.abs(rotation), m.geom_aabb[ids, 3:])
+        cylinder = m.geom_type[ids] == mujoco.mjtGeom.mjGEOM_CYLINDER
+        axis = rotation[cylinder, :, 2]
+        radius, half_length = m.geom_size[ids[cylinder], :2].T
+        extent[cylinder] = np.abs(axis) * half_length[:, None] + radius[:, None] * np.sqrt(np.maximum(0, 1 - axis**2))
+        return center - extent, center + extent
+
     def _measure(self, command, height, peaks, saturated, inference_s, bad_action) -> dict:
         previous = self.termination_steps
         info = super()._measure(command, height, peaks, saturated, inference_s, bad_action)
@@ -321,7 +356,7 @@ class JumpSim(WheelLegSim):
             self.jump_result = "Landing handoff observation"
             if self.handoff_remaining <= 1e-8:
                 self.jump_result = "failed: Landing handoff" if self.handoff_bad else "success: Landing handoff stable"
-                info["terminated"] |= self.handoff_bad
+                # A failed score is not a physical safety termination in manual replay.
         if not bool(self.jump.active[0]):
             info["jump_result"] = self.jump_result
             return info
@@ -341,39 +376,18 @@ class JumpSim(WheelLegSim):
         valid, obstacle_hit = torch.tensor([True]), torch.tensor([False])
         site = self.test_site
         if site is not None and site["kind"] == "tunnel" and bool(self.jump.active[0]):
-            wheels = torch.tensor(self.data.xpos[self.wheel_ids][None], dtype=torch.float32)
-            bodies = torch.tensor(self.data.xpos[self.robot_body][None], dtype=torch.float32)
-            scalar = lambda value: torch.tensor([value], dtype=torch.float32)  # noqa: E731
             p = self.cfg.policy["stages"]["tunnel"]["tunnel"]
             flight = took_off and not bool(self.jump.landed[0]) and not info["wheel_contact"].any()
-            self.traversal.update(
-                wheels,
-                self.cfg.shared["wheel_radius_m"],
-                bodies,
-                scalar(site["start_x_m"]),
-                scalar(site["end_x_m"]),
-                scalar(site["height_m"]),
-                scalar(site["center_y_m"]),
-                site["width_m"] / 2,
+            valid, obstacle_hit = replay_tunnel_check(
+                self.traversal,
+                *self._collision_bounds(),
+                site,
+                flight,
+                info["wheel_contact"],
+                info["wheel_clearance"],
                 p["landing_margin_m"],
                 p["clearance_margin_m"],
-                torch.tensor([flight]),
-                torch.tensor([True]),
             )
-            valid = tunnel_landing(
-                wheels,
-                self.cfg.shared["wheel_radius_m"],
-                bodies,
-                scalar(site["end_x_m"]),
-                scalar(0.0),
-                p["landing_margin_m"],
-                p["clearance_margin_m"],
-                scalar(site["center_y_m"]),
-                site["width_m"] / 2,
-                contact=torch.tensor(info["wheel_contact"][None]),
-            )
-            valid &= self.traversal.cleared & ~self.traversal.invalid
-            obstacle_hit = self.traversal.invalid
         geometry = {}
         if self.body_wheel_jump:
             geometry = dict(
@@ -422,8 +436,7 @@ class JumpSim(WheelLegSim):
             else:
                 reason = f"not stable within {self.stage['landing_settle_timeout_s']:g} s of wheel contact"
             self.jump_result = f"failed: {reason}"
-            if self.handoff_cfg is not None:
-                info["terminated"] = True
+            # Keep the score, then allow the normal actor to continue. Only measured safety failures stop replay.
         elif bool(self.jump.landing_pulse[0]):
             target_ok = bool(self.jump.target_reached[0])
             self.jump_result = "success" if target_ok and self.takeoff_speed_ok else "landed: target not met"

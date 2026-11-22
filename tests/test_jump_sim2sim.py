@@ -224,6 +224,35 @@ def test_tunnel_roof_cannot_be_reported_as_success(playground):
     assert sim.jump_result.startswith("failed")
 
 
+def test_scoring_failure_does_not_freeze_manual_replay(playground, monkeypatch):
+    sim, sites, p = playground
+    player = JumpPlayer(sim, sites, p["controls"])
+    for _ in range(200):
+        player.step()
+    player.key(glfw.KEY_SPACE)
+    measure = sim._measure
+
+    def safe_measure(*args):
+        info = measure(*args)
+        info.update(terminated=False, numerical=False, nonwheel_contact=False)
+        return info
+
+    def fail_event(*args, **kwargs):
+        sim.jump.failure_pulse[:] = True
+        sim.jump.active[:] = False
+
+    monkeypatch.setattr(sim, "_measure", safe_measure)
+    monkeypatch.setattr(sim.jump, "update", fail_event)
+    # A bundle used to promote every event failure to a hard termination.
+    sim.handoff_cfg = {"duration_s": 0}
+    player.step()
+    assert sim.jump_result.startswith("failed") and not player.failed
+    before = sim.time
+    player.step()
+    assert sim.time > before
+    assert sim.press_jump(0.04)
+
+
 @pytest.mark.parametrize("values", [(float("nan"), 0.0, 0.0), (0.2, 3.01, 0.0), (0.2, 0.0, float("inf"))])
 def test_invalid_operator_targets_fail_at_input_boundary(playground, values):
     sim, sites, p = playground
