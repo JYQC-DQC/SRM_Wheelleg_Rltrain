@@ -293,6 +293,13 @@ def jump_tuck_progress(s, p):
 
 
 def jump_air_leg_smoothness(s, p):
+    settings = (s["jump"].clearance_training or {}).get("air_smoothness") if "jump" in s else None
+    if settings is not None:
+        # Linear tails keep charging large jerks without quadratic growth or a saturated ceiling.
+        change = (s["leg_action_second_difference"].abs() - settings["deadband_raw"]).clamp_min(0)
+        knee = settings["quadratic_limit_raw"]
+        cost = torch.where(change <= knee, change.square(), 2 * knee * change - knee**2)
+        return cost.mean(-1) * s["jump_ref"]["flight"]
     change = s["leg_action_second_difference"].square()
     return (1 - (1 + change).reciprocal()).mean(-1) * s["jump_ref"]["flight"]
 

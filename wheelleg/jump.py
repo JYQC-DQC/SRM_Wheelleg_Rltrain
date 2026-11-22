@@ -65,6 +65,11 @@ class JumpEvent:
             self.best_tuck = torch.zeros_like(self.elapsed)
             self.tuck_gain = torch.zeros_like(self.elapsed)
         if self.air_guard is not None:
+            self.tuck_extension = None
+            if "tuck_extension_cost_per_m" in self.air_guard:
+                self.tuck_extension = AirRetractionTracker(
+                    count, self.air_guard["tuck_extension_tolerance_m"], device
+                )
             self.retraction = AirRetractionTracker(count, self.air_guard["retract_tolerance_m"], device,
                                                   base_threshold_m=self.air_guard.get("retract_base_threshold_m"))
             multipliers = self.air_guard.get("retract_multipliers")
@@ -124,6 +129,8 @@ class JumpEvent:
             self.air_fold_cost[ids] = 0
             self.air_retract_cost[ids] = 0
             self.retraction.reset(ids)
+            if self.tuck_extension is not None:
+                self.tuck_extension.reset(ids)
         if self.band_width is not None:
             self.band_frames[ids] = 0
             self.band_scored_height[ids] = 0
@@ -204,6 +211,8 @@ class JumpEvent:
         if self.air_guard is not None:
             self.deepest_intrusion[ids] = 0
             self.retraction.reset(ids)
+            if self.tuck_extension is not None:
+                self.tuck_extension.reset(ids)
         if self.band_width is not None:
             self.band_frames[ids] = 0
             self.band_scored_height[ids] = 0
@@ -382,6 +391,10 @@ class JumpEvent:
                     tier = self.retraction.excursion_count.clamp(1, 3) - 1
                     retract = retract * self.retract_multipliers[tier]
                 self.air_retract_cost = self.air_guard["retract_cost_per_m"] * retract.mean(-1)
+                if self.tuck_extension is not None:
+                    # Mirroring length measures excess extension during tuck; first touch disables both guards.
+                    extension = self.tuck_extension.update(-leg_length_m, airborne & ~self.preparing)
+                    self.air_retract_cost += self.air_guard["tuck_extension_cost_per_m"] * extension.mean(-1)
                 if self.retraction.base_threshold_m is not None:
                     self.air_retract_cost += self.air_guard["retract_base_cost"] * self.retraction.base_crossing.to(retract.dtype).mean(-1)
                 if self.retract_fourth_cost:

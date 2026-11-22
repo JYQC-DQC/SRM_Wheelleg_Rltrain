@@ -266,12 +266,17 @@ stages:
         depth_cost: 2.4  # Quadratic up to one depth scale, then a bounded monotone tail.
         hold_cost_per_s: 1.0
         retract_tolerance_m: 0.005
+        tuck_extension_tolerance_m: 0.01  # Up to 1 cm correction before charging a tuck-phase extension.
+        tuck_extension_cost_per_m: 4.0  # 10 cm mean reversal costs 0.4; normal retraction remains free.
         retract_cost_per_m: 5.0  # 10 cm mean qualifying excursion costs one full +0.5 height-progress award.
         retract_multipliers: [1.0, 1.75, 2.5]
         retract_fourth_cost: 0.5  # Once per leg on excursion four; average over both legs.
         retract_base_threshold_m: 0.01
         retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
     clearance_jump:
+      air_smoothness:
+        deadband_raw: 0.05
+        quadratic_limit_raw: 0.5
       motion_tracking:
         linear_cost_per_s: 0.45
         yaw_cost_per_s: 0.8
@@ -292,7 +297,7 @@ stages:
         jump_tuck: 0.0
         jump_tuck_progress: 0.5  # Maximum per attempt, independent of flight duration.
         jump_crouch: 0.0  # The policy may preload, but is not paid to hold a squat.
-        jump_air_leg_smoothness: -0.08  # Bounded per-second cost during confirmed flight.
+        jump_air_leg_smoothness: -0.6  # Whole-flight jerk cost with an unbounded linear tail.
         jump_landing: 1.75
         jump_takeoff_response: 0.20  # Maximum one-shot bonus; only for a full jump success.
         jump_settle_response: 0.35  # Clean landing only, independent of height; about +0.25 at 0.8 s.

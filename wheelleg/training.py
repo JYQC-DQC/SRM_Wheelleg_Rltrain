@@ -1078,6 +1078,15 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError("jump_settle_response must be finite and nonnegative")
         if "clearance_jump" in cfg.stage:
             clearance = cfg.stage["clearance_jump"]
+            if "air_smoothness" in clearance:
+                smooth = clearance["air_smoothness"]
+                for key in ("deadband_raw", "quadratic_limit_raw"):
+                    if not isfinite(smooth[key]) or smooth[key] <= 0:
+                        raise ValueError(f"air_smoothness.{key} must be finite and positive")
+                guard = cfg.stage["body_wheel_jump"]["air_leg_guard"]
+                for key in ("tuck_extension_tolerance_m", "tuck_extension_cost_per_m"):
+                    if not isfinite(guard[key]) or guard[key] <= 0:
+                        raise ValueError(f"air_leg_guard.{key} must be finite and positive")
             if "motion_tracking" in clearance:
                 motion = clearance["motion_tracking"]
                 if "moving_takeoff_min_fraction" not in cfg.stage or "apex_band_m" not in cfg.stage.get(
