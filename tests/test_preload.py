@@ -28,7 +28,7 @@ def test_l5_success_requires_supported_bilateral_crouch_then_extension():
     contact = torch.ones((6, 2), dtype=torch.bool)
 
     def step(time, length, body_z):
-        guide.update(0.01, active, torch.full((6,), time), height, contact, length, body_z)
+        guide.update(0.01, active, torch.full((6,), time), height, contact, length, body_z, active)
 
     step(0.01, start, z)
     crouched = torch.full_like(start, 0.18)
@@ -41,6 +41,9 @@ def test_l5_success_requires_supported_bilateral_crouch_then_extension():
     extended[5] = 0.18  # A held squat did not use the added extension stroke.
     step(0.03, extended, z)
     success = torch.tensor([True, True, False, True, True, True])
+    assert not guide.success_bonus(success).any()  # No reward before an actual support loss.
+    contact[:] = False
+    step(0.04, extended, z + 0.01)
     bonus = guide.success_bonus(success)
     assert bonus.tolist() == pytest.approx([0, 0.2, 0, 0, 0, 0])
     assert guide.added_stroke_m[1].item() == pytest.approx(0.03)
@@ -67,11 +70,30 @@ def test_no_body_drop_no_late_or_landing_credit_and_repeated_cycles_are_bounded(
             if time < 0.30:
                 length[1] = start[1]  # Only crouches outside the window.
         contact[2] = time != 0.01  # Recontact cannot reopen the preload window.
-        guide.update(0.01, active, torch.full((4,), time), height, contact, length, body)
+        guide.update(0.01, active, torch.full((4,), time), height, contact, length, body, active)
+    contact[:] = False
+    guide.update(0.01, active, torch.full((4,), 0.32), height, contact, start, z + 0.01, active)
     assert guide.success_bonus(active).tolist() == pytest.approx([0, 0, 0, 0.2])
     guide.begin(ids, start, z)
     assert not guide.used_score.any() and not guide.paid.any()
     assert not guide.left_support.any()
+
+
+def test_standing_after_squat_or_non_rising_support_loss_cannot_subsidize_later_jump():
+    guide = PreloadGuide(settings()["clearance_jump"]["crouch_guidance"], 0.25, 3, "cpu")
+    ids = torch.arange(3)
+    start, z = torch.full((3, 2), 0.21), torch.full((3,), 0.30)
+    active, contact = torch.ones(3, dtype=torch.bool), torch.ones((3, 2), dtype=torch.bool)
+    height = torch.full((3,), 0.25)
+    guide.begin(ids, start, z)
+    guide.update(0.01, active, z * 0 + 0.01, height, contact, start, z, active)
+    guide.update(0.01, active, z * 0 + 0.02, height, contact, start - 0.03, z - 0.03, active)
+    guide.update(0.01, active, z * 0 + 0.03, height, contact, start, z, torch.tensor([False, True, True]))
+    contact[2] = False
+    guide.update(0.01, active, z * 0 + 0.04, height, contact, start, z, torch.tensor([True, False, False]))
+    contact[:] = False
+    guide.update(0.01, active, z * 0 + 0.05, height, contact, start + 0.01, z + 0.01, active)
+    assert not guide.success_bonus(active).any()
 
 
 def test_jump_event_uses_sampled_l5_target_and_keeps_fixed_feature_count():
@@ -97,7 +119,7 @@ def test_jump_event_uses_sampled_l5_target_and_keeps_fixed_feature_count():
             0.01,
             torch.tensor([1.0]),
             torch.tensor([root_z]),
-            torch.tensor([0.0]),
+            torch.tensor([1.0 if length == 0.21 else 0.0]),
             torch.ones((1, 2), dtype=torch.bool),
             torch.tensor([False]),
             torch.tensor([True]),
@@ -166,6 +188,7 @@ def test_actual_environment_pays_only_final_full_success_without_dt_scaling():
     guide = PreloadGuide(settings()["clearance_jump"]["crouch_guidance"], 0.25, 5, "cpu")
     guide.used_score[:] = 1
     guide.eligible[:] = True
+    guide.left_support[:] = True
     guide.added_stroke_m[:] = 0.03
     env.jump = SimpleNamespace(
         preload=guide,

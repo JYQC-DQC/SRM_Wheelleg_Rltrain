@@ -48,11 +48,13 @@ class PreloadGuide:
         contact: torch.Tensor,
         length_m: torch.Tensor,
         z_m: torch.Tensor,
+        rising: torch.Tensor,
     ) -> None:
         cfg = self.settings
         # Use the sampled target, not the cohort's maximum unlocked level.
         self.eligible.copy_(height_m >= self.minimum_height_m - 1e-6)
-        self.left_support |= active & ~contact.all(-1)
+        leaving = active & ~self.left_support & ~contact.all(-1)
+        self.left_support |= leaving
         supported = active & self.eligible & ~self.left_support & contact.all(-1)
         self.support_time += dt * supported
         collect = supported & (elapsed_s <= cfg["window_s"] + 1e-6)
@@ -66,11 +68,18 @@ class PreloadGuide:
         self.compressed_length[better] = length_m[better].clamp_min(cfg["target_leg_length_m"])
         self.best_score.copy_(torch.where(better, score, self.best_score))
         recovered = supported & (length_m >= self.start_length - 1e-6).all(-1)
-        self.used_score.copy_(torch.where(recovered, self.best_score, self.used_score))
+        # An unrelated squat followed by standing still must not subsidize a later jump.
+        stopped = supported & ~rising & (recovered | (self.used_score > 0))
+        self.best_score.masked_fill_(stopped, 0)
+        self.compressed_length[stopped] = self.start_length[stopped]
+        self.used_score.copy_(torch.where(recovered & rising, self.best_score, self.used_score))
         stroke = (self.start_length - self.compressed_length).clamp_min(0).amin(-1)
-        self.added_stroke_m.copy_(torch.where(recovered, stroke, self.added_stroke_m))
+        self.added_stroke_m.copy_(torch.where(recovered & rising, stroke, self.added_stroke_m))
+        stale = stopped | (leaving & ~rising)
+        self.used_score.masked_fill_(stale, 0)
+        self.added_stroke_m.masked_fill_(stale, 0)
 
     def success_bonus(self, success: torch.Tensor) -> torch.Tensor:
-        pay = success & self.eligible & ~self.paid
+        pay = success & self.eligible & self.left_support & ~self.paid
         self.paid |= pay
         return self.settings["max_bonus"] * self.used_score * pay

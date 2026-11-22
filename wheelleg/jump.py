@@ -304,7 +304,16 @@ class JumpEvent:
         if self.preload is not None:
             if leg_length_m is None:
                 raise ValueError("crouch_guidance requires supported leg-length samples")
-            self.preload.update(dt, self.active, self.elapsed, self.height, contact, leg_length_m, z)
+            self.preload.update(
+                dt,
+                self.active,
+                self.elapsed,
+                self.height,
+                contact,
+                leg_length_m,
+                z,
+                vz >= self.settings["takeoff_upward_velocity_m_s"],
+            )
         no_contact = ~contact.any(-1)
         can_takeoff = self.active & ~self.landed
         if self.clearance_training is None:
