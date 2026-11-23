@@ -67,6 +67,7 @@ def test_prepare_grace_is_reward_only_high_level_and_expires():
 
 def test_new_reward_fields_only_need_existing_crouch_migration():
     from copy import deepcopy
+
     from wheelleg.multi_actor import resume_contract_matches
 
     current = dict(actor_bundle={"frozen": "hash"}, jump_event_stage=stage())
