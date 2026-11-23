@@ -661,6 +661,16 @@ class JumpEvent:
         time_to_ground = (vz + torch.sqrt(vz.square() + 2 * gravity * clearance.clamp_min(0))) / gravity
         return (vz < 0) & (time_to_ground < self.settings["landing_prepare_time_s"])
 
+    def preload_preparing(self, vz: torch.Tensor) -> torch.Tensor:
+        if self.preload is None or "prepare_window_s" not in self.preload.settings:
+            return torch.zeros_like(self.active)
+        eligible = self.height >= self.preload.minimum_height_m - 1e-6
+        extending = (self.preload.best_score > 0) & (vz >= self.settings["takeoff_upward_velocity_m_s"])
+        return (
+            self.active & ~self.took_off & ~self.preload.left_support & eligible & ~extending
+            & (self.elapsed <= self.preload.settings["prepare_window_s"])
+        )
+
     def references(self, vz: torch.Tensor, wheel_clearance: torch.Tensor, gravity: float) -> dict[str, torch.Tensor]:
         flight = self.active & self.took_off & ~self.landed
         before_takeoff = self.active & ~self.took_off
@@ -674,6 +684,7 @@ class JumpEvent:
             # Start supported upward-motion guidance at the press, with no minimum preload time.
             crouch = torch.zeros_like(before_takeoff)
             push = before_takeoff
+            push &= ~self.preload_preparing(vz)
             flight &= ~self.first_touch
             prepare = flight & self.preparing
             tuck = flight & ~self.preparing

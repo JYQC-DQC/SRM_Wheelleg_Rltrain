@@ -17,6 +17,7 @@ class PreloadGuide:
         self.left_support = torch.zeros(count, dtype=torch.bool, device=device)
         self.eligible = torch.zeros_like(self.left_support)
         self.paid = torch.zeros_like(self.left_support)
+        self.takeoff_paid = torch.zeros_like(self.left_support)
 
     def reset(self, ids: torch.Tensor) -> None:
         for value in (
@@ -30,6 +31,7 @@ class PreloadGuide:
             self.left_support,
             self.eligible,
             self.paid,
+            self.takeoff_paid,
         ):
             value[ids] = 0
 
@@ -81,5 +83,16 @@ class PreloadGuide:
 
     def success_bonus(self, success: torch.Tensor) -> torch.Tensor:
         pay = success & self.eligible & self.left_support & ~self.paid
+        split = self.settings.get("takeoff_bonus")
+        if split is not None:
+            pay &= self.takeoff_paid
         self.paid |= pay
-        return self.settings["max_bonus"] * self.used_score * pay
+        budget = self.settings["max_bonus"] if split is None else self.settings["max_bonus"] - split
+        return budget * self.used_score * pay
+
+    def takeoff_bonus(self, confirmed: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        if "takeoff_bonus" not in self.settings:
+            return torch.zeros_like(self.used_score)
+        pay = confirmed & valid & self.eligible & self.left_support & ~self.takeoff_paid & (self.used_score > 0)
+        self.takeoff_paid |= pay
+        return self.settings["takeoff_bonus"] * self.used_score * pay

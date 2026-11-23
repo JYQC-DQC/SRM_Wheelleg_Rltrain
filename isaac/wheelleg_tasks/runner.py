@@ -176,6 +176,10 @@ class WheelLegRunner(OnPolicyRunner):
                             self.writer.add_scalar(f"JumpRequest/{name}/{term}", value / count, iteration)
                     values.zero_()
             if env.jump.preload is not None:
+                for name, row in zip(("stationary", "moving"), env.iteration_preload_launch_stats.tolist()):
+                    for field, value in zip(("takeoff_bonus_events", "takeoff_bonus_total"), row):
+                        self.writer.add_scalar(f"Preload/{name}/{field}", value, iteration)
+                env.iteration_preload_launch_stats.zero_()
                 for name, row in zip(("stationary", "moving"), env.iteration_preload_stats.tolist()):
                     count, qualified, score, stroke, paid, bonus = row
                     prefix = f"Preload/{name}"

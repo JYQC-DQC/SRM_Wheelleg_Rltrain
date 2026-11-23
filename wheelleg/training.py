@@ -1098,6 +1098,14 @@ def _validate_training(cfg: TrainingConfig) -> None:
                     raise ValueError("landing_guidance requires matched geometry and a bounded redistributed budget")
             if "crouch_guidance" in clearance:
                 guide = clearance["crouch_guidance"]
+                if "takeoff_bonus" in guide or "prepare_window_s" in guide:
+                    if not (
+                        isfinite(guide["takeoff_bonus"])
+                        and 0 < guide["takeoff_bonus"] < guide["max_bonus"]
+                        and isfinite(guide["prepare_window_s"])
+                        and 0 < guide["prepare_window_s"] <= guide["window_s"]
+                    ):
+                        raise ValueError("crouch_guidance requires a bounded split bonus and preparation window")
                 levels = cfg.stage.get("height_levels_m", ())
                 if type(guide["start_level"]) is not int or not 1 <= guide["start_level"] <= len(levels):
                     raise ValueError("crouch_guidance.start_level must name a sampled height level")

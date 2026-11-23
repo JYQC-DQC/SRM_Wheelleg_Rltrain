@@ -13,7 +13,11 @@ from wheelleg.training import load_training
 
 def settings():
     data = yaml.safe_load(Path("config/reference/scut_p3_multi_actor.yaml").read_text(encoding="utf-8"))
-    return data["stages"]["jump"]
+    stage = data["stages"]["jump"]
+    guide = stage["clearance_jump"]["crouch_guidance"]
+    guide.pop("takeoff_bonus", None)
+    guide.pop("prepare_window_s", None)
+    return stage
 
 
 def test_l5_success_requires_supported_bilateral_crouch_then_extension():
@@ -193,9 +197,14 @@ def test_actual_environment_pays_only_final_full_success_without_dt_scaling():
     env.jump = SimpleNamespace(
         preload=guide,
         landing_guide=None,
+        invalid=torch.zeros(5, dtype=torch.bool),
+        failure_paid=torch.zeros(5, dtype=torch.bool),
+        takeoff_pulse=torch.zeros(5, dtype=torch.bool),
         finished=torch.ones(5, dtype=torch.bool),
         landing_pulse=torch.tensor([True, True, True, True, False]),
     )
+    env.numerical_bad = torch.zeros(5, dtype=torch.bool)
+    env.iteration_preload_launch_stats = torch.zeros((2, 2))
     env.handoff_pulse = env.jump.landing_pulse.clone()
     # Final outcome already incorporates height, speed, heading and settle checks.
     env.handoff_failed = torch.tensor([False, True, True, True, False])
@@ -203,7 +212,7 @@ def test_actual_environment_pays_only_final_full_success_without_dt_scaling():
     env.handoff_left = torch.zeros(5)
     env.actor_bundle = {"handoff": {"failure_cost": 0.0}}
     env.commands = SimpleNamespace(target=torch.zeros((5, 3)))
-    env.reward_sums = {"jump_preload_success": torch.zeros(5)}
+    env.reward_sums = {"jump_preload_success": torch.zeros(5), "jump_preload_takeoff": torch.zeros(5)}
     env.iteration_preload_stats = torch.zeros((2, 6))
     env.iteration_handoff_cost_stats = torch.zeros(3)
     env.extras = {"evaluation": {}}

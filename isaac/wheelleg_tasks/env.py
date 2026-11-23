@@ -1174,6 +1174,10 @@ class WheelLegEnv(DirectRLEnv):
         terms = compute_rewards(s, t.settings["reward_parameters"], weights, self.step_dt, t.settings["reward_clip"])
         if t.task == "p3-jump":
             if self.jump.clearance_training is not None:
+                preload_preparing = self.jump.preload_preparing(s["velocity_w"][:, 2])
+                for name in ("height_error", "vertical_velocity"):
+                    if name in terms:
+                        terms[name] = torch.where(preload_preparing, 0.0, terms[name])
                 # Suppress only ordinary positive tracking terms, not their paired error penalties.
                 stand_walk_allowed = ~self.jump.suppress_stand_walk
                 for name in ("track_lin_vel", "track_ang_vel", "track_height", "flat_roll", "flat_pitch"):

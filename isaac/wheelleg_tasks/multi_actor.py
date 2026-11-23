@@ -52,6 +52,7 @@ class MultiActorEnv(WheelLegEnv):
             (2, len(self.handoff_reasons)), dtype=torch.long, device=self.device
         )
         self.iteration_preload_stats = torch.zeros((2, 6), device=self.device)
+        self.iteration_preload_launch_stats = torch.zeros((2, 2), device=self.device)
         self.specialist_return = torch.zeros(n, device=self.device)
         self.landing_term_sums = torch.zeros((n, 5), device=self.device)
         self.landing_force_peak = torch.zeros(n, device=self.device)
@@ -70,6 +71,7 @@ class MultiActorEnv(WheelLegEnv):
                 self.reward_sums[name] = torch.zeros(n, device=self.device)
         if self.jump.preload is not None:
             self.reward_sums["jump_preload_success"] = torch.zeros(n, device=self.device)
+            self.reward_sums["jump_preload_takeoff"] = torch.zeros(n, device=self.device)
         self.request_terms = {k: torch.zeros(n, device=self.device) for k in self.reward_sums}
         self.iteration_request_terms = {k: torch.zeros(2, device=self.device) for k in self.reward_sums}
 
@@ -245,6 +247,15 @@ class MultiActorEnv(WheelLegEnv):
             )
         guide = self.jump.preload
         if guide is not None:
+            valid = ~self.jump.invalid & ~self.jump.failure_paid & ~self.numerical_bad
+            launch_bonus = guide.takeoff_bonus(self.jump.takeoff_pulse, valid)
+            rewards += launch_bonus
+            self.reward_sums["jump_preload_takeoff"] += launch_bonus
+            self.iteration_preload_launch_stats.index_add_(
+                0,
+                (self.commands.target[:, 0] > 0).long(),
+                torch.stack(((launch_bonus > 0).float(), launch_bonus), dim=-1),
+            )
             bonus = guide.success_bonus(self.handoff_pulse & ~self.handoff_failed)
             rewards += bonus
             self.reward_sums["jump_preload_success"] += bonus

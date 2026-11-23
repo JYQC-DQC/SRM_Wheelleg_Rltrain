@@ -294,7 +294,9 @@ stages:
         support_dwell_s: 0.02
         min_added_stroke_m: 0.02
         min_body_drop_m: 0.01
-        max_bonus: 0.20  # Once, after full success; no credit for air tuck or landing compression.
+        max_bonus: 0.20  # Combined per-event budget; no credit for air tuck or landing compression.
+        takeoff_bonus: 0.08  # Effective extra stroke + confirmed liftoff; remaining 0.12 at full success.
+        prepare_window_s: 0.15  # Reward-only grace period, not a command or imposed crouch trajectory.
       air_smoothness:
         deadband_raw: 0.05
         quadratic_limit_raw: 0.5
