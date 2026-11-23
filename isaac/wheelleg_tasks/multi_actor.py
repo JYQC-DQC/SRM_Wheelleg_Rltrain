@@ -4,6 +4,7 @@ import torch
 
 from wheelleg.jump_outcomes import HANDOFF_COST_TIMING, JumpOutcomeTracker, handoff_cost_due
 from wheelleg.multi_actor import ActorBank, actor_mask
+from wheelleg.rewards import jump_reward_weight
 
 from .env import WheelLegEnv
 
@@ -220,8 +221,12 @@ class MultiActorEnv(WheelLegEnv):
                 (
                     -cfg["path_cost_per_s"] * landing.path_cost,
                     -cfg["clearance_cost_per_s"] * clearance_cost,
-                    cfg["retained_bonus"] * landing.retained * clean,
-                    cfg["stop_bonus"] * landing.stop_quality * clean,
+                    jump_reward_weight(self.jump, "jump_retained_extension", cfg["retained_bonus"])
+                    * landing.retained
+                    * clean,
+                    jump_reward_weight(self.jump, "jump_stop_quality", cfg["stop_bonus"])
+                    * landing.stop_quality
+                    * clean,
                     cfg["full_success_bonus"] * full,
                 ),
                 dim=-1,

@@ -1078,6 +1078,38 @@ def _validate_training(cfg: TrainingConfig) -> None:
                 raise ValueError("jump_settle_response must be finite and nonnegative")
         if "clearance_jump" in cfg.stage:
             clearance = cfg.stage["clearance_jump"]
+            if "height_priority" in clearance:
+                priority = clearance["height_priority"]
+                level = priority["start_level"]
+                if type(level) is not int or not 1 <= level <= len(cfg.stage["height_levels_m"]):
+                    raise ValueError("height_priority.start_level must index height_levels_m")
+                names = {
+                    "jump_apex",
+                    "jump_landing",
+                    "jump_tuck_progress",
+                    "jump_retained_extension",
+                    "jump_stop_quality",
+                }
+                overrides = priority["reward_overrides"]
+                if set(overrides) != names or any(
+                    type(v) not in (int, float) or not isfinite(v) or v <= 0 for v in overrides.values()
+                ):
+                    raise ValueError("height_priority.reward_overrides requires the five positive reward budgets")
+                progress = priority["apex_progress_bonus"]
+                if (
+                    type(progress) not in (int, float)
+                    or not isfinite(progress)
+                    or not 0 < progress < overrides["jump_apex"]
+                ):
+                    raise ValueError("height_priority.apex_progress_bonus must be within the apex budget")
+                if "landing_guidance" not in clearance or "body_wheel_jump" not in cfg.stage:
+                    raise ValueError("height_priority requires landing_guidance and body_wheel_jump")
+                guide = clearance["landing_guidance"]
+                weights = clearance["reward_overrides"]
+                base_budget = sum(weights[k] for k in ("jump_apex", "jump_landing", "jump_tuck_progress"))
+                base_budget += guide["retained_bonus"] + guide["stop_bonus"]
+                if abs(sum(overrides.values()) - base_budget) > 1e-8:
+                    raise ValueError("height_priority must preserve the existing total reward budget")
             if "landing_guidance" in clearance:
                 guide = clearance["landing_guidance"]
                 if type(guide["retention_frames"]) is not int or guide["retention_frames"] < 1:

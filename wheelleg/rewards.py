@@ -2,7 +2,22 @@
 
 import torch
 
-from .jump import jump_height_error
+from .jump import JumpEvent, jump_height_error
+
+
+def jump_height_priority(event: JumpEvent) -> torch.Tensor | None:
+    priority = event.settings.get("clearance_jump", {}).get("height_priority")
+    if priority is None:
+        return None
+    threshold = event.settings["height_levels_m"][priority["start_level"] - 1]
+    return event.height >= threshold - 1e-6
+
+
+def jump_reward_weight(event: JumpEvent, name: str, weight: float) -> float | torch.Tensor:
+    priority = event.settings.get("clearance_jump", {}).get("height_priority")
+    if priority is None or name not in priority["reward_overrides"]:
+        return weight
+    return torch.where(jump_height_priority(event), priority["reward_overrides"][name], weight)
 
 
 def track_lin_vel(s, p):
@@ -198,6 +213,13 @@ def jump_apex(s, p):
         target = (event.height - event.settings["height_tolerance_m"]).clamp_min(torch.finfo(event.height.dtype).eps)
         height_fraction = (event.scored_height / target).clamp(0, 1)
         score = torch.minimum(score, height_fraction) * event.apex_pose_quality
+    priority = event.settings.get("clearance_jump", {}).get("height_priority")
+    if priority is not None:
+        progress_fraction = priority["apex_progress_bonus"] / priority["reward_overrides"]["jump_apex"]
+        # Keep the same one-shot clean-landing payout; near misses cannot earn the attainment portion.
+        attained = event.took_off & event.target_reached
+        high_score = torch.where(attained, torch.ones_like(score), progress_fraction * score)
+        score = torch.where(jump_height_priority(event), high_score, score)
     return score * clean_landing
 
 
@@ -438,10 +460,12 @@ EVENT_TERMS = frozenset(
 
 def compute_rewards(state: dict, parameters: dict, weights: dict, dt: float, clip: float) -> dict[str, torch.Tensor]:
     # Event weights are total payouts: neither dt nor the continuous-term clip applies.
-    return {
-        name: TERMS[name](state, parameters) * weight
-        if name in EVENT_TERMS
-        else (TERMS[name](state, parameters) * weight * dt).clamp(-clip, clip)
-        for name, weight in weights.items()
-        if weight != 0
-    }
+    terms = {}
+    for name, weight in weights.items():
+        if weight == 0:
+            continue
+        if "jump" in state:
+            weight = jump_reward_weight(state["jump"], name, weight)
+        value = TERMS[name](state, parameters) * weight
+        terms[name] = value if name in EVENT_TERMS else (value * dt).clamp(-clip, clip)
+    return terms

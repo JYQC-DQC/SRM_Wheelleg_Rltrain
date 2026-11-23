@@ -8,6 +8,7 @@ import yaml
 from wheelleg.jump import JumpEvent
 from wheelleg.landing_guidance import LandingGuidance
 from wheelleg.multi_actor import resume_contract_matches
+from wheelleg.rewards import jump_reward_weight
 
 
 def stage():
@@ -101,7 +102,7 @@ def test_real_reward_path_separates_full_success_and_lazily_created_request_term
             return torch.ones(2)
 
     cls.bases = [ast.Name(id="Base", ctx=ast.Load())]
-    namespace = {"Base": Base, "torch": torch}
+    namespace = {"Base": Base, "torch": torch, "jump_reward_weight": jump_reward_weight}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[])), "reward", "exec"), namespace)
     env = namespace["MultiActorEnv"]()
     env.num_envs, env.device = 2, "cpu"
@@ -110,6 +111,8 @@ def test_real_reward_path_separates_full_success_and_lazily_created_request_term
     guide.retained[:] = guide.stop_quality[:] = 1
     guide.stopped[:] = guide.touched[:] = True
     env.jump = SimpleNamespace(
+        settings=stage(),
+        height=torch.tensor([0.04, 0.25]),
         landing_guide=guide,
         preload=None,
         landing_pulse=torch.ones(2, dtype=torch.bool),
@@ -145,5 +148,5 @@ def test_real_reward_path_separates_full_success_and_lazily_created_request_term
     env.iteration_landing_stats = torch.zeros((2, 13))
     env.commands = SimpleNamespace(target=torch.zeros((2, 3)))
     env.extras = {"evaluation": {}}
-    assert env._get_rewards().tolist() == pytest.approx([2.75, 1.5])
+    assert env._get_rewards().tolist() == pytest.approx([2.75, 1.25])
     assert env.request_terms["base"].tolist() == [1, 1]

@@ -274,6 +274,15 @@ stages:
         retract_base_threshold_m: 0.01
         retract_base_cost: 0.15  # Once per qualifying excursion, separate from distance and repetition.
     clearance_jump:
+      height_priority:
+        start_level: 5  # Select by this event's target, not the cohort's highest unlocked level.
+        apex_progress_bonus: 0.5  # Below acceptance, only this part of the +2 apex budget is available.
+        reward_overrides:
+          jump_apex: 2.0
+          jump_landing: 0.5
+          jump_tuck_progress: 0.25
+          jump_retained_extension: 0.125
+          jump_stop_quality: 0.125
       landing_guidance:
         retention_frames: 3  # Last 30 ms at the 100 Hz policy rate, never the flight maximum.
         tuck_length_m: 0.17

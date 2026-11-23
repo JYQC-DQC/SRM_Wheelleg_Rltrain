@@ -347,6 +347,7 @@ class WheelLegRunner(OnPolicyRunner):
         air_motion_update: bool = False,
         crouch_guidance_update: bool = False,
         landing_guidance_update: bool = False,
+        height_priority_update: bool = False,
     ) -> dict:
         """restart_command_curriculum: the caller restarts the command curriculum, so its saved state is not needed,
         and a landing air-height curriculum missing from an older checkpoint starts at its first level."""
@@ -362,6 +363,7 @@ class WheelLegRunner(OnPolicyRunner):
             air_motion_update,
             crouch_guidance_update,
             landing_guidance_update,
+            height_priority_update,
         ):
             raise ValueError(
                 "Critic observation contract changed: use --initialize-from for actor only; --resume is forbidden"
