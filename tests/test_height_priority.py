@@ -179,4 +179,4 @@ def test_invalid_priority_configuration_is_rejected(tmp_path, invalid):
     path = tmp_path / "policy.yaml"
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     with pytest.raises(ValueError, match="height_priority"):
-        load_training("p3-jump", "sim2sim/checkpoints/jump_preload_split_model27400/params/robot.yaml", path)
+        load_training("p3-jump", "config/reference/scut_robot.template.yaml", path)
