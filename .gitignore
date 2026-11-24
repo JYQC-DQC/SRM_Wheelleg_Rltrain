@@ -26,6 +26,17 @@ export/
 /terrain_sim2sim*.zip
 /MUJOCO_LOG.TXT
 
+# Per-checkpoint launchers are local artifacts; keep the shared *_latest.cmd launchers tracked.
+/sim2sim/play_jump_[0-9]*.cmd
+/sim2sim/play_jump_before_restart_*.cmd
+/sim2sim/play_jump_discarded_*.cmd
+/sim2sim/play_jump_old_drift_*.cmd
+
+# Historical local experiments, not imported by the production training/replay path.
+/isaac/scripts/validate_contact_debounce.py
+/tools/diagnose_jump.py
+/wheelleg/contact_validation.py
+
 # Tests stay local (including existing tests)
 [Tt]est/
 [Tt]ests/
