@@ -224,6 +224,20 @@ def test_tunnel_roof_cannot_be_reported_as_success(playground):
     assert sim.jump_result.startswith("failed")
 
 
+def test_new_jump_on_rear_ground_does_not_regrade_the_old_tunnel(playground):
+    sim, sites, p = playground
+    player = JumpPlayer(sim, sites, p["controls"])
+    player.teleport(3)
+    sim.data.qpos[0] = sites[3]["end_x_m"] + 1.0
+    mujoco.mj_forward(sim.model, sim.data)
+    player.key(glfw.KEY_SPACE)
+    assert sim.jump.active.item() and sim.jump_site is None
+    for _ in range(10):
+        player.step()
+    assert not sim.traversal.invalid.item()
+    assert "tunnel" not in sim.jump_result and "landing site" not in sim.jump_result
+
+
 def test_scoring_failure_does_not_freeze_manual_replay(playground, monkeypatch):
     sim, sites, p = playground
     player = JumpPlayer(sim, sites, p["controls"])

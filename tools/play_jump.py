@@ -26,7 +26,7 @@ from build_model import build  # noqa: E402
 from sim2sim import NumpyActor, RunConfig, Spawn, WheelLegSim  # noqa: E402
 
 
-def replay_tunnel_check(traversal, low, high, site, flight, contact, wheel_clearance, margin, clearance):
+def replay_tunnel_check(traversal, low, high, site, flight, contact, wheel_clearance, wheel_rear_x, margin, clearance):
     """Score physical collision bounds, not link frames or decorative geometry."""
     front, rear = high[:, 0].max(), low[:, 0].min()
     inside_lane = low[:, 1].min() >= site["center_y_m"] - site["width_m"] / 2 + margin
@@ -35,17 +35,29 @@ def replay_tunnel_check(traversal, low, high, site, flight, contact, wheel_clear
     traversal.approached |= bool(front < site["start_x_m"])
     reached = bool(front >= site["start_x_m"])
     overlap = (high[:, 0] >= site["start_x_m"]) & (low[:, 0] <= site["end_x_m"])
+    landed_on_ground = bool(((np.abs(wheel_clearance) < clearance) | ~contact).all())
+    far_touch = bool(contact.any()) and landed_on_ground
+    far_touch &= bool(((wheel_rear_x > site["end_x_m"] + margin) | ~contact).all())
     invalid = not inside_lane or (reached and not bool(traversal.approached[0]))
+    reason = "left tunnel corridor" if not inside_lane else "jump started inside/beyond tunnel" if invalid else ""
     if not bool(traversal.cleared[0]) and overlap.any():
-        invalid |= not flight or bool((low[overlap, 2] < site["height_m"] + clearance).any())
+        low_clearance = bool((low[overlap, 2] < site["height_m"] + clearance).any())
+        early_contact = not flight and not far_touch
+        invalid |= early_contact or low_clearance
+        if not reason and (early_contact or low_clearance):
+            reason = "insufficient roof clearance" if low_clearance else "wheel contact before rear landing zone"
     traversal.invalid |= invalid
     traversal.entered |= reached and bool(traversal.approached[0]) and not bool(traversal.invalid[0])
     traversal.cleared |= bool(
         bool(traversal.entered[0]) and rear > site["end_x_m"] + margin and not bool(traversal.invalid[0])
     )
-    landed_on_ground = bool(((np.abs(wheel_clearance) < clearance) | ~contact).all())
-    valid = bool(traversal.cleared[0]) and not bool(traversal.invalid[0]) and inside_lane and landed_on_ground
-    return torch.tensor([valid]), traversal.invalid.clone()
+    # A wheel can land safely beyond the roof while the elevated tail is still crossing.
+    # Whole-body completion remains a separate prerequisite for the stable-success window.
+    valid = bool(traversal.cleared[0]) or (bool(traversal.entered[0]) and far_touch)
+    valid &= not bool(traversal.invalid[0]) and inside_lane and landed_on_ground
+    if not valid and not reason:
+        reason = "touchdown outside rear ground zone" if contact.any() else "crossing not complete"
+    return torch.tensor([valid]), traversal.invalid.clone(), reason
 
 
 def build_arena(flat: Path, output: Path, course: dict, friction: float) -> list[dict]:
@@ -161,6 +173,7 @@ class JumpSim(WheelLegSim):
         self.jump = JumpEvent(self.stage, 1, "cpu")
         self.traversal = TunnelTraversal(1, "cpu")
         self.test_site = None
+        self.jump_site = None
         self.ids = torch.tensor([0])
         self.estopped = False
         self.jump_result = "ready"
@@ -195,6 +208,7 @@ class JumpSim(WheelLegSim):
         self.runup_yaw = spawn.yaw_rad
         self.jump.reset(self.ids)
         self.traversal.reset(self.ids)
+        self.jump_site = None
         self.jump.remaining.zero_()  # An event starts only on a manual press.
         self.estopped = False
         self.jump_result = "ready"
@@ -220,6 +234,11 @@ class JumpSim(WheelLegSim):
             return False
         self.jump.reset(self.ids)
         self.traversal.reset(self.ids)
+        self.jump_site = self.test_site
+        if self.jump_site is not None and self.jump_site["kind"] == "tunnel":
+            margin = self.cfg.policy["stages"]["tunnel"]["tunnel"]["landing_margin_m"]
+            if self._collision_bounds()[0][:, 0].min() > self.jump_site["end_x_m"] + margin:
+                self.jump_site = None  # Subsequent jumps on rear ground do not re-cross the old obstacle.
         self.jump.remaining[:] = 1
         geometry = {}
         if self.body_wheel_jump:
@@ -241,8 +260,8 @@ class JumpSim(WheelLegSim):
         self.takeoff_speed_ok = True
         self.peak_rise_m = 0.0
         self.jump_result = "requested"
-        if self.test_site is not None and self.test_site["kind"] == "tunnel":
-            self.traversal.approached[:] = bool(self.data.xpos[self.robot_body, 0].max() < self.test_site["start_x_m"])
+        if self.jump_site is not None and self.jump_site["kind"] == "tunnel":
+            self.traversal.approached[:] = bool(self._collision_bounds()[1][:, 0].max() < self.jump_site["start_x_m"])
         return True
 
     def emergency_stop(self) -> None:
@@ -379,20 +398,23 @@ class JumpSim(WheelLegSim):
                 )[0]
             )
         valid, obstacle_hit = torch.tensor([True]), torch.tensor([False])
-        site = self.test_site
+        site = self.jump_site
+        tunnel_reason = ""
         if site is not None and site["kind"] == "tunnel" and bool(self.jump.active[0]):
             p = self.cfg.policy["stages"]["tunnel"]["tunnel"]
             flight = took_off and not bool(self.jump.landed[0]) and not info["wheel_contact"].any()
-            valid, obstacle_hit = replay_tunnel_check(
+            valid, obstacle_hit, tunnel_reason = replay_tunnel_check(
                 self.traversal,
                 *self._collision_bounds(),
                 site,
                 flight,
                 info["wheel_contact"],
                 info["wheel_clearance"],
+                self.data.xpos[self.wheel_ids, 0] - self.cfg.shared["wheel_radius_m"],
                 p["landing_margin_m"],
                 p["clearance_margin_m"],
             )
+            stable &= bool(self.traversal.cleared[0])
         geometry = {}
         if self.body_wheel_jump:
             geometry = dict(
@@ -435,7 +457,7 @@ class JumpSim(WheelLegSim):
             elif info["terminated"]:
                 reason = "physical termination"
             elif bool(obstacle_hit[0]) or (bool(self.jump.first_touch[0]) and not bool(valid[0])):
-                reason = "obstacle or invalid landing site"
+                reason = tunnel_reason
             elif not bool(self.jump.took_off[0]):
                 reason = f"no confirmed liftoff in {self.stage['event_duration_s']:g} s"
             else:
